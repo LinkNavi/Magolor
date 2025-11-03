@@ -1,13 +1,16 @@
 // src/main.rs
+use anyhow::Result;
 use std::env;
 use std::fs;
-use anyhow::Result;
 
 mod modules;
 
-use modules::tokenizer;
+use modules::IR;
 use modules::parser;
+use modules::tokenizer;
 
+use crate::modules::ir::compile_to_ir;
+use crate::modules::ir::ir_optimizer::OptimizationLevel;
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
@@ -29,15 +32,19 @@ fn main() -> Result<()> {
 
     // Parse
     println!("\n=== Parsing ===");
+
+    // Parse
+    println!("\n=== Parsing ===");
     match parser::parse_tokens(&tokens) {
         Ok(ast) => {
             println!("Successfully parsed!");
             println!("\n=== AST ===");
             println!("{:#?}", ast);
 
-            // TODO: Add IR generation
-            println!("\n=== Code Generation ===");
-            println!("Code generation not yet implemented");
+            // === IR Generation ===
+            println!("\n=== IR Generation ===");
+            let output = compile_to_ir(ast, OptimizationLevel::Aggressive)?;
+            println!("{:#?}", output);
         }
         Err(e) => {
             eprintln!("Parse error: {}", e);

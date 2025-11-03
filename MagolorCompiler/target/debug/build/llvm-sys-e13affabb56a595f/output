@@ -1,4 +1,5 @@
 cargo:rerun-if-env-changed=LLVM_SYS_181_PREFIX
+cargo:rerun-if-changed=/usr/lib/
 cargo:rerun-if-env-changed=LLVM_SYS_181_IGNORE_BLOCKLIST
 cargo:rerun-if-env-changed=LLVM_SYS_181_STRICT_VERSIONING
 cargo:rerun-if-env-changed=LLVM_SYS_181_NO_CLEAN_CFLAGS
