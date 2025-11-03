@@ -76,50 +76,90 @@ impl CodeGenerator {
         Ok(output)
     }
 
-    fn generate_function_x86_64(&mut self, name: &str, func: &IRFunction) -> Result<String, String> {
-        let mut output = String::new();
+   // Fix in src/modules/ir/codegen.rs
+// The issue is that we're calling register allocator but it may fail or not allocate all registers
+// For now, let's use a simpler approach: direct virtual-to-physical mapping
 
-        // Function label
-        output.push_str(&format!("    .globl {}\n", name));
-        output.push_str(&format!("{}:\n", name));
+fn generate_function_x86_64(&mut self, name: &str, func: &IRFunction) -> Result<String, String> {
+    let mut output = String::new();
 
-        // Prologue
-        output.push_str("    push rbp\n");
-        output.push_str("    mov rbp, rsp\n");
+    // Function label
+    output.push_str(&format!("    .globl {}\n", name));
+    output.push_str(&format!("{}:\n", name));
 
-        // Allocate stack space for locals
-        if func.local_count > 0 {
-            let stack_size = func.local_count * 8;
-            output.push_str(&format!("    sub rsp, {}\n", stack_size));
-        }
+    // Prologue
+    output.push_str("    push rbp\n");
+    output.push_str("    mov rbp, rsp\n");
 
-        // Allocate registers
-        let mut func_copy = func.clone();
-        self.register_allocator.allocate(&mut func_copy)?;
-        let allocation = self.register_allocator.get_allocation();
-
-        // Generate code for each block
-        for block in &func_copy.blocks {
-            output.push_str(&format!(".L{}:\n", block.id));
-
-            for instr in &block.instructions {
-                output.push_str(&self.generate_instruction_x86_64(instr, allocation)?);
-            }
-        }
-
-        // Default epilogue (if no explicit return)
-        output.push_str(".L_epilogue:\n");
-        output.push_str("    mov rsp, rbp\n");
-        output.push_str("    pop rbp\n");
-        output.push_str("    ret\n\n");
-
-        Ok(output)
+    // Allocate stack space for locals
+    if func.local_count > 0 {
+        let stack_size = func.local_count * 8;
+        output.push_str(&format!("    sub rsp, {}\n", stack_size));
     }
+
+    // SIMPLIFIED: Use a simple virtual-to-physical register mapping
+    // Instead of complex graph coloring, map virtual regs to a rotating set of physical regs
+    let allocation = self.simple_register_map(func);
+
+    // Generate code for each block
+    for block in &func.blocks {
+        let label = format!(".L_{}_{}",  name.replace(".", "_"), block.id);
+        output.push_str(&format!("{}:\n", label));
+
+        for instr in &block.instructions {
+            output.push_str(&self.generate_instruction_x86_64(instr, &allocation, name)?);
+        }
+    }
+
+    // Default epilogue (if no explicit return)
+    let epilogue_label = format!(".L_{}_epilogue",  name.replace(".", "_"));
+        output.push_str(&format!("{}:
+", epilogue_label));
+    output.push_str("    mov rsp, rbp\n");
+    output.push_str("    pop rbp\n");
+    output.push_str("    ret\n\n");
+
+    Ok(output)
+}
+
+// Add this helper method to create a simple register allocation
+fn simple_register_map(&self, func: &IRFunction) -> HashMap<usize, PhysicalRegister> {
+    let mut allocation = HashMap::new();
+    let phys_regs = [
+        PhysicalRegister::RAX,
+        PhysicalRegister::RBX,
+        PhysicalRegister::RCX,
+        PhysicalRegister::RDX,
+        PhysicalRegister::RSI,
+        PhysicalRegister::RDI,
+        PhysicalRegister::R8,
+        PhysicalRegister::R9,
+        PhysicalRegister::R10,
+        PhysicalRegister::R11,
+        PhysicalRegister::R12,
+        PhysicalRegister::R13,
+        PhysicalRegister::R14,
+        PhysicalRegister::R15,
+    ];
+
+    // Simple round-robin allocation
+    for vreg in 0..func.register_count {
+        if vreg < phys_regs.len() {
+            allocation.insert(vreg, phys_regs[vreg]);
+        } else {
+            // Spill to stack for registers beyond available physical regs
+            allocation.insert(vreg, PhysicalRegister::Spilled(vreg - phys_regs.len()));
+        }
+    }
+
+    allocation
+}
 
     fn generate_instruction_x86_64(
         &self,
         instr: &IRInstruction,
         allocation: &HashMap<usize, PhysicalRegister>,
+        func_name: &str,
     ) -> Result<String, String> {
         match instr {
             IRInstruction::Add { dst, lhs, rhs, .. } => {
@@ -162,14 +202,17 @@ impl CodeGenerator {
             }
 
             IRInstruction::Branch { target } => {
-                Ok(format!("    jmp .L{}\n", target))
+                let label = format!(".L_{}_{}",  func_name.replace(".", "_"), target);
+                Ok(format!("    jmp {}\n", label))
             }
 
             IRInstruction::CondBranch { cond, true_target, false_target } => {
                 let cond_str = self.format_operand_x86_64(cond, allocation)?;
+                let true_label = format!(".L_{}_{}",  func_name.replace(".", "_"), true_target);
+                let false_label = format!(".L_{}_{}",  func_name.replace(".", "_"), false_target);
                 Ok(format!(
-                    "    test {}, {}\n    jnz .L{}\n    jmp .L{}\n",
-                    cond_str, cond_str, true_target, false_target
+                    "    test {}, {}\n    jnz {}\n    jmp {}\n",
+                    cond_str, cond_str, true_label, false_label
                 ))
             }
 
@@ -179,7 +222,8 @@ impl CodeGenerator {
                     let val_str = self.format_operand_x86_64(val, allocation)?;
                     code.push_str(&format!("    mov rax, {}\n", val_str));
                 }
-                code.push_str("    jmp .L_epilogue\n");
+                let epilogue_label = format!(".L_{}_epilogue",  func_name.replace(".", "_"));
+                code.push_str(&format!("    jmp {}\n", epilogue_label));
                 Ok(code)
             }
 

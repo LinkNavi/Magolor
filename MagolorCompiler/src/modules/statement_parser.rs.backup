@@ -139,14 +139,7 @@ impl<'a> StatementParser<'a> {
 
         // Check if we have a type annotation
         let (var_type, name) = if self.is_type_token(self.peek()) {
-            let mut ty = self.parse_type()?;
-            
-            // Handle array syntax: i32[] name
-            if matches!(self.peek(), Some(Token::LBracket)) {
-                self.advance(); // consume '['
-                self.expect(Token::RBracket)?; // consume ']'
-                ty = Type::Array(Box::new(ty));
-            }
+            let ty = self.parse_type()?;
             
             if let Some(Token::Ident(n)) = self.peek() {
                 let name = n.clone();
@@ -185,6 +178,7 @@ impl<'a> StatementParser<'a> {
             is_mutable: !is_const && is_mutable,
         }))
     }
+
     fn is_type_token(&self, token: Option<&Token>) -> bool {
         matches!(
             token,
@@ -302,16 +296,12 @@ impl<'a> StatementParser<'a> {
             Some(cond)
         };
 
-        // Parse increment (no semicolon expected here, just before RParen)
+        // Parse increment
         let increment = if matches!(self.peek(), Some(Token::RParen)) {
             None
         } else {
-            // Parse as expression, not statement (no semicolon)
-            let mut expr_parser = ExpressionParser::new(self.tokens, self.pos);
-            let expr = expr_parser.parse_expression()?;
-            self.pos = expr_parser.current_pos();
-            // Wrap in expression statement
-            Some(Box::new(Statement::Expression(expr)))
+            let stmt = self.parse_expression_or_assignment()?;
+            stmt.map(Box::new)
         };
 
         self.expect(Token::RParen)?;
@@ -395,20 +385,19 @@ impl<'a> StatementParser<'a> {
             
             self.expect(Token::FatArrow)?;
             
-            // Parse arm body - can be a block or a single expression
             let body = if matches!(self.peek(), Some(Token::LBrace)) {
                 self.parse_block_statements()?
             } else {
-                // Parse a single expression (no semicolon needed in match arms)
-                let mut expr_parser = ExpressionParser::new(self.tokens, self.pos);
-                let expr = expr_parser.parse_expression()?;
-                self.pos = expr_parser.current_pos();
-                vec![Statement::Expression(expr)]
+                let stmt = self.parse_statement()?;
+                if let Some(s) = stmt {
+                    vec![s]
+                } else {
+                    Vec::new()
+                }
             };
             
             arms.push(crate::modules::ast::MatchArm { pattern, body });
             
-            // Optional comma after each arm
             if matches!(self.peek(), Some(Token::Comma)) {
                 self.advance();
             }

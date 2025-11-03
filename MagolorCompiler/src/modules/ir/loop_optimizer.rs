@@ -169,7 +169,7 @@ impl LoopOptimizer {
         changed
     }
 
-    fn is_loop_invariant(&self, instr: &IRInstruction, loop_blocks: &[usize]) -> bool {
+    fn is_loop_invariant(&self, instr: &IRInstruction, _loop_blocks: &[usize]) -> bool {
         // Check if instruction operands are defined outside loop
         match instr {
             IRInstruction::Add { lhs, rhs, .. }
@@ -193,7 +193,7 @@ impl LoopOptimizer {
             if let Some(block) = func.blocks.iter_mut().find(|b| b.id == block_id) {
                 for instr in &mut block.instructions {
                     // Replace multiplication by constant with shifts/adds
-                    if let IRInstruction::Mul { dst, lhs, rhs, ty } = instr {
+                    if let IRInstruction::Mul { dst, lhs, rhs, ty: _ } = instr {
                         if let IRValue::Constant(IRConstant::I32(n)) = rhs {
                             if n.is_power_of_two() {
                                 let shift_amount = n.trailing_zeros();

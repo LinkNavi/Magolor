@@ -104,7 +104,7 @@ impl ControlFlowAnalyzer {
         }
     }
 
-    fn compute_postdominators(func: &mut IRFunction) {
+    fn compute_postdominators(_func: &mut IRFunction) {
         // Similar to dominators but computed backwards from exits
         // Implementation would mirror compute_dominators with reversed CFG
     }
@@ -124,7 +124,7 @@ impl ControlFlowAnalyzer {
 
         // Each back edge defines a natural loop
         for (tail, header) in back_edges {
-            let loop_blocks = Self::find_loop_blocks(func, header, tail);
+            let _loop_blocks = Self::find_loop_blocks(func, header, tail);
             // Store loop information for later optimization
         }
     }

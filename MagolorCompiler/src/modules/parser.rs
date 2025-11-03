@@ -320,7 +320,7 @@ impl Parser {
 
             // Check if it's a method or field
             if self.is_type_token(self.peek()) || matches!(self.peek(), Some(Token::Func)) {
-                let start_pos = self.pos;
+                let _start_pos = self.pos;
                 
                 // Try to determine if it's a method
                 let is_method = if matches!(self.peek(), Some(Token::Func)) {

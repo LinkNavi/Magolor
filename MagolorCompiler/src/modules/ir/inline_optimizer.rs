@@ -140,7 +140,7 @@ impl InlineOptimizer {
         candidates: &HashSet<String>,
     ) -> bool {
         let mut changed = false;
-        let mut new_blocks: Vec<IRBasicBlock> = Vec::new();
+        let _new_blocks: Vec<IRBasicBlock> = Vec::new();
 
         for block_idx in 0..caller.blocks.len() {
             let mut new_instructions = Vec::new();
@@ -217,7 +217,7 @@ impl InlineOptimizer {
         next_reg: &mut usize,
     ) -> IRInstruction {
         match instr {
-            IRInstruction::Add { dst, lhs, rhs, ty } => {
+            IRInstruction::Add { dst: _, lhs, rhs, ty } => {
                 let new_dst = *next_reg;
                 *next_reg += 1;
                 IRInstruction::Add {

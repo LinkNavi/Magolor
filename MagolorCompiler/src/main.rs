@@ -1,50 +1,65 @@
-// src/main.rs
+// src/main.rs - Fixed to output assembly cleanly
 use anyhow::Result;
 use std::env;
 use std::fs;
 
 mod modules;
 
-use modules::IR;
 use modules::parser;
 use modules::tokenizer;
 
 use crate::modules::IR::compile_to_ir;
 use crate::modules::ir::ir_optimizer::OptimizationLevel;
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <source file>", args[0]);
+        eprintln!("Usage: {} <source file> [-o output.s]", args[0]);
         return Ok(());
     }
 
     let filename = &args[1];
-    println!("Compiling: {}", filename);
+    
+    // Check for output file flag
+    let output_file = if args.len() >= 4 && args[2] == "-o" {
+        args[3].clone()
+    } else {
+        filename.replace(".mg", ".s")
+    };
+
+    eprintln!("Compiling: {}", filename);
 
     // Read source file
     let source = fs::read_to_string(filename)?;
 
     // Tokenize
-    println!("\n=== Tokenization ===");
+    eprintln!("\n=== Tokenization ===");
     let tokens = tokenizer::tokenize(&source);
-    println!("Generated {} tokens", tokens.len());
+    eprintln!("Generated {} tokens", tokens.len());
 
     // Parse
-    println!("\n=== Parsing ===");
-
-    // Parse
-    println!("\n=== Parsing ===");
+    eprintln!("\n=== Parsing ===");
     match parser::parse_tokens(&tokens) {
         Ok(ast) => {
-            println!("Successfully parsed!");
-            println!("\n=== AST ===");
-            println!("{:#?}", ast);
+            eprintln!("Successfully parsed!");
+            
+            // Optionally show AST (comment out for clean output)
+            if env::var("SHOW_AST").is_ok() {
+                eprintln!("\n=== AST ===");
+                eprintln!("{:#?}", ast);
+            }
 
             // === IR Generation ===
-            println!("\n=== IR Generation ===");
+            eprintln!("\n=== IR Generation ===");
             let output = compile_to_ir(ast, OptimizationLevel::Aggressive)?;
-            println!("{:#?}", output);
+            
+            // Write assembly to file
+            fs::write(&output_file, &output)?;
+            eprintln!("✅ Assembly written to: {}", output_file);
+            
+            // Print ONLY the assembly to stdout (for piping)
+            print!("{}", output);
         }
         Err(e) => {
             eprintln!("Parse error: {}", e);

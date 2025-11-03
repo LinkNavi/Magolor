@@ -219,7 +219,7 @@ impl SSATransform {
 
         // Process successors
         let successors: Vec<_> = func.blocks[block_id].successors.clone();
-        for &succ in &successors {
+        for &_succ in &successors {
             // Update phi nodes in successor
             // (Implementation would add entries to phi incoming lists)
         }

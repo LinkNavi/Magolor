@@ -1,98 +1,49 @@
 #!/bin/bash
 
-# Apply Magolor Compiler Fixes
+echo "Fixing codegen.rs completely..."
 
-echo "Applying fixes to MagolorCompiler..."
+# Fix the block labels to be unique
+sed -i 's/output\.push_str(&format!("\.L{}:\\n", block\.id));/let label = format!(".L_{}_{}",  name.replace(".", "_"), block.id);\n        output.push_str(\&format!("{}:\\n", label));/g' src/modules/ir/codegen.rs
 
-# Fix 1: Add is_power_of_two trait to loop_optimizer.rs
-echo "Fixing loop_optimizer.rs..."
-cat > /tmp/loop_fix.txt << 'EOF'
-// src/modules/ir/loop_optimizer.rs
-// Loop optimization passes: unrolling, invariant code motion, strength reduction
+# Fix the epilogue label format string error (line 114-115)
+sed -i 's/output\.push_str(&format!("{}:\n", epilogue_label));/output.push_str(\&format!("{}:\\n", epilogue_label));/g' src/modules/ir/codegen.rs
 
-use crate::modules::ir::ir_types::*;
-use std::collections::{HashMap, HashSet};
+# Check if output.s exists and has Unicode issues
+if [ -f output.s ]; then
+    echo "Checking for Unicode characters in output.s..."
+    if file output.s | grep -q "UTF-8"; then
+        echo "Converting output.s to ASCII..."
+        iconv -f UTF-8 -t ASCII//TRANSLIT output.s -o output.s.tmp && mv output.s.tmp output.s
+    fi
+fi
 
-trait IntegerPowerOfTwo {
-    fn is_power_of_two(&self) -> bool;
-}
-
-impl IntegerPowerOfTwo for i32 {
-    fn is_power_of_two(&self) -> bool {
-        *self > 0 && (*self & (*self - 1)) == 0
-    }
-}
-
-impl IntegerPowerOfTwo for &i32 {
-    fn is_power_of_two(&self) -> bool {
-        **self > 0 && (**self & (**self - 1)) == 0
-    }
-}
-
-impl IntegerPowerOfTwo for &mut i32 {
-    fn is_power_of_two(&self) -> bool {
-        **self > 0 && (**self & (**self - 1)) == 0
-    }
-}
-EOF
-
-# Insert the trait after line 5 (after the imports)
-head -n 5 src/modules/ir/loop_optimizer.rs > /tmp/loop_temp.rs
-cat /tmp/loop_fix.txt | tail -n +6 >> /tmp/loop_temp.rs
-tail -n +6 src/modules/ir/loop_optimizer.rs >> /tmp/loop_temp.rs
-mv /tmp/loop_temp.rs src/modules/ir/loop_optimizer.rs
-
-# Fix 2: Add is_power_of_two trait to peephole.rs
-echo "Fixing peephole.rs..."
-cat > /tmp/peephole_fix.txt << 'EOF'
-// src/modules/ir/peephole.rs
-// Peephole optimization - local instruction patterns
-
-use crate::modules::ir::ir_types::*;
-
-trait IntegerPowerOfTwo {
-    fn is_power_of_two(&self) -> bool;
-}
-
-impl IntegerPowerOfTwo for i32 {
-    fn is_power_of_two(&self) -> bool {
-        *self > 0 && (*self & (*self - 1)) == 0
-    }
-}
-
-impl IntegerPowerOfTwo for &i32 {
-    fn is_power_of_two(&self) -> bool {
-        **self > 0 && (**self & (**self - 1)) == 0
-    }
-}
-EOF
-
-head -n 4 src/modules/ir/peephole.rs > /tmp/peephole_temp.rs
-cat /tmp/peephole_fix.txt | tail -n +5 >> /tmp/peephole_temp.rs
-tail -n +5 src/modules/ir/peephole.rs >> /tmp/peephole_temp.rs
-mv /tmp/peephole_temp.rs src/modules/ir/peephole.rs
-
-# Fix 3: Fix inline_optimizer.rs type annotation
-echo "Fixing inline_optimizer.rs..."
-sed -i 's/let mut new_blocks = Vec::new();/let mut new_blocks: Vec<IRBasicBlock> = Vec::new();/' src/modules/ir/inline_optimizer.rs
-
-# Fix 4: Fix ir_builder.rs return_type clone
-echo "Fixing ir_builder.rs..."
-sed -i 's/return_type,$/return_type: return_type.clone(),/' src/modules/ir/ir_builder.rs
-sed -i 's/if return_type == IRType::Void {/if ir_func.return_type == IRType::Void {/' src/modules/ir/ir_builder.rs
-
+echo "✅ Fixed!"
 echo ""
-echo "Automated fixes applied!"
-echo ""
-echo "MANUAL FIXES STILL NEEDED:"
-echo "1. Copy the constant_folding.rs artifact to: src/modules/ir/constant_folding.rs"
-echo "2. Replace src/modules/ir/ir_types.rs with the 'ir_types.rs (Fixed)' artifact"
-echo "3. Replace src/modules/tokenizer.rs with the 'tokenizer.rs (Fixed)' artifact"
-echo "4. Update src/modules/IR.rs to fix error conversions (see below)"
-echo ""
-echo "For IR.rs error conversion, change lines 43, 46, 50, 55, 59, 63, 68, 72, 76:"
-echo "  FROM: .map_err(|e| anyhow::anyhow!(...))"
-echo "  TO:   .map_err(|e| anyhow::Error::msg(format!(...)))"
-echo ""
-echo "OR alternatively, change all builder.build() and optimizer.optimize() to return"
-echo "anyhow::Result instead of Result<T, String>"
+echo "Rebuilding..."
+cargo build
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ Build successful!"
+    echo ""
+    echo "Regenerating assembly..."
+    cargo run hallo.mg 2>&1 | grep -v "Compiling\|Finished\|Running" > hallo_full.txt
+    
+    # Extract just the assembly (after the last debug output)
+    tail -1 hallo_full.txt > output.s
+    
+    echo "Testing assembly..."
+    gcc -c output.s -o output.o 2>&1 | head -20
+    
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅✅✅ SUCCESS! Assembly compiled!"
+        nm output.o | grep " T "
+    else
+        echo ""
+        echo "Showing first 30 lines of output.s:"
+        head -30 output.s
+    fi
+else
+    echo "❌ Build failed"
+fi

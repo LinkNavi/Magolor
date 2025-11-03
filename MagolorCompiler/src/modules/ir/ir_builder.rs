@@ -14,6 +14,7 @@ pub struct IRBuilder {
     local_counter: usize,
     symbol_table: Vec<HashMap<String, (IRValue, IRType)>>,
     loop_stack: Vec<LoopContext>,
+    current_class: Option<String>,
 }
 
 struct LoopContext {
@@ -32,6 +33,7 @@ impl IRBuilder {
             local_counter: 0,
             symbol_table: vec![HashMap::new()],
             loop_stack: Vec::new(),
+            current_class: None,
         }
     }
 
@@ -44,13 +46,13 @@ impl IRBuilder {
 
     fn process_top_level(&mut self, item: TopLevel) -> Result<(), String> {
         match item {
-            TopLevel::Import(module) => {
+            TopLevel::Import(_module) => {
                 // Handle imports - register system packages
                 Ok(())
             }
             TopLevel::Function(func) => self.build_function(func),
             TopLevel::Class(class) => self.build_class(class),
-            TopLevel::Namespace { name, items } => {
+            TopLevel::Namespace { name: _, items } => {
                 for item in items {
                     self.process_top_level(item)?;
                 }
@@ -123,42 +125,84 @@ impl IRBuilder {
         Ok(())
     }
 
-    fn build_class(&mut self, class: ClassDef) -> Result<(), String> {
-        // Build methods
-        for method in class.methods {
-            let method_name = format!("{}.{}", class.name, method.name);
-            let mut new_method = method.clone();
-            new_method.name = method_name;
-            self.build_function(new_method)?;
-        }
-        Ok(())
+fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
+    match val {
+        ASTValue::Int(n) => Some(IRConstant::I32(*n)),
+        ASTValue::Int64(n) => Some(IRConstant::I64(*n)),
+        ASTValue::Float32(f) => Some(IRConstant::F32((*f).into())),
+        ASTValue::Float64(f) => Some(IRConstant::F64((*f).into())),
+        ASTValue::Bool(b) => Some(IRConstant::Bool(*b)),
+        ASTValue::Str(s) => Some(IRConstant::String(s.clone())),
+        ASTValue::Null => Some(IRConstant::Null),
+        _ => None,
     }
+}
+
+    fn build_class(&mut self, class: ClassDef) -> Result<(), String> {
+    let class_name = class.name.clone();
+    self.current_class = Some(class_name.clone());
+    
+    // Register static fields as globals
+    for field in &class.fields {
+        if field.is_static {
+            let global_name = format!("{}.{}", class_name, field.name);
+            let ty = self.convert_type(&field.field_type);
+            let init = field.default_value.as_ref()
+                .and_then(|v| self.ast_value_to_constant(v));
+            
+            self.program.globals.insert(
+                global_name.clone(),
+                IRGlobal {
+                    name: global_name.clone(),
+                    ty: ty.clone(),
+                    init,
+                    is_const: false,
+                    alignment: ty.alignment(),
+                },
+            );
+            
+            // Register in symbol table for easy access
+            self.symbol_table[0].insert(
+                field.name.clone(),
+                (IRValue::Global(global_name), ty)
+            );
+        }
+    }
+    
+    // Build methods
+    for method in class.methods {
+        let method_name = format!("{}.{}", class_name, method.name);
+        let mut new_method = method.clone();
+        new_method.name = method_name;
+        self.build_function(new_method)?;
+    }
+    
+    self.current_class = None;
+    Ok(())
+}
 
     fn build_statement(&mut self, func: &mut IRFunction, stmt: Statement) -> Result<(), String> {
         match stmt {
-            Statement::VarDecl { name, var_type, value, is_mutable } => {
+            Statement::VarDecl { name, var_type, value, is_mutable: _ } => {
                 let ty = self.convert_type(&var_type);
                 let local_idx = self.local_counter;
                 self.local_counter += 1;
 
-                let reg = self.next_register();
-                self.emit_instruction(func, IRInstruction::Alloca {
-                    dst: reg,
-                    ty: ty.clone(),
-                    count: None,
-                });
-
+                // Use Local instead of a register for the address
+                let addr = IRValue::Local(local_idx);
+                
                 if let Some(val) = value {
                     let val_reg = self.build_expression(func, val)?;
                     self.emit_instruction(func, IRInstruction::Store {
-                        addr: IRValue::Register(reg),
+                        addr: addr.clone(),
                         value: val_reg,
                         ty: ty.clone(),
                     });
                 }
 
+                // Register the variable as a Local slot
                 self.symbol_table.last_mut().unwrap()
-                    .insert(name, (IRValue::Register(reg), ty));
+                    .insert(name, (addr, ty));
                 Ok(())
             }
 
@@ -237,14 +281,15 @@ impl IRBuilder {
 
             _ => Ok(()),
         }
+        
     }
 
     fn build_expression(&mut self, func: &mut IRFunction, expr: ASTValue) -> Result<IRValue, String> {
         match expr {
             ASTValue::Int(n) => Ok(IRValue::Constant(IRConstant::I32(n))),
             ASTValue::Int64(n) => Ok(IRValue::Constant(IRConstant::I64(n))),
-            ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32((*f).into()))),
-            ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64((*f).into()))),
+            ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32(f.into()))),
+            ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64(f.into()))),
             ASTValue::Bool(b) => Ok(IRValue::Constant(IRConstant::Bool(b))),
             ASTValue::Str(s) => {
                 let id = self.program.string_literals.len();
@@ -516,7 +561,7 @@ impl IRBuilder {
         }
     }
 
-    fn build_lvalue(&mut self, func: &mut IRFunction, expr: ASTValue) -> Result<IRValue, String> {
+    fn build_lvalue(&mut self, _func: &mut IRFunction, expr: ASTValue) -> Result<IRValue, String> {
         match expr {
             ASTValue::VarRef(name) => {
                 if let Some((val, _)) = self.lookup_symbol(&name) {

@@ -212,7 +212,7 @@ impl PeepholeOptimizer {
         // Redundant load/store elimination
         if let (
             IRInstruction::Store { addr: addr1, value, .. },
-            IRInstruction::Load { dst, addr: addr2, ty },
+            IRInstruction::Load { dst, addr: addr2, ty: _ },
         ) = (instr1, instr2)
         {
             if addr1 == addr2 {
@@ -228,8 +228,8 @@ impl PeepholeOptimizer {
 
         // x = a + b; y = x + c => y = a + b + c (strength reduction)
         if let (
-            IRInstruction::Add { dst: dst1, lhs: lhs1, rhs: rhs1, ty: ty1 },
-            IRInstruction::Add { dst: dst2, lhs: IRValue::Register(lhs2), rhs: rhs2, ty: ty2 },
+            IRInstruction::Add { dst: dst1, lhs: _lhs1, rhs: rhs1, ty: _ty1 },
+            IRInstruction::Add { dst: _dst2, lhs: IRValue::Register(lhs2), rhs: rhs2, ty: _ty2 },
         ) = (instr1, instr2)
         {
             if dst1 == lhs2 {

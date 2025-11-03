@@ -1,0 +1,1669 @@
+warning: unused imports: `IRBasicBlock`, `IRFunction`, `IRInstruction`, `IRProgram`, `IRType`, and `IRValue`
+  --> src/modules/ir/mod.rs:18:20
+   |
+18 | ...::{IRProgram, IRFunction, IRBasicBlock, IRInstruction, IRValue, IRType};
+   |       ^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> src/modules/ir/peephole.rs:115:13
+    |
+105 |             IRInstruction::Mul { dst, rhs, .. } => {
+    |             ----------------------------------- matches all the relevant values
+...
+115 |             IRInstruction::Mul { dst, lhs, rhs, .. } => {
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> src/modules/ir/peephole.rs:125:13
+    |
+105 |             IRInstruction::Mul { dst, rhs, .. } => {
+    |             ----------------------------------- matches all the relevant values
+...
+125 |             IRInstruction::Mul { dst, lhs, rhs, .. } => {
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: unreachable pattern
+   --> src/modules/ir/peephole.rs:178:13
+    |
+168 |             IRInstruction::Xor { dst, lhs, rhs } => {
+    |             ------------------------------------ matches all the relevant values
+...
+178 |             IRInstruction::Xor { dst, lhs, rhs } => {
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: field `0` is never read
+  --> src/modules/ast.rs:64:18
+   |
+64 |     ArrayLiteral(Vec<ASTValue>),
+   |     ------------ ^^^^^^^^^^^^^
+   |     |
+   |     field in this variant
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+   |
+64 -     ArrayLiteral(Vec<ASTValue>),
+64 +     ArrayLiteral(()),
+   |
+
+warning: fields `array` and `index` are never read
+  --> src/modules/ast.rs:66:9
+   |
+65 |     ArrayAccess {
+   |     ----------- fields in this variant
+66 |         array: Box<ASTValue>,
+   |         ^^^^^
+67 |         index: Box<ASTValue>,
+   |         ^^^^^
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `object` and `member` are never read
+  --> src/modules/ast.rs:70:9
+   |
+69 |     MemberAccess {
+   |     ------------ fields in this variant
+70 |         object: Box<ASTValue>,
+   |         ^^^^^^
+71 |         member: String,
+   |         ^^^^^^
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `object`, `method`, and `args` are never read
+  --> src/modules/ast.rs:78:9
+   |
+77 |     MethodCall {
+   |     ---------- fields in this variant
+78 |         object: Box<ASTValue>,
+   |         ^^^^^^
+79 |         method: String,
+   |         ^^^^^^
+80 |         args: Vec<ASTValue>,
+   |         ^^^^
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `op` and `operand` are never read
+  --> src/modules/ast.rs:88:9
+   |
+87 |     Unary {
+   |     ----- fields in this variant
+88 |         op: UnaryOp,
+   |         ^^
+89 |         operand: Box<ASTValue>,
+   |         ^^^^^^^
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `condition`, `then_val`, and `else_val` are never read
+  --> src/modules/ast.rs:97:9
+   |
+96 |     Ternary {
+   |     ------- fields in this variant
+97 |         condition: Box<ASTValue>,
+   |         ^^^^^^^^^
+98 |         then_val: Box<ASTValue>,
+   |         ^^^^^^^^
+99 |         else_val: Box<ASTValue>,
+   |         ^^^^^^^^
+   |
+   = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Cast` is never constructed
+   --> src/modules/ast.rs:101:5
+    |
+ 55 | pub enum ASTValue {
+    |          -------- variant in this enum
+...
+101 |     Cast {
+    |     ^^^^
+    |
+    = note: `ASTValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `is_mutable` is never read
+   --> src/modules/ast.rs:113:9
+    |
+109 |     VarDecl {
+    |     ------- field in this variant
+...
+113 |         is_mutable: bool,
+    |         ^^^^^^^^^^
+    |
+    = note: `Statement` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `target`, `op`, and `value` are never read
+   --> src/modules/ast.rs:120:9
+    |
+119 |     CompoundAssignment {
+    |     ------------------ fields in this variant
+120 |         target: ASTValue,
+    |         ^^^^^^
+121 |         op: BinaryOp,
+    |         ^^
+122 |         value: ASTValue,
+    |         ^^^^^
+    |
+    = note: `Statement` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `item`, `item_type`, `collection`, and `body` are never read
+   --> src/modules/ast.rs:145:9
+    |
+144 |     ForEach {
+    |     ------- fields in this variant
+145 |         item: String,
+    |         ^^^^
+146 |         item_type: Type,
+    |         ^^^^^^^^^
+147 |         collection: ASTValue,
+    |         ^^^^^^^^^^
+148 |         body: Vec<Statement>,
+    |         ^^^^
+    |
+    = note: `Statement` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `value` and `arms` are never read
+   --> src/modules/ast.rs:151:9
+    |
+150 |     Match {
+    |     ----- fields in this variant
+151 |         value: ASTValue,
+    |         ^^^^^
+152 |         arms: Vec<MatchArm>,
+    |         ^^^^
+    |
+    = note: `Statement` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `pattern` and `body` are never read
+   --> src/modules/ast.rs:159:9
+    |
+158 | pub struct MatchArm {
+    |            -------- fields in this struct
+159 |     pub pattern: Pattern,
+    |         ^^^^^^^
+160 |     pub body: Vec<Statement>,
+    |         ^^^^
+    |
+    = note: `MatchArm` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+   --> src/modules/ast.rs:165:13
+    |
+165 |     Literal(ASTValue),
+    |     ------- ^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `Pattern` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+165 -     Literal(ASTValue),
+165 +     Literal(()),
+    |
+
+warning: field `0` is never read
+   --> src/modules/ast.rs:167:16
+    |
+167 |     Identifier(String),
+    |     ---------- ^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `Pattern` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+167 -     Identifier(String),
+167 +     Identifier(()),
+    |
+
+warning: field `default_value` is never read
+   --> src/modules/ast.rs:181:9
+    |
+178 | pub struct Parameter {
+    |            --------- field in this struct
+...
+181 |     pub default_value: Option<ASTValue>,
+    |         ^^^^^^^^^^^^^
+    |
+    = note: `Parameter` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `access` and `is_static` are never read
+   --> src/modules/ast.rs:190:9
+    |
+185 | pub struct FunctionDef {
+    |            ----------- fields in this struct
+...
+190 |     pub access: AccessModifier,
+    |         ^^^^^^
+191 |     pub is_static: bool,
+    |         ^^^^^^^^^
+    |
+    = note: `FunctionDef` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `access` is never read
+   --> src/modules/ast.rs:198:9
+    |
+195 | pub struct Field {
+    |            ----- field in this struct
+...
+198 |     pub access: AccessModifier,
+    |         ^^^^^^
+    |
+    = note: `Field` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `constructor` and `access` are never read
+   --> src/modules/ast.rs:208:9
+    |
+204 | pub struct ClassDef {
+    |            -------- fields in this struct
+...
+208 |     pub constructor: Option<FunctionDef>,
+    |         ^^^^^^^^^^^
+209 |     pub access: AccessModifier,
+    |         ^^^^^^
+    |
+    = note: `ClassDef` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `name`, `fields`, and `access` are never read
+   --> src/modules/ast.rs:214:9
+    |
+213 | pub struct StructDef {
+    |            --------- fields in this struct
+214 |     pub name: String,
+    |         ^^^^
+215 |     pub fields: Vec<Field>,
+    |         ^^^^^^
+216 |     pub access: AccessModifier,
+    |         ^^^^^^
+    |
+    = note: `StructDef` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `name`, `variants`, and `access` are never read
+   --> src/modules/ast.rs:221:9
+    |
+220 | pub struct EnumDef {
+    |            ------- fields in this struct
+221 |     pub name: String,
+    |         ^^^^
+222 |     pub variants: Vec<String>,
+    |         ^^^^^^^^
+223 |     pub access: AccessModifier,
+    |         ^^^^^^
+    |
+    = note: `EnumDef` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `0` is never read
+   --> src/modules/ast.rs:231:12
+    |
+231 |     Struct(StructDef),
+    |     ------ ^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `TopLevel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+231 -     Struct(StructDef),
+231 +     Struct(()),
+    |
+
+warning: field `0` is never read
+   --> src/modules/ast.rs:232:10
+    |
+232 |     Enum(EnumDef),
+    |     ---- ^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `TopLevel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+232 -     Enum(EnumDef),
+232 +     Enum(()),
+    |
+
+warning: field `name` is never read
+   --> src/modules/ast.rs:234:9
+    |
+233 |     Namespace {
+    |     --------- field in this variant
+234 |         name: String,
+    |         ^^^^
+    |
+    = note: `TopLevel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `peek_ahead` is never used
+  --> src/modules/statement_parser.rs:26:8
+   |
+13 | impl<'a> StatementParser<'a> {
+   | ---------------------------- method in this implementation
+...
+26 |     fn peek_ahead(&self, n: usize) -> Option<&Token> {
+   |        ^^^^^^^^^^
+
+warning: variants `Struct` and `Function` are never constructed
+  --> src/modules/ir/ir_types.rs:17:5
+   |
+ 7 | pub enum IRType {
+   |          ------ variants in this enum
+...
+17 |     Struct(Vec<IRType>),
+   |     ^^^^^^
+18 |     Function(Vec<IRType>, Box<IRType>),
+   |     ^^^^^^^^
+   |
+   = note: `IRType` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Local` is never constructed
+  --> src/modules/ir/ir_types.rs:53:5
+   |
+49 | pub enum IRValue {
+   |          ------- variant in this enum
+...
+53 |     Local(usize),
+   |     ^^^^^
+   |
+   = note: `IRValue` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `I8` and `I16` are never constructed
+  --> src/modules/ir/ir_types.rs:60:5
+   |
+59 | pub enum IRConstant {
+   |          ---------- variants in this enum
+60 |     I8(i8),
+   |     ^^
+61 |     I16(i16),
+   |     ^^^
+   |
+   = note: `IRConstant` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:115:51
+    |
+115 |     Sub { dst: usize, lhs: IRValue, rhs: IRValue, ty: IRType },
+    |     --- field in this variant                     ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:116:51
+    |
+116 |     Mul { dst: usize, lhs: IRValue, rhs: IRValue, ty: IRType },
+    |     --- field in this variant                     ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:117:51
+    |
+117 |     Div { dst: usize, lhs: IRValue, rhs: IRValue, ty: IRType },
+    |     --- field in this variant                     ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `lhs`, `rhs`, and `ty` are never read
+   --> src/modules/ir/ir_types.rs:118:23
+    |
+118 |     Mod { dst: usize, lhs: IRValue, rhs: IRValue, ty: IRType },
+    |     ---               ^^^           ^^^           ^^
+    |     |
+    |     fields in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `lhs` is never read
+   --> src/modules/ir/ir_types.rs:121:23
+    |
+121 |     And { dst: usize, lhs: IRValue, rhs: IRValue },
+    |     ---               ^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `lhs` and `rhs` are never read
+   --> src/modules/ir/ir_types.rs:124:23
+    |
+124 |     Shl { dst: usize, lhs: IRValue, rhs: IRValue },
+    |     ---               ^^^           ^^^
+    |     |
+    |     fields in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `lhs`, `rhs`, and `signed` are never read
+   --> src/modules/ir/ir_types.rs:125:23
+    |
+125 |     Shr { dst: usize, lhs: IRValue, rhs: IRValue, signed: bool },
+    |     ---               ^^^           ^^^           ^^^^^^
+    |     |
+    |     fields in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:129:62
+    |
+129 |     Cmp { dst: usize, op: CmpOp, lhs: IRValue, rhs: IRValue, ty: IRType },
+    |     --- field in this variant                                ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:132:39
+    |
+132 |     Load { dst: usize, addr: IRValue, ty: IRType },
+    |     ---- field in this variant        ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:133:44
+    |
+133 |     Store { addr: IRValue, value: IRValue, ty: IRType },
+    |     ----- field in this variant            ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `ty` and `count` are never read
+   --> src/modules/ir/ir_types.rs:134:26
+    |
+134 |     Alloca { dst: usize, ty: IRType, count: Option<usize> },
+    |     ------               ^^          ^^^^^
+    |     |
+    |     fields in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `ty` is never read
+   --> src/modules/ir/ir_types.rs:142:66
+    |
+142 |     Call { dst: Option<usize>, func: String, args: Vec<IRValue>, ty: IRType },
+    |     ---- field in this variant                                   ^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `incoming` and `ty` are never read
+   --> src/modules/ir/ir_types.rs:155:23
+    |
+155 |     Phi { dst: usize, incoming: Vec<(IRValue, usize)>, ty: IRType },
+    |     ---               ^^^^^^^^                         ^^
+    |     |
+    |     fields in this variant
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: multiple variants are never constructed
+   --> src/modules/ir/ir_types.rs:126:5
+    |
+112 | pub enum IRInstruction {
+    |          ------------- variants in this enum
+...
+126 |     Not { dst: usize, src: IRValue },
+    |     ^^^
+...
+143 |     IndirectCall { dst: Option<usize>, func: IRValue, args: Vec<IRValue>, ty...
+    |     ^^^^^^^^^^^^
+...
+146 |     Cast { dst: usize, src: IRValue, from_ty: IRType, to_ty: IRType },
+    |     ^^^^
+147 |     Bitcast { dst: usize, src: IRValue, to_ty: IRType },
+    |     ^^^^^^^
+...
+150 |     GetElementPtr { dst: usize, base: IRValue, indices: Vec<IRValue>, ty: IR...
+    |     ^^^^^^^^^^^^^
+151 |     ExtractValue { dst: usize, aggregate: IRValue, index: usize },
+    |     ^^^^^^^^^^^^
+152 |     InsertValue { dst: usize, aggregate: IRValue, value: IRValue, index: usi...
+    |     ^^^^^^^^^^^
+...
+156 |     Select { dst: usize, cond: IRValue, true_val: IRValue, false_val: IRValu...
+    |     ^^^^^^
+...
+160 |     Intrinsic { dst: Option<usize>, name: String, args: Vec<IRValue> },
+    |     ^^^^^^^^^
+    |
+    = note: `IRInstruction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `FEq`, `FNe`, `FLt`, `FLe`, `FGt`, and `FGe` are never constructed
+   --> src/modules/ir/ir_types.rs:172:5
+    |
+164 | pub enum CmpOp {
+    |          ----- variants in this enum
+...
+172 |     FEq,
+    |     ^^^
+173 |     FNe,
+    |     ^^^
+174 |     FLt,
+    |     ^^^
+175 |     FLe,
+    |     ^^^
+176 |     FGt,
+    |     ^^^
+177 |     FGe,
+    |     ^^^
+    |
+    = note: `CmpOp` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `name` and `is_inline` are never read
+   --> src/modules/ir/ir_types.rs:205:9
+    |
+204 | pub struct IRFunction {
+    |            ---------- fields in this struct
+205 |     pub name: String,
+    |         ^^^^
+...
+211 |     pub is_inline: bool,
+    |         ^^^^^^^^^
+    |
+    = note: `IRFunction` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `pure`, `const_fn`, `hot`, and `cold` are never read
+   --> src/modules/ir/ir_types.rs:220:9
+    |
+217 | pub struct FunctionAttributes {
+    |            ------------------ fields in this struct
+...
+220 |     pub pure: bool,
+    |         ^^^^
+221 |     pub const_fn: bool,
+    |         ^^^^^^^^
+222 |     pub hot: bool,
+    |         ^^^
+223 |     pub cold: bool,
+    |         ^^^^
+    |
+    = note: `FunctionAttributes` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `name`, `is_const`, and `alignment` are never read
+   --> src/modules/ir/ir_types.rs:241:9
+    |
+240 | pub struct IRGlobal {
+    |            -------- fields in this struct
+241 |     pub name: String,
+    |         ^^^^
+...
+244 |     pub is_const: bool,
+    |         ^^^^^^^^
+245 |     pub alignment: usize,
+    |         ^^^^^^^^^
+    |
+    = note: `IRGlobal` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `type_definitions` is never read
+   --> src/modules/ir/ir_types.rs:253:9
+    |
+249 | pub struct IRProgram {
+    |            --------- field in this struct
+...
+253 |     pub type_definitions: HashMap<String, IRType>,
+    |         ^^^^^^^^^^^^^^^^
+    |
+    = note: `IRProgram` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: variants `Basic` and `Maximum` are never constructed
+  --> src/modules/ir/ir_optimizer.rs:19:5
+   |
+17 | pub enum OptimizationLevel {
+   |          ----------------- variants in this enum
+18 |     None,       // O0
+19 |     Basic,      // O1
+   |     ^^^^^
+20 |     Aggressive, // O2
+21 |     Maximum,    // O3
+   |     ^^^^^^^
+   |
+   = note: `OptimizationLevel` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `FunctionAnalysis` is never constructed
+   --> src/modules/ir/ir_optimizer.rs:148:12
+    |
+148 | pub struct FunctionAnalysis {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `analyze` is never used
+   --> src/modules/ir/ir_optimizer.rs:154:12
+    |
+153 | impl FunctionAnalysis {
+    | --------------------- associated function in this implementation
+154 |     pub fn analyze(program: &IRProgram) -> Self {
+    |            ^^^^^^^
+
+warning: struct `ControlFlowAnalyzer` is never constructed
+ --> src/modules/ir/control_flow.rs:7:12
+  |
+7 | pub struct ControlFlowAnalyzer;
+  |            ^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated functions are never used
+   --> src/modules/ir/control_flow.rs:10:12
+    |
+  9 | impl ControlFlowAnalyzer {
+    | ------------------------ associated functions in this implementation
+ 10 |     pub fn analyze(func: &mut IRFunction) {
+    |            ^^^^^^^
+...
+ 17 |     fn build_cfg(func: &mut IRFunction) {
+    |        ^^^^^^^^^
+...
+ 37 |     fn get_successors(block: &IRBasicBlock) -> Vec<usize> {
+    |        ^^^^^^^^^^^^^^
+...
+ 52 |     fn compute_dominators(func: &mut IRFunction) {
+    |        ^^^^^^^^^^^^^^^^^^
+...
+107 |     fn compute_postdominators(_func: &mut IRFunction) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+112 |     fn identify_natural_loops(func: &mut IRFunction) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+132 |     fn find_loop_blocks(func: &IRFunction, header: usize, tail: usize) -> Ve...
+    |        ^^^^^^^^^^^^^^^^
+...
+152 |     pub fn compute_reaching_definitions(func: &IRFunction) -> HashMap<usize,...
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+192 |     fn get_defined_reg(instr: &IRInstruction) -> Option<usize> {
+    |        ^^^^^^^^^^^^^^^
+...
+203 |     pub fn compute_live_ranges(func: &IRFunction) -> HashMap<usize, LiveRang...
+    |            ^^^^^^^^^^^^^^^^^^^
+...
+231 |     fn get_used_registers(instr: &IRInstruction) -> Vec<usize> {
+    |        ^^^^^^^^^^^^^^^^^^
+
+warning: struct `LiveRange` is never constructed
+   --> src/modules/ir/control_flow.rs:258:12
+    |
+258 | pub struct LiveRange {
+    |            ^^^^^^^^^
+
+warning: associated items `new`, `add_def`, `add_use`, and `overlaps` are never used
+   --> src/modules/ir/control_flow.rs:266:8
+    |
+265 | impl LiveRange {
+    | -------------- associated items in this implementation
+266 |     fn new(register: usize) -> Self {
+    |        ^^^
+...
+275 |     fn add_def(&mut self, block: usize, instr: usize) {
+    |        ^^^^^^^
+...
+284 |     fn add_use(&mut self, block: usize, instr: usize) {
+    |        ^^^^^^^
+...
+294 |     pub fn overlaps(&self, other: &LiveRange) -> bool {
+    |            ^^^^^^^^
+
+warning: field `dominance_computed` is never read
+ --> src/modules/ir/ssa_transform.rs:8:5
+  |
+7 | pub struct SSATransform {
+  |            ------------ field in this struct
+8 |     dominance_computed: bool,
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: fields `available_registers`, `allocation`, and `spilled` are never read
+  --> src/modules/ir/register_allocator.rs:9:5
+   |
+ 8 | pub struct RegisterAllocator {
+   |            ----------------- fields in this struct
+ 9 |     available_registers: usize,
+   |     ^^^^^^^^^^^^^^^^^^^
+10 |     allocation: HashMap<usize, PhysicalRegister>,
+   |     ^^^^^^^^^^
+11 |     spilled: HashSet<usize>,
+   |     ^^^^^^^
+
+warning: multiple methods are never used
+   --> src/modules/ir/register_allocator.rs:43:12
+    |
+ 34 | impl RegisterAllocator {
+    | ---------------------- methods in this implementation
+...
+ 43 |     pub fn allocate(&mut self, func: &mut IRFunction) -> Result<(), String> {
+    |            ^^^^^^^^
+...
+ 64 |     fn build_interference_graph(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 87 |     fn graph_coloring(
+    |        ^^^^^^^^^^^^^^
+...
+165 |     fn choose_spill_candidate(
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+183 |     fn assign_registers(&mut self, coloring: HashMap<usize, usize>) {
+    |        ^^^^^^^^^^^^^^^^
+...
+213 |     fn insert_spill_code(&mut self, func: &mut IRFunction) -> Result<(), Str...
+    |        ^^^^^^^^^^^^^^^^^
+...
+258 |     fn get_used_virtual_regs(&self, instr: &IRInstruction) -> Vec<usize> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+...
+283 |     fn get_defined_virtual_reg(&self, instr: &IRInstruction) -> Option<usize> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+...
+293 |     pub fn get_allocation(&self) -> &HashMap<usize, PhysicalRegister> {
+    |            ^^^^^^^^^^^^^^
+
+warning: methods `inline_calls_in_function`, `inline_function_call`, `remap_instruction`, and `remap_value` are never used
+   --> src/modules/ir/inline_optimizer.rs:136:8
+    |
+ 13 | impl InlineOptimizer {
+    | -------------------- methods in this implementation
+...
+136 |     fn inline_calls_in_function(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+179 |     fn inline_function_call(
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+212 |     fn remap_instruction(
+    |        ^^^^^^^^^^^^^^^^^
+...
+253 |     fn remap_value(&self, val: &IRValue, reg_map: &HashMap<IRValue, IRValue>...
+    |        ^^^^^^^^^^^
+
+warning: fields `preheader` and `exit_blocks` are never read
+   --> src/modules/ir/loop_optimizer.rs:221:5
+    |
+218 | struct LoopInfo {
+    |        -------- fields in this struct
+...
+221 |     preheader: Option<usize>,
+    |     ^^^^^^^^^
+222 |     exit_blocks: Vec<usize>,
+    |     ^^^^^^^^^^^
+    |
+    = note: `LoopInfo` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `register_allocator` is never read
+  --> src/modules/ir/codegen.rs:10:5
+   |
+ 8 | pub struct CodeGenerator {
+   |            ------------- field in this struct
+ 9 |     target: Target,
+10 |     register_allocator: RegisterAllocator,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: variants `ARM64`, `WASM`, and `LLVM` are never constructed
+  --> src/modules/ir/codegen.rs:16:5
+   |
+14 | pub enum Target {
+   |          ------ variants in this enum
+15 |     X86_64,
+16 |     ARM64,
+   |     ^^^^^
+17 |     WASM,
+   |     ^^^^
+18 |     LLVM,
+   |     ^^^^
+   |
+   = note: `Target` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `get_package` and `get_function` are never used
+  --> src/modules/ir/system_packages.rs:24:12
+   |
+11 | impl SystemPackageRegistry {
+   | -------------------------- methods in this implementation
+...
+24 |     pub fn get_package(&self, name: &str) -> Option<&SystemPackage> {
+   |            ^^^^^^^^^^^
+...
+28 |     pub fn get_function(&self, package: &str, function: &str) -> Option<&Syst...
+   |            ^^^^^^^^^^^^
+
+warning: fields `functions` and `types` are never read
+  --> src/modules/ir/system_packages.rs:48:9
+   |
+46 | pub struct SystemPackage {
+   |            ------------- fields in this struct
+47 |     pub name: String,
+48 |     pub functions: Vec<SystemFunction>,
+   |         ^^^^^^^^^
+49 |     pub types: Vec<SystemType>,
+   |         ^^^^^
+   |
+   = note: `SystemPackage` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: fields `name`, `params`, `return_type`, `is_pure`, `is_intrinsic`, and `inline_hint` are never read
+  --> src/modules/ir/system_packages.rs:54:9
+   |
+53 | pub struct SystemFunction {
+   |            -------------- fields in this struct
+54 |     pub name: String,
+   |         ^^^^
+55 |     pub params: Vec<IRType>,
+   |         ^^^^^^
+56 |     pub return_type: IRType,
+   |         ^^^^^^^^^^^
+57 |     pub is_pure: bool,
+   |         ^^^^^^^
+58 |     pub is_intrinsic: bool,
+   |         ^^^^^^^^^^^^
+59 |     pub inline_hint: InlineHint,
+   |         ^^^^^^^^^^^
+   |
+   = note: `SystemFunction` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: fields `name` and `ir_type` are never read
+  --> src/modules/ir/system_packages.rs:64:9
+   |
+63 | pub struct SystemType {
+   |            ---------- fields in this struct
+64 |     pub name: String,
+   |         ^^^^
+65 |     pub ir_type: IRType,
+   |         ^^^^^^^
+   |
+   = note: `SystemType` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: method `add_custom_package` is never used
+   --> src/modules/ir/system_packages.rs:358:12
+    |
+357 | impl SystemPackageRegistry {
+    | -------------------------- method in this implementation
+358 |     pub fn add_custom_package(
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: function `compile_to_x86_64` is never used
+  --> src/modules/IR.rs:33:8
+   |
+33 | pub fn compile_to_x86_64(ast: Program, opt_level: OptimizationLevel) -> Resul...
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `compile_to_llvm_ir` is never used
+  --> src/modules/IR.rs:49:8
+   |
+49 | pub fn compile_to_llvm_ir(ast: Program, opt_level: OptimizationLevel) -> Resu...
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `compile_to_wasm` is never used
+  --> src/modules/IR.rs:65:8
+   |
+65 | pub fn compile_to_wasm(ast: Program, opt_level: OptimizationLevel) -> Result<...
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `add_custom_package` is never used
+  --> src/modules/IR.rs:81:8
+   |
+81 | pub fn add_custom_package(
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: module `IR` should have a snake case name
+  --> src/modules/mod.rs:10:9
+   |
+10 | pub mod IR;
+   |         ^^ help: convert the identifier to snake case: `ir`
+   |
+   = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `MagolorCompiler` (bin "MagolorCompiler") generated 74 warnings (run `cargo fix --bin "MagolorCompiler"` to apply 1 suggestion)
+
+=== Tokenization ===
+Generated 341 tokens
+
+=== Parsing ===
+Successfully parsed!
+
+=== AST ===
+[
+    Import(
+        "Console",
+    ),
+    Import(
+        "Math",
+    ),
+    Namespace {
+        name: "Calculator",
+        items: [
+            Class(
+                ClassDef {
+                    name: "MathOperations",
+                    fields: [
+                        Field {
+                            name: "callCount",
+                            field_type: I32,
+                            access: Private,
+                            is_static: true,
+                            default_value: Some(
+                                Int(
+                                    0,
+                                ),
+                            ),
+                        },
+                    ],
+                    methods: [
+                        FunctionDef {
+                            name: "add",
+                            params: [
+                                Parameter {
+                                    name: "a",
+                                    param_type: I32,
+                                    default_value: None,
+                                },
+                                Parameter {
+                                    name: "b",
+                                    param_type: I32,
+                                    default_value: None,
+                                },
+                            ],
+                            return_type: I32,
+                            body: [
+                                Expression(
+                                    Unary {
+                                        op: PostInc,
+                                        operand: VarRef(
+                                            "callCount",
+                                        ),
+                                    },
+                                ),
+                                Return(
+                                    Some(
+                                        Binary {
+                                            op: Add,
+                                            left: VarRef(
+                                                "a",
+                                            ),
+                                            right: VarRef(
+                                                "b",
+                                            ),
+                                        },
+                                    ),
+                                ),
+                            ],
+                            access: Public,
+                            is_static: true,
+                        },
+                        FunctionDef {
+                            name: "divide",
+                            params: [
+                                Parameter {
+                                    name: "a",
+                                    param_type: F64,
+                                    default_value: None,
+                                },
+                                Parameter {
+                                    name: "b",
+                                    param_type: F64,
+                                    default_value: None,
+                                },
+                            ],
+                            return_type: F64,
+                            body: [
+                                If {
+                                    condition: Comparison {
+                                        op: Equal,
+                                        left: VarRef(
+                                            "b",
+                                        ),
+                                        right: Float32(
+                                            0.0,
+                                        ),
+                                    },
+                                    then_body: [
+                                        Expression(
+                                            MethodCall {
+                                                object: VarRef(
+                                                    "console",
+                                                ),
+                                                method: "print",
+                                                args: [
+                                                    Str(
+                                                        "Error: Division by zero",
+                                                    ),
+                                                ],
+                                            },
+                                        ),
+                                        Return(
+                                            Some(
+                                                Float32(
+                                                    0.0,
+                                                ),
+                                            ),
+                                        ),
+                                    ],
+                                    elif_branches: [],
+                                    else_body: None,
+                                },
+                                Return(
+                                    Some(
+                                        Binary {
+                                            op: Div,
+                                            left: VarRef(
+                                                "a",
+                                            ),
+                                            right: VarRef(
+                                                "b",
+                                            ),
+                                        },
+                                    ),
+                                ),
+                            ],
+                            access: Public,
+                            is_static: true,
+                        },
+                        FunctionDef {
+                            name: "factorial",
+                            params: [
+                                Parameter {
+                                    name: "n",
+                                    param_type: I32,
+                                    default_value: None,
+                                },
+                            ],
+                            return_type: I32,
+                            body: [
+                                If {
+                                    condition: Comparison {
+                                        op: LessEqual,
+                                        left: VarRef(
+                                            "n",
+                                        ),
+                                        right: Int(
+                                            1,
+                                        ),
+                                    },
+                                    then_body: [
+                                        Return(
+                                            Some(
+                                                Int(
+                                                    1,
+                                                ),
+                                            ),
+                                        ),
+                                    ],
+                                    elif_branches: [],
+                                    else_body: None,
+                                },
+                                Return(
+                                    Some(
+                                        Binary {
+                                            op: Mul,
+                                            left: VarRef(
+                                                "n",
+                                            ),
+                                            right: FuncCall {
+                                                name: "factorial",
+                                                args: [
+                                                    Binary {
+                                                        op: Sub,
+                                                        left: VarRef(
+                                                            "n",
+                                                        ),
+                                                        right: Int(
+                                                            1,
+                                                        ),
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    ),
+                                ),
+                            ],
+                            access: Public,
+                            is_static: true,
+                        },
+                        FunctionDef {
+                            name: "getCallCount",
+                            params: [],
+                            return_type: I32,
+                            body: [
+                                Return(
+                                    Some(
+                                        VarRef(
+                                            "callCount",
+                                        ),
+                                    ),
+                                ),
+                            ],
+                            access: Public,
+                            is_static: true,
+                        },
+                    ],
+                    constructor: None,
+                    access: Public,
+                },
+            ),
+        ],
+    },
+    Function(
+        FunctionDef {
+            name: "main",
+            params: [],
+            return_type: Void,
+            body: [
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Str(
+                                "=== Calculator Demo ===",
+                            ),
+                        ],
+                    },
+                ),
+                VarDecl {
+                    name: "result1",
+                    var_type: Auto,
+                    value: Some(
+                        MethodCall {
+                            object: MemberAccess {
+                                object: VarRef(
+                                    "Calculator",
+                                ),
+                                member: "MathOperations",
+                            },
+                            method: "add",
+                            args: [
+                                Int(
+                                    5,
+                                ),
+                                Int(
+                                    3,
+                                ),
+                            ],
+                        },
+                    ),
+                    is_mutable: false,
+                },
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Binary {
+                                op: Add,
+                                left: Str(
+                                    "5 + 3 = ",
+                                ),
+                                right: VarRef(
+                                    "result1",
+                                ),
+                            },
+                        ],
+                    },
+                ),
+                VarDecl {
+                    name: "result2",
+                    var_type: Auto,
+                    value: Some(
+                        MethodCall {
+                            object: MemberAccess {
+                                object: VarRef(
+                                    "Calculator",
+                                ),
+                                member: "MathOperations",
+                            },
+                            method: "divide",
+                            args: [
+                                Float32(
+                                    10.0,
+                                ),
+                                Float32(
+                                    2.0,
+                                ),
+                            ],
+                        },
+                    ),
+                    is_mutable: false,
+                },
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Binary {
+                                op: Add,
+                                left: Str(
+                                    "10 / 2 = ",
+                                ),
+                                right: VarRef(
+                                    "result2",
+                                ),
+                            },
+                        ],
+                    },
+                ),
+                VarDecl {
+                    name: "fact",
+                    var_type: Auto,
+                    value: Some(
+                        MethodCall {
+                            object: MemberAccess {
+                                object: VarRef(
+                                    "Calculator",
+                                ),
+                                member: "MathOperations",
+                            },
+                            method: "factorial",
+                            args: [
+                                Int(
+                                    5,
+                                ),
+                            ],
+                        },
+                    ),
+                    is_mutable: false,
+                },
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Binary {
+                                op: Add,
+                                left: Str(
+                                    "5! = ",
+                                ),
+                                right: VarRef(
+                                    "fact",
+                                ),
+                            },
+                        ],
+                    },
+                ),
+                VarDecl {
+                    name: "numbers",
+                    var_type: Array(
+                        I32,
+                    ),
+                    value: Some(
+                        ArrayLiteral(
+                            [
+                                Int(
+                                    1,
+                                ),
+                                Int(
+                                    2,
+                                ),
+                                Int(
+                                    3,
+                                ),
+                                Int(
+                                    4,
+                                ),
+                                Int(
+                                    5,
+                                ),
+                            ],
+                        ),
+                    ),
+                    is_mutable: false,
+                },
+                VarDecl {
+                    name: "sum",
+                    var_type: Auto,
+                    value: Some(
+                        Int(
+                            0,
+                        ),
+                    ),
+                    is_mutable: true,
+                },
+                ForEach {
+                    item: "num",
+                    item_type: I32,
+                    collection: VarRef(
+                        "numbers",
+                    ),
+                    body: [
+                        CompoundAssignment {
+                            target: VarRef(
+                                "sum",
+                            ),
+                            op: Add,
+                            value: VarRef(
+                                "num",
+                            ),
+                        },
+                    ],
+                },
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Binary {
+                                op: Add,
+                                left: Str(
+                                    "Sum of array: ",
+                                ),
+                                right: VarRef(
+                                    "sum",
+                                ),
+                            },
+                        ],
+                    },
+                ),
+                For {
+                    init: Some(
+                        VarDecl {
+                            name: "i",
+                            var_type: Auto,
+                            value: Some(
+                                Int(
+                                    0,
+                                ),
+                            ),
+                            is_mutable: false,
+                        },
+                    ),
+                    condition: Some(
+                        Comparison {
+                            op: Less,
+                            left: VarRef(
+                                "i",
+                            ),
+                            right: Int(
+                                3,
+                            ),
+                        },
+                    ),
+                    increment: Some(
+                        Expression(
+                            Unary {
+                                op: PostInc,
+                                operand: VarRef(
+                                    "i",
+                                ),
+                            },
+                        ),
+                    ),
+                    body: [
+                        Expression(
+                            MethodCall {
+                                object: VarRef(
+                                    "console",
+                                ),
+                                method: "print",
+                                args: [
+                                    Binary {
+                                        op: Add,
+                                        left: Str(
+                                            "Loop iteration: ",
+                                        ),
+                                        right: VarRef(
+                                            "i",
+                                        ),
+                                    },
+                                ],
+                            },
+                        ),
+                    ],
+                },
+                VarDecl {
+                    name: "day",
+                    var_type: Auto,
+                    value: Some(
+                        Int(
+                            3,
+                        ),
+                    ),
+                    is_mutable: false,
+                },
+                Match {
+                    value: VarRef(
+                        "day",
+                    ),
+                    arms: [
+                        MatchArm {
+                            pattern: Literal(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                            body: [
+                                Expression(
+                                    MethodCall {
+                                        object: VarRef(
+                                            "console",
+                                        ),
+                                        method: "print",
+                                        args: [
+                                            Str(
+                                                "Monday",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                        MatchArm {
+                            pattern: Literal(
+                                Int(
+                                    2,
+                                ),
+                            ),
+                            body: [
+                                Expression(
+                                    MethodCall {
+                                        object: VarRef(
+                                            "console",
+                                        ),
+                                        method: "print",
+                                        args: [
+                                            Str(
+                                                "Tuesday",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                        MatchArm {
+                            pattern: Literal(
+                                Int(
+                                    3,
+                                ),
+                            ),
+                            body: [
+                                Expression(
+                                    MethodCall {
+                                        object: VarRef(
+                                            "console",
+                                        ),
+                                        method: "print",
+                                        args: [
+                                            Str(
+                                                "Wednesday",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                        MatchArm {
+                            pattern: Wildcard,
+                            body: [
+                                Expression(
+                                    MethodCall {
+                                        object: VarRef(
+                                            "console",
+                                        ),
+                                        method: "print",
+                                        args: [
+                                            Str(
+                                                "Other day",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                        },
+                    ],
+                },
+                VarDecl {
+                    name: "count",
+                    var_type: Auto,
+                    value: Some(
+                        MethodCall {
+                            object: MemberAccess {
+                                object: VarRef(
+                                    "Calculator",
+                                ),
+                                member: "MathOperations",
+                            },
+                            method: "getCallCount",
+                            args: [],
+                        },
+                    ),
+                    is_mutable: false,
+                },
+                Expression(
+                    MethodCall {
+                        object: VarRef(
+                            "console",
+                        ),
+                        method: "print",
+                        args: [
+                            Binary {
+                                op: Add,
+                                left: Str(
+                                    "Total math operations: ",
+                                ),
+                                right: VarRef(
+                                    "count",
+                                ),
+                            },
+                        ],
+                    },
+                ),
+            ],
+            access: Public,
+            is_static: false,
+        },
+    ),
+]
+
+=== IR Generation ===
+Building IR...
+Generated 5 functions
+Generating target code...
+✅ Assembly written to: hallo.s
+    .text
+    .intel_syntax noprefix
+
+    .globl MathOperations.add
+MathOperations.add:
+    push rbp
+    mov rbp, rsp
+.L_MathOperations_add_0:
+    mov rax, rdi
+    add rax, rsi
+    mov rax, rax
+    jmp .L_MathOperations_add_epilogue
+.L_MathOperations_add_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl MathOperations.factorial
+MathOperations.factorial:
+    push rbp
+    mov rbp, rsp
+.L_MathOperations_factorial_0:
+    cmp rdi, 1
+    setle al
+    movzx rax, al
+    test rax, rax
+    jnz .L_MathOperations_factorial_1
+    jmp .L_MathOperations_factorial_2
+.L_MathOperations_factorial_1:
+    mov rax, 1
+    jmp .L_MathOperations_factorial_epilogue
+.L_MathOperations_factorial_2:
+.L_MathOperations_factorial_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl MathOperations.getCallCount
+MathOperations.getCallCount:
+    push rbp
+    mov rbp, rsp
+.L_MathOperations_getCallCount_0:
+    mov rax, [MathOperations.callCount]
+    jmp .L_MathOperations_getCallCount_epilogue
+.L_MathOperations_getCallCount_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl MathOperations.divide
+MathOperations.divide:
+    push rbp
+    mov rbp, rsp
+.L_MathOperations_divide_0:
+    cmp rsi, 0
+    sete al
+    movzx rax, al
+    test rax, rax
+    jnz .L_MathOperations_divide_1
+    jmp .L_MathOperations_divide_2
+.L_MathOperations_divide_1:
+    mov rax, 0
+    jmp .L_MathOperations_divide_epilogue
+.L_MathOperations_divide_2:
+.L_MathOperations_divide_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl main
+main:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+.L_main_0:
+    mov qword ptr [rax], 0
+    mov qword ptr [rbx], 0
+    mov qword ptr [rcx], 0
+    mov qword ptr [rdx], 0
+    mov qword ptr [rsi], 0
+    mov qword ptr [rdi], 0
+    jmp .L_main_1
+.L_main_1:
+    cmp r8, 3
+    setl al
+    movzx r9, al
+    test r9, r9
+    jnz .L_main_2
+    jmp .L_main_4
+.L_main_2:
+    jmp .L_main_3
+.L_main_3:
+    jmp .L_main_1
+.L_main_4:
+    mov qword ptr [r10], 3
+    mov qword ptr [r11], 0
+    jmp .L_main_epilogue
+.L_main_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+    .data
+MathOperations.callCount:
+    .quad 0
