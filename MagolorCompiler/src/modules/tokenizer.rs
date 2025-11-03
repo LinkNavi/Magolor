@@ -1,6 +1,6 @@
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq)]
+#[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
     #[regex(r#""([^"]*)""#, |lex| lex.slice().trim_matches('"').to_string())]
     String(String),
@@ -10,7 +10,7 @@ pub enum Token {
     Float64(f64),
     #[regex(r"[0-9]+\.[0-9]+f32", |lex| lex.slice().trim_end_matches("f32").parse::<f32>().ok())]
     Float32(f32),
-    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().parse::<f32>().ok())] // Default float is f32
+    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().parse::<f32>().ok())]
     DefaultFloat(f32),
     #[regex(r"[0-9]+i64", |lex| lex.slice().trim_end_matches("i64").parse::<i64>().ok())]
     Integer64(i64),
@@ -38,6 +38,76 @@ pub enum Token {
     Else,
     #[token("elif")]
     Elif,
+    #[token("while")]
+    While,
+    #[token("for")]
+    For,
+    #[token("in")]
+    In,
+    #[token("break")]
+    Break,
+    #[token("continue")]
+    Continue,
+    #[token("class")]
+    Class,
+    #[token("struct")]
+    Struct,
+    #[token("new")]
+    New,
+    #[token("this")]
+    This,
+    #[token("public")]
+    Public,
+    #[token("private")]
+    Private,
+    #[token("static")]
+    Static,
+    #[token("namespace")]
+    Namespace,
+    #[token("enum")]
+    Enum,
+    #[token("interface")]
+    Interface,
+    #[token("implements")]
+    Implements,
+    #[token("extends")]
+    Extends,
+    #[token("null")]
+    Null,
+    #[token("try")]
+    Try,
+    #[token("catch")]
+    Catch,
+    #[token("finally")]
+    Finally,
+    #[token("throw")]
+    Throw,
+    #[token("async")]
+    Async,
+    #[token("await")]
+    Await,
+    #[token("const")]
+    Const,
+    #[token("readonly")]
+    Readonly,
+    #[token("override")]
+    Override,
+    #[token("virtual")]
+    Virtual,
+    #[token("abstract")]
+    Abstract,
+    #[token("sealed")]
+    Sealed,
+    #[token("var")]
+    Var,
+    #[token("switch")]
+    Switch,
+    #[token("case")]
+    Case,
+    #[token("default")]
+    Default,
+    
+    // Operators
     #[token(">")]
     Greater,
     #[token("<")]
@@ -50,6 +120,50 @@ pub enum Token {
     GreaterEq,
     #[token("==")]
     EqEq,
+    #[token("&&")]
+    And,
+    #[token("||")]
+    Or,
+    #[token("!")]
+    Not,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Multiply,
+    #[token("/")]
+    Divide,
+    #[token("%")]
+    Modulo,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    MultiplyEq,
+    #[token("/=")]
+    DivideEq,
+    #[token("++")]
+    Increment,
+    #[token("--")]
+    Decrement,
+    #[token("&")]
+    BitwiseAnd,
+    #[token("|")]
+    BitwiseOr,
+    #[token("^")]
+    BitwiseXor,
+    #[token("<<")]
+    LeftShift,
+    #[token(">>")]
+    RightShift,
+    #[token("?.")]
+    NullConditional,
+    #[token("??")]
+    NullCoalesce,
+    #[token("=>")]
+    Arrow,
 
     // Type keywords
     #[token("i32")]
@@ -64,6 +178,20 @@ pub enum Token {
     StringType,
     #[regex("bool|Bool")]
     BoolType,
+    #[token("byte")]
+    ByteType,
+    #[token("short")]
+    ShortType,
+    #[token("long")]
+    LongType,
+    #[token("double")]
+    DoubleType,
+    #[token("decimal")]
+    DecimalType,
+    #[token("char")]
+    CharType,
+    #[token("object")]
+    ObjectType,
     
     // Punctuation
     #[token("(")]
@@ -74,6 +202,10 @@ pub enum Token {
     LBrace,
     #[token("}")]
     RBrace,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token(";")]
     Semicolon,
     #[token(":")]
@@ -84,18 +216,22 @@ pub enum Token {
     Comma,
     #[token(".")]
     Dot,
+    #[token("?")]
+    Question,
     
     // Identifiers (must come after keywords to avoid conflicts)
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
     
-    // Skip whitespace
+    // Skip whitespace and comments
     #[regex(r"[ \t\n\f]+", logos::skip)]
+    #[regex(r"//[^\n]*", logos::skip)]
+    #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip)]
     Error,
 }
 
 pub fn tokenizeFile(input: &str) -> Vec<Token> {
     Token::lexer(input)
-        .filter_map(|tok| tok.ok()) // only keep valid tokens
+        .filter_map(|tok| tok.ok())
         .collect()
 }

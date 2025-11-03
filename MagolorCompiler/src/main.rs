@@ -1,41 +1,49 @@
-
+// src/main.rs
 use std::env;
 use std::fs;
-use std::process::Command;
 use anyhow::Result;
-use logos::Logos;
 
+mod modules;
 
-
-mod modules {
-    pub mod tokenizer;
-    pub mod parser;
-    pub mod IR;
-}
+use modules::tokenizer;
+use modules::parser;
 
 fn main() -> Result<()> {
-    // Grab command-line arguments
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: {} <source file>", args[0]);
+        eprintln!("Usage: {} <source file>", args[0]);
         return Ok(());
     }
 
     let filename = &args[1];
+    println!("Compiling: {}", filename);
 
-    // Read the source file
-    println!("{}",filename);
+    // Read source file
     let source = fs::read_to_string(filename)?;
 
-    let tokens = modules::tokenizer::tokenizeFile(&source);
+    // Tokenize
+    println!("\n=== Tokenization ===");
+    let tokens = tokenizer::tokenize(&source);
+    println!("Generated {} tokens", tokens.len());
 
-    let AST = modules::parser::parseTokens(&tokens);
+    // Parse
+    println!("\n=== Parsing ===");
+    match parser::parse_tokens(&tokens) {
+        Ok(ast) => {
+            println!("Successfully parsed!");
+            println!("\n=== AST ===");
+            println!("{:#?}", ast);
 
-    println!("{:?}", AST);
-
-    modules::IR::compile(AST);
+            // TODO: Add IR generation
+            println!("\n=== Code Generation ===");
+            println!("Code generation not yet implemented");
+        }
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            std::process::exit(1);
+        }
+    }
 
     Ok(())
 }
-
