@@ -136,7 +136,7 @@ impl InlineOptimizer {
         candidates: &HashSet<String>,
     ) -> bool {
         let mut changed = false;
-        let mut new_blocks = Vec::new();
+        let mut new_blocks: Vec<IRBasicBlock> = Vec::new();
 
         for block_idx in 0..caller.blocks.len() {
             let mut new_instructions = Vec::new();

@@ -227,18 +227,11 @@ pub enum Token {
     // Skip whitespace
     #[regex(r"[ \t\n\r\f]+", logos::skip)]
     Whitespace,
-    
-    // Error token
-    #[error]
-    Error,
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
     Token::lexer(input)
-        .filter_map(|result| match result {
-            Ok(token) => Some(token),
-            Err(_) => None,
-        })
+        .filter_map(|result| result.ok())
         .collect()
 }
 

@@ -78,7 +78,7 @@ impl IRBuilder {
         let mut ir_func = IRFunction {
             name: func_name.clone(),
             params: params.clone(),
-            return_type,
+            return_type: return_type.clone(),
             blocks: Vec::new(),
             local_count: 0,
             register_count: 0,
@@ -106,7 +106,7 @@ impl IRBuilder {
 
         // Ensure function has return
         if !self.has_terminator(&ir_func) {
-            if return_type == IRType::Void {
+            if ir_func.return_type == IRType::Void {
                 self.emit_instruction(&mut ir_func, IRInstruction::Return { value: None });
             } else {
                 return Err(format!("Function '{}' missing return statement", func_name));

@@ -3,6 +3,28 @@
 
 use crate::modules::ir::ir_types::*;
 
+// Add after imports
+trait IntegerPowerOfTwo {
+    fn is_power_of_two(&self) -> bool;
+}
+
+impl IntegerPowerOfTwo for i32 {
+    fn is_power_of_two(&self) -> bool {
+        *self > 0 && (*self & (*self - 1)) == 0
+    }
+}
+
+impl IntegerPowerOfTwo for &i32 {
+    fn is_power_of_two(&self) -> bool {
+        **self > 0 && (**self & (**self - 1)) == 0
+    }
+}
+
+impl IntegerPowerOfTwo for &mut i32 {
+    fn is_power_of_two(&self) -> bool {
+        **self > 0 && (**self & (**self - 1)) == 0
+    }
+}
 pub struct PeepholeOptimizer;
 
 impl PeepholeOptimizer {

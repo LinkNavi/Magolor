@@ -45,7 +45,7 @@ impl IRType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IRValue {
     Register(usize),
     Constant(IRConstant),
@@ -55,17 +55,57 @@ pub enum IRValue {
     Undef,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IRConstant {
     I8(i8),
     I16(i16),
     I32(i32),
     I64(i64),
-    F32(f32),
-    F64(f64),
+    F32(OrderedFloat),
+    F64(OrderedFloat),
     Bool(bool),
     String(String),
     Null,
+}
+
+// Helper to make floats hashable and comparable
+#[derive(Debug, Clone, Copy)]
+pub struct OrderedFloat(f64);
+
+impl PartialEq for OrderedFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+
+impl Eq for OrderedFloat {}
+
+impl std::hash::Hash for OrderedFloat {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
+    }
+}
+
+impl From<f32> for OrderedFloat {
+    fn from(f: f32) -> Self {
+        OrderedFloat(f as f64)
+    }
+}
+
+impl From<f64> for OrderedFloat {
+    fn from(f: f64) -> Self {
+        OrderedFloat(f)
+    }
+}
+
+impl OrderedFloat {
+    pub fn as_f32(&self) -> f32 {
+        self.0 as f32
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        self.0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -169,7 +209,7 @@ pub struct IRFunction {
     pub local_count: usize,
     pub register_count: usize,
     pub is_inline: bool,
-    pub is_pure: bool, // For optimization
+    pub is_pure: bool,
     pub attributes: FunctionAttributes,
 }
 
