@@ -2,7 +2,7 @@
 // Loop optimization passes: unrolling, invariant code motion, strength reduction
 
 use crate::modules::ir::ir_types::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // Add after imports
 trait IntegerPowerOfTwo {

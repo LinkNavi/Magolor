@@ -2,7 +2,7 @@
 // Handles parsing of expressions using precedence climbing
 
 use crate::modules::tokenizer::Token;
-use crate::modules::ast::{ASTValue, BinaryOp, UnaryOp, ComparisonOp, Type};
+use crate::modules::ast::{ASTValue, BinaryOp, UnaryOp, ComparisonOp};
 
 pub struct ExpressionParser<'a> {
     tokens: &'a [Token],

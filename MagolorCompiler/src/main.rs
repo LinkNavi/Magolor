@@ -9,7 +9,7 @@ use modules::IR;
 use modules::parser;
 use modules::tokenizer;
 
-use crate::modules::ir::compile_to_ir;
+use crate::modules::IR::compile_to_ir;
 use crate::modules::ir::ir_optimizer::OptimizationLevel;
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

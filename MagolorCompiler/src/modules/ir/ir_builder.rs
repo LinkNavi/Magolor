@@ -243,8 +243,8 @@ impl IRBuilder {
         match expr {
             ASTValue::Int(n) => Ok(IRValue::Constant(IRConstant::I32(n))),
             ASTValue::Int64(n) => Ok(IRValue::Constant(IRConstant::I64(n))),
-            ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32(f))),
-            ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64(f))),
+            ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32((*f).into()))),
+            ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64((*f).into()))),
             ASTValue::Bool(b) => Ok(IRValue::Constant(IRConstant::Bool(b))),
             ASTValue::Str(s) => {
                 let id = self.program.string_literals.len();

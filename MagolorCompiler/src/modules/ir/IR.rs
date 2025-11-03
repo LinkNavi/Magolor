@@ -39,15 +39,18 @@ pub fn compile_to_ir(ast: Program, optimization_level: OptimizationLevel) -> Res
 // Public API for different compilation targets
 pub fn compile_to_x86_64(ast: Program, opt_level: OptimizationLevel) -> Result<String> {
     let builder = IRBuilder::new();
-    let mut program = builder.build(ast)?;
+    let mut program = builder.build(ast)
+        .map_err(|e| anyhow::anyhow!(e))?;
     
     if opt_level != OptimizationLevel::None {
         let mut optimizer = IROptimizer::new(opt_level);
-        optimizer.optimize(&mut program)?;
+        optimizer.optimize(&mut program)
+            .map_err(|e| anyhow::anyhow!(e))?;
     }
     
     let mut codegen = CodeGenerator::new(Target::X86_64);
-    Ok(codegen.generate(&program)?)
+    Ok(codegen.generate(&program)
+        .map_err(|e| anyhow::anyhow!(e))?)
 }
 
 pub fn compile_to_llvm_ir(ast: Program, opt_level: OptimizationLevel) -> Result<String> {

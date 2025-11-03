@@ -1,5 +1,5 @@
 // src/modules/ir/constant_folding.rs
-// Constant folding optimization pass
+// Constant folding optimization pass - FIXED VERSION
 
 use crate::modules::ir::ir_types::*;
 
@@ -52,7 +52,7 @@ impl ConstantFolder {
 
     fn fold_instruction(&self, instr: &IRInstruction) -> Option<IRInstruction> {
         match instr {
-            IRInstruction::Add { dst, lhs, rhs, ty } => {
+            IRInstruction::Add { dst, lhs, rhs, .. } => {
                 if let (IRValue::Constant(c1), IRValue::Constant(c2)) = (lhs, rhs) {
                     if let Some(result) = self.fold_add(c1, c2) {
                         return Some(IRInstruction::Move {
@@ -62,7 +62,7 @@ impl ConstantFolder {
                     }
                 }
             }
-            IRInstruction::Sub { dst, lhs, rhs, ty } => {
+            IRInstruction::Sub { dst, lhs, rhs, .. } => {
                 if let (IRValue::Constant(c1), IRValue::Constant(c2)) = (lhs, rhs) {
                     if let Some(result) = self.fold_sub(c1, c2) {
                         return Some(IRInstruction::Move {
@@ -72,7 +72,7 @@ impl ConstantFolder {
                     }
                 }
             }
-            IRInstruction::Mul { dst, lhs, rhs, ty } => {
+            IRInstruction::Mul { dst, lhs, rhs, .. } => {
                 if let (IRValue::Constant(c1), IRValue::Constant(c2)) = (lhs, rhs) {
                     if let Some(result) = self.fold_mul(c1, c2) {
                         return Some(IRInstruction::Move {
@@ -82,7 +82,7 @@ impl ConstantFolder {
                     }
                 }
             }
-            IRInstruction::Div { dst, lhs, rhs, ty } => {
+            IRInstruction::Div { dst, lhs, rhs, .. } => {
                 if let (IRValue::Constant(c1), IRValue::Constant(c2)) = (lhs, rhs) {
                     if let Some(result) = self.fold_div(c1, c2) {
                         return Some(IRInstruction::Move {
@@ -101,8 +101,14 @@ impl ConstantFolder {
         match (c1, c2) {
             (IRConstant::I32(a), IRConstant::I32(b)) => Some(IRConstant::I32(a.wrapping_add(*b))),
             (IRConstant::I64(a), IRConstant::I64(b)) => Some(IRConstant::I64(a.wrapping_add(*b))),
-            (IRConstant::F32(a), IRConstant::F32(b)) => Some(IRConstant::F32(a + b)),
-            (IRConstant::F64(a), IRConstant::F64(b)) => Some(IRConstant::F64(a + b)),
+            (IRConstant::F32(a), IRConstant::F32(b)) => {
+                let result = a.as_f32() + b.as_f32();
+                Some(IRConstant::F32(result.into()))
+            }
+            (IRConstant::F64(a), IRConstant::F64(b)) => {
+                let result = a.as_f64() + b.as_f64();
+                Some(IRConstant::F64(result.into()))
+            }
             _ => None,
         }
     }
@@ -111,8 +117,14 @@ impl ConstantFolder {
         match (c1, c2) {
             (IRConstant::I32(a), IRConstant::I32(b)) => Some(IRConstant::I32(a.wrapping_sub(*b))),
             (IRConstant::I64(a), IRConstant::I64(b)) => Some(IRConstant::I64(a.wrapping_sub(*b))),
-            (IRConstant::F32(a), IRConstant::F32(b)) => Some(IRConstant::F32(a - b)),
-            (IRConstant::F64(a), IRConstant::F64(b)) => Some(IRConstant::F64(a - b)),
+            (IRConstant::F32(a), IRConstant::F32(b)) => {
+                let result = a.as_f32() - b.as_f32();
+                Some(IRConstant::F32(result.into()))
+            }
+            (IRConstant::F64(a), IRConstant::F64(b)) => {
+                let result = a.as_f64() - b.as_f64();
+                Some(IRConstant::F64(result.into()))
+            }
             _ => None,
         }
     }
@@ -121,8 +133,14 @@ impl ConstantFolder {
         match (c1, c2) {
             (IRConstant::I32(a), IRConstant::I32(b)) => Some(IRConstant::I32(a.wrapping_mul(*b))),
             (IRConstant::I64(a), IRConstant::I64(b)) => Some(IRConstant::I64(a.wrapping_mul(*b))),
-            (IRConstant::F32(a), IRConstant::F32(b)) => Some(IRConstant::F32(a * b)),
-            (IRConstant::F64(a), IRConstant::F64(b)) => Some(IRConstant::F64(a * b)),
+            (IRConstant::F32(a), IRConstant::F32(b)) => {
+                let result = a.as_f32() * b.as_f32();
+                Some(IRConstant::F32(result.into()))
+            }
+            (IRConstant::F64(a), IRConstant::F64(b)) => {
+                let result = a.as_f64() * b.as_f64();
+                Some(IRConstant::F64(result.into()))
+            }
             _ => None,
         }
     }
@@ -135,11 +153,13 @@ impl ConstantFolder {
             (IRConstant::I64(a), IRConstant::I64(b)) if *b != 0 => {
                 Some(IRConstant::I64(a.wrapping_div(*b)))
             }
-            (IRConstant::F32(a), IRConstant::F32(b)) if *b != 0.0 => {
-                Some(IRConstant::F32(a / b))
+            (IRConstant::F32(a), IRConstant::F32(b)) if b.as_f32() != 0.0 => {
+                let result = a.as_f32() / b.as_f32();
+                Some(IRConstant::F32(result.into()))
             }
-            (IRConstant::F64(a), IRConstant::F64(b)) if *b != 0.0 => {
-                Some(IRConstant::F64(a / b))
+            (IRConstant::F64(a), IRConstant::F64(b)) if b.as_f64() != 0.0 => {
+                let result = a.as_f64() / b.as_f64();
+                Some(IRConstant::F64(result.into()))
             }
             _ => None,
         }
