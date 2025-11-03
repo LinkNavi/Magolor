@@ -6,4 +6,5 @@ pub mod tokenizer;
 pub mod expression_parser;
 pub mod statement_parser;
 pub mod parser;
+pub mod ir;
 pub mod IR;

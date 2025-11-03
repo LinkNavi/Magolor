@@ -1,8 +1,10 @@
+// src/modules/tokenizer.rs
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq, Clone)]
+#[derive(Logos, Debug, Clone, PartialEq)]
 pub enum Token {
-    #[regex(r#""([^"]*)""#, |lex| lex.slice().trim_matches('"').to_string())]
+    // String literals
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
     String(String),
     
     // Numeric literals
@@ -21,17 +23,7 @@ pub enum Token {
     #[regex(r"true|false", |lex| lex.slice().parse::<bool>().ok())]
     Bool(bool),
     
-    // Keywords
-    #[regex("fn|func|Fn|Func")]
-    Func,
-    #[regex("return|Return")]
-    Return,
-    #[token("let")]
-    Let,
-    #[token("use")]
-    Use,
-    #[regex("void|Void")]
-    Void,
+    // Keywords - Control Flow
     #[token("if")]
     If,
     #[token("else")]
@@ -42,129 +34,67 @@ pub enum Token {
     While,
     #[token("for")]
     For,
+    #[token("foreach")]
+    ForEach,
     #[token("in")]
     In,
+    #[token("match")]
+    Match,
+    #[token("case")]
+    Case,
     #[token("break")]
     Break,
     #[token("continue")]
     Continue,
+    #[token("return")]
+    Return,
+    
+    // Keywords - Declarations
+    #[token("fn")]
+    Func,
+    #[token("let")]
+    Let,
+    #[token("mut")]
+    Mut,
+    #[token("const")]
+    Const,
+    #[token("static")]
+    Static,
     #[token("class")]
     Class,
     #[token("struct")]
     Struct,
-    #[token("new")]
-    New,
-    #[token("this")]
-    This,
-    #[token("public")]
-    Public,
-    #[token("private")]
-    Private,
-    #[token("static")]
-    Static,
-    #[token("namespace")]
-    Namespace,
     #[token("enum")]
     Enum,
     #[token("interface")]
     Interface,
-    #[token("implements")]
-    Implements,
-    #[token("extends")]
-    Extends,
+    #[token("namespace")]
+    Namespace,
+    #[token("use")]
+    Use,
+    #[token("as")]
+    As,
+    
+    // Keywords - Access Modifiers
+    #[token("public")]
+    Public,
+    #[token("private")]
+    Private,
+    #[token("protected")]
+    Protected,
+    
+    // Keywords - Special
+    #[token("new")]
+    New,
+    #[token("this")]
+    This,
+    #[token("base")]
+    Base,
     #[token("null")]
     Null,
-    #[token("try")]
-    Try,
-    #[token("catch")]
-    Catch,
-    #[token("finally")]
-    Finally,
-    #[token("throw")]
-    Throw,
-    #[token("async")]
-    Async,
-    #[token("await")]
-    Await,
-    #[token("const")]
-    Const,
-    #[token("readonly")]
-    Readonly,
-    #[token("override")]
-    Override,
-    #[token("virtual")]
-    Virtual,
-    #[token("abstract")]
-    Abstract,
-    #[token("sealed")]
-    Sealed,
-    #[token("var")]
-    Var,
-    #[token("switch")]
-    Switch,
-    #[token("case")]
-    Case,
-    #[token("default")]
-    Default,
+    #[token("void")]
+    Void,
     
-    // Operators
-    #[token(">")]
-    Greater,
-    #[token("<")]
-    Less,
-    #[token("!=")]
-    NotEq,
-    #[token("<=")]
-    LessEq,
-    #[token(">=")]
-    GreaterEq,
-    #[token("==")]
-    EqEq,
-    #[token("&&")]
-    And,
-    #[token("||")]
-    Or,
-    #[token("!")]
-    Not,
-    #[token("+")]
-    Plus,
-    #[token("-")]
-    Minus,
-    #[token("*")]
-    Multiply,
-    #[token("/")]
-    Divide,
-    #[token("%")]
-    Modulo,
-    #[token("+=")]
-    PlusEq,
-    #[token("-=")]
-    MinusEq,
-    #[token("*=")]
-    MultiplyEq,
-    #[token("/=")]
-    DivideEq,
-    #[token("++")]
-    Increment,
-    #[token("--")]
-    Decrement,
-    #[token("&")]
-    BitwiseAnd,
-    #[token("|")]
-    BitwiseOr,
-    #[token("^")]
-    BitwiseXor,
-    #[token("<<")]
-    LeftShift,
-    #[token(">>")]
-    RightShift,
-    #[token("?.")]
-    NullConditional,
-    #[token("??")]
-    NullCoalesce,
-    #[token("=>")]
-    Arrow,
-
     // Type keywords
     #[token("i32")]
     I32Type,
@@ -174,24 +104,86 @@ pub enum Token {
     F32Type,
     #[token("f64")]
     F64Type,
-    #[regex("String|string")]
+    #[token("string")]
     StringType,
-    #[regex("bool|Bool")]
+    #[token("bool")]
     BoolType,
-    #[token("byte")]
-    ByteType,
-    #[token("short")]
-    ShortType,
-    #[token("long")]
-    LongType,
-    #[token("double")]
-    DoubleType,
-    #[token("decimal")]
-    DecimalType,
-    #[token("char")]
-    CharType,
-    #[token("object")]
-    ObjectType,
+    #[token("var")]
+    VarType,
+    
+    // Operators - Arithmetic
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+    #[token("%")]
+    Percent,
+    #[token("++")]
+    PlusPlus,
+    #[token("--")]
+    MinusMinus,
+    
+    // Operators - Comparison
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    NotEq,
+    #[token("<")]
+    Less,
+    #[token("<=")]
+    LessEq,
+    #[token(">")]
+    Greater,
+    #[token(">=")]
+    GreaterEq,
+    
+    // Operators - Logical
+    #[token("&&")]
+    AndAnd,
+    #[token("||")]
+    OrOr,
+    #[token("!")]
+    Not,
+    
+    // Operators - Bitwise
+    #[token("&")]
+    And,
+    #[token("|")]
+    Or,
+    #[token("^")]
+    Xor,
+    #[token("<<")]
+    Shl,
+    #[token(">>")]
+    Shr,
+    
+    // Operators - Assignment
+    #[token("=")]
+    Eq,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
+    #[token("%=")]
+    PercentEq,
+    #[token("&=")]
+    AndEq,
+    #[token("|=")]
+    OrEq,
+    #[token("^=")]
+    XorEq,
+    #[token("<<=")]
+    ShlEq,
+    #[token(">>=")]
+    ShrEq,
     
     // Punctuation
     #[token("(")]
@@ -210,28 +202,67 @@ pub enum Token {
     Semicolon,
     #[token(":")]
     Colon,
-    #[token("=")]
-    Eq,
+    #[token("::")]
+    ColonColon,
     #[token(",")]
     Comma,
     #[token(".")]
     Dot,
     #[token("?")]
     Question,
+    #[token("->")]
+    Arrow,
+    #[token("=>")]
+    FatArrow,
     
-    // Identifiers (must come after keywords to avoid conflicts)
+    // Identifiers (must come after keywords)
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
     
-    // Skip whitespace and comments
-    #[regex(r"[ \t\n\f]+", logos::skip)]
+    // Comments
     #[regex(r"//[^\n]*", logos::skip)]
     #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip)]
+    Comment,
+    
+    // Skip whitespace
+    #[regex(r"[ \t\n\r\f]+", logos::skip)]
+    Whitespace,
+    
+    // Error token
+    #[error]
     Error,
 }
 
-pub fn tokenizeFile(input: &str) -> Vec<Token> {
+pub fn tokenize(input: &str) -> Vec<Token> {
     Token::lexer(input)
-        .filter_map(|tok| tok.ok())
+        .filter_map(|result| match result {
+            Ok(token) => Some(token),
+            Err(_) => None,
+        })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_tokens() {
+        let input = "let x = 42;";
+        let tokens = tokenize(input);
+        assert_eq!(tokens[0], Token::Let);
+        assert_eq!(tokens[1], Token::Ident("x".to_string()));
+        assert_eq!(tokens[2], Token::Eq);
+        assert_eq!(tokens[3], Token::Integer(42));
+        assert_eq!(tokens[4], Token::Semicolon);
+    }
+
+    #[test]
+    fn test_operators() {
+        let input = "+ - * / % == != < > <= >= && || !";
+        let tokens = tokenize(input);
+        assert_eq!(tokens[0], Token::Plus);
+        assert_eq!(tokens[1], Token::Minus);
+        assert_eq!(tokens[2], Token::Star);
+    }
 }
