@@ -714,7 +714,7 @@ impl IRBuilder {
         Ok(())
     }
 
-   fn build_for_loop(
+    fn build_for_loop(
         &mut self,
         func: &mut IRFunction,
         init: Option<Box<Statement>>,
@@ -722,7 +722,6 @@ impl IRBuilder {
         increment: Option<Box<Statement>>,
         body: Vec<Statement>,
     ) -> Result<(), String> {
-        // Execute initialization in current block
         if let Some(init_stmt) = init {
             self.build_statement(func, *init_stmt)?;
         }
@@ -732,10 +731,8 @@ impl IRBuilder {
         let inc_block = self.create_block_id();
         let exit_block = self.create_block_id();
 
-        // Branch to header
         self.emit_instruction(func, IRInstruction::Branch { target: header_block });
 
-        // Header: evaluate condition
         self.switch_to_block(func, header_block);
         if let Some(cond) = condition {
             let cond_val = self.build_expression(func, cond)?;
@@ -745,11 +742,9 @@ impl IRBuilder {
                 false_target: exit_block,
             });
         } else {
-            // No condition means infinite loop
             self.emit_instruction(func, IRInstruction::Branch { target: body_block });
         }
 
-        // Body: execute loop statements
         self.switch_to_block(func, body_block);
         self.loop_stack.push(LoopContext {
             continue_block: inc_block,
@@ -769,15 +764,12 @@ impl IRBuilder {
 
         self.loop_stack.pop();
 
-        // Increment: execute increment statement
         self.switch_to_block(func, inc_block);
         if let Some(inc_stmt) = increment {
             self.build_statement(func, *inc_stmt)?;
         }
-        // Jump back to header for next iteration
         self.emit_instruction(func, IRInstruction::Branch { target: header_block });
 
-        // Exit: continue after loop
         self.switch_to_block(func, exit_block);
         Ok(())
     }

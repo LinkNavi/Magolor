@@ -1,5 +1,96 @@
     .text
     .intel_syntax noprefix
+    .globl Calculator.MathOperations.factorial
+Calculator.MathOperations.factorial:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_factorial_0:
+    cmp rdi, 1
+    setle al
+    movzx rax, al
+    test rax, rax
+    jnz .L_Calculator_MathOperations_factorial_1
+    jmp .L_Calculator_MathOperations_factorial_2
+.L_Calculator_MathOperations_factorial_1:
+    mov rax, 1
+    jmp .L_Calculator_MathOperations_factorial_epilogue
+.L_Calculator_MathOperations_factorial_2:
+    jmp .L_Calculator_MathOperations_factorial_3
+.L_Calculator_MathOperations_factorial_3:
+    mov rbx, rdi
+    sub rbx, 1
+    mov rdi, rbx
+    call Calculator.MathOperations.factorial
+    mov rcx, rax
+    mov rdx, rdi
+    imul rdx, rcx
+    mov rax, rdx
+    jmp .L_Calculator_MathOperations_factorial_epilogue
+.L_Calculator_MathOperations_factorial_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl Calculator.MathOperations.add
+Calculator.MathOperations.add:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_add_0:
+    mov rbx, rax
+    add rbx, 1
+    mov qword ptr [Calculator.MathOperations.callCount], rbx
+    mov rcx, rdi
+    add rcx, rsi
+    mov rax, rcx
+    jmp .L_Calculator_MathOperations_add_epilogue
+.L_Calculator_MathOperations_add_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl Calculator.MathOperations.getCallCount
+Calculator.MathOperations.getCallCount:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_getCallCount_0:
+    mov rax, qword ptr [Calculator.MathOperations.callCount]
+    mov rax, rax
+    jmp .L_Calculator_MathOperations_getCallCount_epilogue
+.L_Calculator_MathOperations_getCallCount_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl Calculator.MathOperations.divide
+Calculator.MathOperations.divide:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_divide_0:
+    cmp rsi, 0
+    sete al
+    movzx rax, al
+    test rax, rax
+    jnz .L_Calculator_MathOperations_divide_1
+    jmp .L_Calculator_MathOperations_divide_2
+.L_Calculator_MathOperations_divide_1:
+    lea rdi, [__str_0]
+    call console_print
+    mov rbx, rax
+    mov rax, 0
+    jmp .L_Calculator_MathOperations_divide_epilogue
+.L_Calculator_MathOperations_divide_2:
+    jmp .L_Calculator_MathOperations_divide_3
+.L_Calculator_MathOperations_divide_3:
+    mov rax, rdi
+    cqo
+    idiv rsi
+    mov rcx, rax
+    mov rax, rcx
+    jmp .L_Calculator_MathOperations_divide_epilogue
+.L_Calculator_MathOperations_divide_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
 
     .globl main
 main:
@@ -65,7 +156,6 @@ main:
     cmp rax, 3
     setl al
     movzx rax, al
-    mov rax, qword ptr [rbp - 32]
     test rax, rax
     jnz .L_main_2
     jmp .L_main_4
@@ -92,123 +182,31 @@ main:
     pop rbp
     ret
 
-    .globl Calculator.MathOperations.add
-Calculator.MathOperations.add:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_add_0:
-    mov rbx, rax
-    add rbx, 1
-    mov qword ptr [Calculator.MathOperations.callCount], rbx
-    mov rcx, rdi
-    add rcx, rsi
-    mov rax, rcx
-    jmp .L_Calculator_MathOperations_add_epilogue
-.L_Calculator_MathOperations_add_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-    .globl Calculator.MathOperations.divide
-Calculator.MathOperations.divide:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_divide_0:
-    cmp rsi, 0
-    sete al
-    movzx rax, al
-    test rax, rax
-    jnz .L_Calculator_MathOperations_divide_1
-    jmp .L_Calculator_MathOperations_divide_2
-.L_Calculator_MathOperations_divide_1:
-    lea rdi, [__str_0]
-    call console_print
-    mov rbx, rax
-    mov rax, 0
-    jmp .L_Calculator_MathOperations_divide_epilogue
-.L_Calculator_MathOperations_divide_2:
-    jmp .L_Calculator_MathOperations_divide_3
-.L_Calculator_MathOperations_divide_3:
-    mov rax, rdi
-    cqo
-    idiv rsi
-    mov rcx, rax
-    mov rax, rcx
-    jmp .L_Calculator_MathOperations_divide_epilogue
-.L_Calculator_MathOperations_divide_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-    .globl Calculator.MathOperations.getCallCount
-Calculator.MathOperations.getCallCount:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_getCallCount_0:
-    mov rax, qword ptr [Calculator.MathOperations.callCount]
-    mov rax, rax
-    jmp .L_Calculator_MathOperations_getCallCount_epilogue
-.L_Calculator_MathOperations_getCallCount_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-    .globl Calculator.MathOperations.factorial
-Calculator.MathOperations.factorial:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_factorial_0:
-    cmp rdi, 1
-    setle al
-    movzx rax, al
-    test rax, rax
-    jnz .L_Calculator_MathOperations_factorial_1
-    jmp .L_Calculator_MathOperations_factorial_2
-.L_Calculator_MathOperations_factorial_1:
-    mov rax, 1
-    jmp .L_Calculator_MathOperations_factorial_epilogue
-.L_Calculator_MathOperations_factorial_2:
-    jmp .L_Calculator_MathOperations_factorial_3
-.L_Calculator_MathOperations_factorial_3:
-    mov rbx, rdi
-    sub rbx, 1
-    mov rdi, rbx
-    call Calculator.MathOperations.factorial
-    mov rcx, rax
-    mov rdx, rdi
-    imul rdx, rcx
-    mov rax, rdx
-    jmp .L_Calculator_MathOperations_factorial_epilogue
-.L_Calculator_MathOperations_factorial_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
 
     .data
-__str_4:
-    .asciz "5! = "
+__str_8:
+    .asciz "Tuesday"
 __str_9:
     .asciz "Wednesday"
-__str_6:
-    .asciz "Loop iteration: "
-__str_5:
-    .asciz "Sum of array: "
 __str_0:
     .asciz "Error: Division by zero"
+__str_4:
+    .asciz "5! = "
+__str_7:
+    .asciz "Monday"
 __str_11:
     .asciz "Total math operations: "
 __str_3:
     .asciz "10 / 2 = "
 __str_2:
     .asciz "5 + 3 = "
-__str_7:
-    .asciz "Monday"
-__str_8:
-    .asciz "Tuesday"
-__str_1:
-    .asciz "=== Calculator Demo ==="
+__str_5:
+    .asciz "Sum of array: "
+__str_6:
+    .asciz "Loop iteration: "
 __str_10:
     .asciz "Other day"
+__str_1:
+    .asciz "=== Calculator Demo ==="
 Calculator.MathOperations.callCount:
     .quad 0
