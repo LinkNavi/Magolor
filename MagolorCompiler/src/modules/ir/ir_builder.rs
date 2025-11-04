@@ -97,7 +97,9 @@ impl IRBuilder {
         // Register parameters in symbol table
         self.push_scope();
         for (i, (name, ty)) in params.iter().enumerate() {
-            self.symbol_table.last_mut().unwrap()
+            self.symbol_table
+                .last_mut()
+                .unwrap()
                 .insert(name.clone(), (IRValue::Argument(i), ty.clone()));
         }
 
@@ -125,83 +127,92 @@ impl IRBuilder {
         Ok(())
     }
 
-fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
-    match val {
-        ASTValue::Int(n) => Some(IRConstant::I32(*n)),
-        ASTValue::Int64(n) => Some(IRConstant::I64(*n)),
-        ASTValue::Float32(f) => Some(IRConstant::F32((*f).into())),
-        ASTValue::Float64(f) => Some(IRConstant::F64((*f).into())),
-        ASTValue::Bool(b) => Some(IRConstant::Bool(*b)),
-        ASTValue::Str(s) => Some(IRConstant::String(s.clone())),
-        ASTValue::Null => Some(IRConstant::Null),
-        _ => None,
-    }
-}
-
-    fn build_class(&mut self, class: ClassDef) -> Result<(), String> {
-    let class_name = class.name.clone();
-    self.current_class = Some(class_name.clone());
-    
-    // Register static fields as globals
-    for field in &class.fields {
-        if field.is_static {
-            let global_name = format!("{}.{}", class_name, field.name);
-            let ty = self.convert_type(&field.field_type);
-            let init = field.default_value.as_ref()
-                .and_then(|v| self.ast_value_to_constant(v));
-            
-            self.program.globals.insert(
-                global_name.clone(),
-                IRGlobal {
-                    name: global_name.clone(),
-                    ty: ty.clone(),
-                    init,
-                    is_const: false,
-                    alignment: ty.alignment(),
-                },
-            );
-            
-            // Register in symbol table for easy access
-            self.symbol_table[0].insert(
-                field.name.clone(),
-                (IRValue::Global(global_name), ty)
-            );
+    fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
+        match val {
+            ASTValue::Int(n) => Some(IRConstant::I32(*n)),
+            ASTValue::Int64(n) => Some(IRConstant::I64(*n)),
+            ASTValue::Float32(f) => Some(IRConstant::F32((*f).into())),
+            ASTValue::Float64(f) => Some(IRConstant::F64((*f).into())),
+            ASTValue::Bool(b) => Some(IRConstant::Bool(*b)),
+            ASTValue::Str(s) => Some(IRConstant::String(s.clone())),
+            ASTValue::Null => Some(IRConstant::Null),
+            _ => None,
         }
     }
-    
-    // Build methods
-    for method in class.methods {
-        let method_name = format!("{}.{}", class_name, method.name);
-        let mut new_method = method.clone();
-        new_method.name = method_name;
-        self.build_function(new_method)?;
+
+    fn build_class(&mut self, class: ClassDef) -> Result<(), String> {
+        let class_name = class.name.clone();
+        self.current_class = Some(class_name.clone());
+
+        // Register static fields as globals
+        for field in &class.fields {
+            if field.is_static {
+                let global_name = format!("{}.{}", class_name, field.name);
+                let ty = self.convert_type(&field.field_type);
+                let init = field
+                    .default_value
+                    .as_ref()
+                    .and_then(|v| self.ast_value_to_constant(v));
+
+                self.program.globals.insert(
+                    global_name.clone(),
+                    IRGlobal {
+                        name: global_name.clone(),
+                        ty: ty.clone(),
+                        init,
+                        is_const: false,
+                        alignment: ty.alignment(),
+                    },
+                );
+
+                // Register in symbol table for easy access
+                self.symbol_table[0].insert(field.name.clone(), (IRValue::Global(global_name), ty));
+            }
+        }
+
+        // Build methods
+        for method in class.methods {
+            let method_name = format!("{}.{}", class_name, method.name);
+            let mut new_method = method.clone();
+            new_method.name = method_name;
+            self.build_function(new_method)?;
+        }
+
+        self.current_class = None;
+        Ok(())
     }
-    
-    self.current_class = None;
-    Ok(())
-}
 
     fn build_statement(&mut self, func: &mut IRFunction, stmt: Statement) -> Result<(), String> {
         match stmt {
-            Statement::VarDecl { name, var_type, value, is_mutable: _ } => {
+            Statement::VarDecl {
+                name,
+                var_type,
+                value,
+                is_mutable: _,
+            } => {
                 let ty = self.convert_type(&var_type);
                 let local_idx = self.local_counter;
                 self.local_counter += 1;
 
                 // Use Local instead of a register for the address
                 let addr = IRValue::Local(local_idx);
-                
+
                 if let Some(val) = value {
                     let val_reg = self.build_expression(func, val)?;
-                    self.emit_instruction(func, IRInstruction::Store {
-                        addr: addr.clone(),
-                        value: val_reg,
-                        ty: ty.clone(),
-                    });
+                    self.emit_instruction(
+                        func,
+                        IRInstruction::Store {
+                            addr: addr.clone(),
+                            value: val_reg,
+                            ty: ty.clone(),
+                        },
+                    );
                 }
 
                 // Register the variable as a Local slot
-                self.symbol_table.last_mut().unwrap()
+                self.symbol_table
+                    .last_mut()
+                    .unwrap()
                     .insert(name, (addr, ty));
                 Ok(())
             }
@@ -209,15 +220,18 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             Statement::Assignment { target, value } => {
                 let addr = self.build_lvalue(func, target)?;
                 let val = self.build_expression(func, value)?;
-                
+
                 // Infer type from value
                 let ty = self.infer_type(&val);
-                
-                self.emit_instruction(func, IRInstruction::Store {
-                    addr,
-                    value: val,
-                    ty,
-                });
+
+                self.emit_instruction(
+                    func,
+                    IRInstruction::Store {
+                        addr,
+                        value: val,
+                        ty,
+                    },
+                );
                 Ok(())
             }
 
@@ -236,23 +250,30 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
                 Ok(())
             }
 
-            Statement::If { condition, then_body, elif_branches, else_body } => {
-                self.build_if_statement(func, condition, then_body, elif_branches, else_body)
-            }
+            Statement::If {
+                condition,
+                then_body,
+                elif_branches,
+                else_body,
+            } => self.build_if_statement(func, condition, then_body, elif_branches, else_body),
 
-            Statement::While { condition, body } => {
-                self.build_while_loop(func, condition, body)
-            }
+            Statement::While { condition, body } => self.build_while_loop(func, condition, body),
 
-            Statement::For { init, condition, increment, body } => {
-                self.build_for_loop(func, init, condition, increment, body)
-            }
+            Statement::For {
+                init,
+                condition,
+                increment,
+                body,
+            } => self.build_for_loop(func, init, condition, increment, body),
 
             Statement::Break => {
                 if let Some(ctx) = self.loop_stack.last() {
-                    self.emit_instruction(func, IRInstruction::Branch {
-                        target: ctx.break_block,
-                    });
+                    self.emit_instruction(
+                        func,
+                        IRInstruction::Branch {
+                            target: ctx.break_block,
+                        },
+                    );
                     Ok(())
                 } else {
                     Err("Break outside loop".to_string())
@@ -261,9 +282,12 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
 
             Statement::Continue => {
                 if let Some(ctx) = self.loop_stack.last() {
-                    self.emit_instruction(func, IRInstruction::Branch {
-                        target: ctx.continue_block,
-                    });
+                    self.emit_instruction(
+                        func,
+                        IRInstruction::Branch {
+                            target: ctx.continue_block,
+                        },
+                    );
                     Ok(())
                 } else {
                     Err("Continue outside loop".to_string())
@@ -281,59 +305,162 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
 
             _ => Ok(()),
         }
-        
     }
 
-    fn build_expression(&mut self, func: &mut IRFunction, expr: ASTValue) -> Result<IRValue, String> {
-        match expr {
-            ASTValue::Int(n) => Ok(IRValue::Constant(IRConstant::I32(n))),
-            ASTValue::Int64(n) => Ok(IRValue::Constant(IRConstant::I64(n))),
-            ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32(f.into()))),
-            ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64(f.into()))),
-            ASTValue::Bool(b) => Ok(IRValue::Constant(IRConstant::Bool(b))),
-            ASTValue::Str(s) => {
-                let id = self.program.string_literals.len();
-                self.program.string_literals.insert(s.clone(), id);
-                Ok(IRValue::Global(format!("__str_{}", id)))
-            }
-            ASTValue::Null => Ok(IRValue::Constant(IRConstant::Null)),
+   fn build_expression(
+    &mut self,
+    func: &mut IRFunction,
+    expr: ASTValue,
+) -> Result<IRValue, String> {
+    match expr {
+        ASTValue::Int(n) => Ok(IRValue::Constant(IRConstant::I32(n))),
+        ASTValue::Int64(n) => Ok(IRValue::Constant(IRConstant::I64(n))),
+        ASTValue::Float32(f) => Ok(IRValue::Constant(IRConstant::F32(f.into()))),
+        ASTValue::Float64(f) => Ok(IRValue::Constant(IRConstant::F64(f.into()))),
+        ASTValue::Bool(b) => Ok(IRValue::Constant(IRConstant::Bool(b))),
+        ASTValue::Str(s) => {
+            let id = self.program.string_literals.len();
+            self.program.string_literals.insert(s.clone(), id);
+            Ok(IRValue::Global(format!("__str_{}", id)))
+        }
+        ASTValue::Null => Ok(IRValue::Constant(IRConstant::Null)),
 
-            ASTValue::VarRef(name) => {
-                if let Some((val, ty)) = self.lookup_symbol(&name) {
-                    match val {
-                        IRValue::Register(reg) => {
-                            let dst = self.next_register();
-                            self.emit_instruction(func, IRInstruction::Load {
+        ASTValue::VarRef(name) => {
+            if let Some((val, ty)) = self.lookup_symbol(&name) {
+                match val {
+                    IRValue::Local(_) => {
+                        // Load from local variable
+                        let dst = self.next_register();
+                        self.emit_instruction(
+                            func,
+                            IRInstruction::Load {
+                                dst,
+                                addr: val.clone(),
+                                ty: ty.clone(),
+                            },
+                        );
+                        Ok(IRValue::Register(dst))
+                    }
+                    IRValue::Register(reg) => {
+                        let dst = self.next_register();
+                        self.emit_instruction(
+                            func,
+                            IRInstruction::Load {
                                 dst,
                                 addr: IRValue::Register(reg),
                                 ty: ty.clone(),
-                            });
-                            Ok(IRValue::Register(dst))
-                        }
-                        _ => Ok(val.clone()),
+                            },
+                        );
+                        Ok(IRValue::Register(dst))
                     }
-                } else {
-                    Err(format!("Undefined variable: {}", name))
+                    _ => Ok(val.clone()),
                 }
+            } else {
+                Err(format!("Undefined variable: {}", name))
             }
-
-            ASTValue::Binary { op, left, right } => {
-                self.build_binary_op(func, op, *left, *right)
-            }
-
-            ASTValue::Comparison { op, left, right } => {
-                self.build_comparison(func, op, *left, *right)
-            }
-
-            ASTValue::FuncCall { name, args } => {
-                self.build_call(func, name, args)
-            }
-
-            _ => Ok(IRValue::Undef),
         }
-    }
 
-    fn build_binary_op(&mut self, func: &mut IRFunction, op: BinaryOp, left: ASTValue, right: ASTValue) -> Result<IRValue, String> {
+        ASTValue::Binary { op: BinaryOp::Add, left, right } => {
+            let lhs = self.build_expression(func, *left)?;
+            let rhs = self.build_expression(func, *right)?;
+
+            // Check if either operand is a string
+            let is_string_concat = match (&lhs, &rhs) {
+                (IRValue::Constant(IRConstant::String(_)), _) => true,
+                (_, IRValue::Constant(IRConstant::String(_))) => true,
+                (IRValue::Global(s), _) if s.starts_with("__str_") => true,
+                (_, IRValue::Global(s)) if s.starts_with("__str_") => true,
+                _ => false,
+            };
+
+            if is_string_concat {
+                // Generate string concatenation call
+                let dst = self.next_register();
+                self.emit_instruction(
+                    func,
+                    IRInstruction::Call {
+                        dst: Some(dst),
+                        func: "string_concat_int".to_string(),
+                        args: vec![lhs, rhs],
+                        ty: IRType::Ptr(Box::new(IRType::I8)),
+                    },
+                );
+                return Ok(IRValue::Register(dst));
+            }
+
+            // Regular arithmetic add
+            let ty = self.infer_type(&lhs);
+            let dst = self.next_register();
+            self.emit_instruction(func, IRInstruction::Add { dst, lhs, rhs, ty });
+            Ok(IRValue::Register(dst))
+        }
+
+        ASTValue::Binary { op, left, right } => {
+            self.build_binary_op(func, op, *left, *right)
+        }
+
+        ASTValue::Comparison { op, left, right } => {
+            self.build_comparison(func, op, *left, *right)
+        }
+
+        ASTValue::FuncCall { name, args } => {
+            self.build_call(func, name, args)
+        }
+
+        ASTValue::MethodCall { object, method, args } => {
+            // Build the function name from object path
+            let func_name = match *object {
+                ASTValue::VarRef(obj_name) => {
+                    // Simple case: console.print
+                    format!("{}.{}", obj_name, method)
+                }
+                ASTValue::MemberAccess { object: nested_obj, member } => {
+                    // Handle Calculator.MathOperations.add style calls
+                    match *nested_obj {
+                        ASTValue::VarRef(namespace) => {
+                            format!("{}.{}.{}", namespace, member, method)
+                        }
+                        _ => {
+                            return Err("Complex member access not yet supported".to_string());
+                        }
+                    }
+                }
+                _ => {
+                    return Err("Unsupported method call object".to_string());
+                }
+            };
+
+            // Build arguments
+            let mut arg_vals = Vec::new();
+            for arg in args {
+                arg_vals.push(self.build_expression(func, arg)?);
+            }
+
+            let dst = self.next_register();
+            self.emit_instruction(
+                func,
+                IRInstruction::Call {
+                    dst: Some(dst),
+                    func: func_name,
+                    args: arg_vals,
+                    ty: IRType::I32, // TODO: proper type inference
+                },
+            );
+
+            Ok(IRValue::Register(dst))
+        }
+
+        _ => Ok(IRValue::Undef),
+    }
+}
+
+    fn build_binary_op(
+        &mut self,
+        func: &mut IRFunction,
+        op: BinaryOp,
+        left: ASTValue,
+        right: ASTValue,
+    ) -> Result<IRValue, String> {
         let lhs = self.build_expression(func, left)?;
         let rhs = self.build_expression(func, right)?;
         let ty = self.infer_type(&lhs);
@@ -349,7 +476,12 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             BinaryOp::Or => IRInstruction::Or { dst, lhs, rhs },
             BinaryOp::BitXor => IRInstruction::Xor { dst, lhs, rhs },
             BinaryOp::Shl => IRInstruction::Shl { dst, lhs, rhs },
-            BinaryOp::Shr => IRInstruction::Shr { dst, lhs, rhs, signed: true },
+            BinaryOp::Shr => IRInstruction::Shr {
+                dst,
+                lhs,
+                rhs,
+                signed: true,
+            },
             _ => return Err("Unsupported binary operation".to_string()),
         };
 
@@ -357,7 +489,13 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         Ok(IRValue::Register(dst))
     }
 
-    fn build_comparison(&mut self, func: &mut IRFunction, op: ComparisonOp, left: ASTValue, right: ASTValue) -> Result<IRValue, String> {
+    fn build_comparison(
+        &mut self,
+        func: &mut IRFunction,
+        op: ComparisonOp,
+        left: ASTValue,
+        right: ASTValue,
+    ) -> Result<IRValue, String> {
         let lhs = self.build_expression(func, left)?;
         let rhs = self.build_expression(func, right)?;
         let ty = self.infer_type(&lhs);
@@ -372,30 +510,54 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             ComparisonOp::GreaterEqual => CmpOp::Ge,
         };
 
-        self.emit_instruction(func, IRInstruction::Cmp { dst, op: cmp_op, lhs, rhs, ty });
+        self.emit_instruction(
+            func,
+            IRInstruction::Cmp {
+                dst,
+                op: cmp_op,
+                lhs,
+                rhs,
+                ty,
+            },
+        );
         Ok(IRValue::Register(dst))
     }
 
-    fn build_call(&mut self, func: &mut IRFunction, name: String, args: Vec<ASTValue>) -> Result<IRValue, String> {
+    fn build_call(
+        &mut self,
+        func: &mut IRFunction,
+        name: String,
+        args: Vec<ASTValue>,
+    ) -> Result<IRValue, String> {
         let mut arg_vals = Vec::new();
         for arg in args {
             arg_vals.push(self.build_expression(func, arg)?);
         }
 
         let dst = self.next_register();
-        self.emit_instruction(func, IRInstruction::Call {
-            dst: Some(dst),
-            func: name,
-            args: arg_vals,
-            ty: IRType::I32, // TODO: lookup actual return type
-        });
+        self.emit_instruction(
+            func,
+            IRInstruction::Call {
+                dst: Some(dst),
+                func: name,
+                args: arg_vals,
+                ty: IRType::I32, // TODO: lookup actual return type
+            },
+        );
 
         Ok(IRValue::Register(dst))
     }
 
-    fn build_if_statement(&mut self, func: &mut IRFunction, condition: ASTValue, then_body: Vec<Statement>, elif_branches: Vec<(ASTValue, Vec<Statement>)>, else_body: Option<Vec<Statement>>) -> Result<(), String> {
+    fn build_if_statement(
+        &mut self,
+        func: &mut IRFunction,
+        condition: ASTValue,
+        then_body: Vec<Statement>,
+        elif_branches: Vec<(ASTValue, Vec<Statement>)>,
+        else_body: Option<Vec<Statement>>,
+    ) -> Result<(), String> {
         let cond_val = self.build_expression(func, condition)?;
-        
+
         let then_block = self.create_block_id();
         let else_block = if !elif_branches.is_empty() || else_body.is_some() {
             self.create_block_id()
@@ -404,11 +566,14 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         };
         let merge_block = self.create_block_id();
 
-        self.emit_instruction(func, IRInstruction::CondBranch {
-            cond: cond_val,
-            true_target: then_block,
-            false_target: else_block,
-        });
+        self.emit_instruction(
+            func,
+            IRInstruction::CondBranch {
+                cond: cond_val,
+                true_target: then_block,
+                false_target: else_block,
+            },
+        );
 
         // Then block
         self.switch_to_block(func, then_block);
@@ -416,21 +581,31 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             self.build_statement(func, stmt)?;
         }
         if !self.has_terminator(func) {
-            self.emit_instruction(func, IRInstruction::Branch { target: merge_block });
+            self.emit_instruction(
+                func,
+                IRInstruction::Branch {
+                    target: merge_block,
+                },
+            );
         }
 
         // Else/elif blocks
         if !elif_branches.is_empty() || else_body.is_some() {
             self.switch_to_block(func, else_block);
-            
+
             if let Some(else_stmts) = else_body {
                 for stmt in else_stmts {
                     self.build_statement(func, stmt)?;
                 }
             }
-            
+
             if !self.has_terminator(func) {
-                self.emit_instruction(func, IRInstruction::Branch { target: merge_block });
+                self.emit_instruction(
+                    func,
+                    IRInstruction::Branch {
+                        target: merge_block,
+                    },
+                );
             }
         }
 
@@ -438,21 +613,34 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         Ok(())
     }
 
-    fn build_while_loop(&mut self, func: &mut IRFunction, condition: ASTValue, body: Vec<Statement>) -> Result<(), String> {
+    fn build_while_loop(
+        &mut self,
+        func: &mut IRFunction,
+        condition: ASTValue,
+        body: Vec<Statement>,
+    ) -> Result<(), String> {
         let header_block = self.create_block_id();
         let body_block = self.create_block_id();
         let exit_block = self.create_block_id();
 
-        self.emit_instruction(func, IRInstruction::Branch { target: header_block });
+        self.emit_instruction(
+            func,
+            IRInstruction::Branch {
+                target: header_block,
+            },
+        );
 
         // Header block
         self.switch_to_block(func, header_block);
         let cond_val = self.build_expression(func, condition)?;
-        self.emit_instruction(func, IRInstruction::CondBranch {
-            cond: cond_val,
-            true_target: body_block,
-            false_target: exit_block,
-        });
+        self.emit_instruction(
+            func,
+            IRInstruction::CondBranch {
+                cond: cond_val,
+                true_target: body_block,
+                false_target: exit_block,
+            },
+        );
 
         // Body block
         self.switch_to_block(func, body_block);
@@ -460,15 +648,20 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             continue_block: header_block,
             break_block: exit_block,
         });
-        
+
         for stmt in body {
             self.build_statement(func, stmt)?;
         }
-        
+
         if !self.has_terminator(func) {
-            self.emit_instruction(func, IRInstruction::Branch { target: header_block });
+            self.emit_instruction(
+                func,
+                IRInstruction::Branch {
+                    target: header_block,
+                },
+            );
         }
-        
+
         self.loop_stack.pop();
 
         // Exit block
@@ -476,7 +669,14 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         Ok(())
     }
 
-    fn build_for_loop(&mut self, func: &mut IRFunction, init: Option<Box<Statement>>, condition: Option<ASTValue>, increment: Option<Box<Statement>>, body: Vec<Statement>) -> Result<(), String> {
+    fn build_for_loop(
+        &mut self,
+        func: &mut IRFunction,
+        init: Option<Box<Statement>>,
+        condition: Option<ASTValue>,
+        increment: Option<Box<Statement>>,
+        body: Vec<Statement>,
+    ) -> Result<(), String> {
         if let Some(init_stmt) = init {
             self.build_statement(func, *init_stmt)?;
         }
@@ -486,17 +686,25 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         let inc_block = self.create_block_id();
         let exit_block = self.create_block_id();
 
-        self.emit_instruction(func, IRInstruction::Branch { target: header_block });
+        self.emit_instruction(
+            func,
+            IRInstruction::Branch {
+                target: header_block,
+            },
+        );
 
         // Header
         self.switch_to_block(func, header_block);
         if let Some(cond) = condition {
             let cond_val = self.build_expression(func, cond)?;
-            self.emit_instruction(func, IRInstruction::CondBranch {
-                cond: cond_val,
-                true_target: body_block,
-                false_target: exit_block,
-            });
+            self.emit_instruction(
+                func,
+                IRInstruction::CondBranch {
+                    cond: cond_val,
+                    true_target: body_block,
+                    false_target: exit_block,
+                },
+            );
         } else {
             self.emit_instruction(func, IRInstruction::Branch { target: body_block });
         }
@@ -507,15 +715,15 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
             continue_block: inc_block,
             break_block: exit_block,
         });
-        
+
         for stmt in body {
             self.build_statement(func, stmt)?;
         }
-        
+
         if !self.has_terminator(func) {
             self.emit_instruction(func, IRInstruction::Branch { target: inc_block });
         }
-        
+
         self.loop_stack.pop();
 
         // Increment
@@ -523,7 +731,12 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
         if let Some(inc_stmt) = increment {
             self.build_statement(func, *inc_stmt)?;
         }
-        self.emit_instruction(func, IRInstruction::Branch { target: header_block });
+        self.emit_instruction(
+            func,
+            IRInstruction::Branch {
+                target: header_block,
+            },
+        );
 
         // Exit
         self.switch_to_block(func, exit_block);
@@ -608,7 +821,12 @@ fn ast_value_to_constant(&self, val: &ASTValue) -> Option<IRConstant> {
     fn has_terminator(&self, func: &IRFunction) -> bool {
         if let Some(block) = func.blocks.get(self.current_block) {
             if let Some(last) = block.instructions.last() {
-                matches!(last, IRInstruction::Return { .. } | IRInstruction::Branch { .. } | IRInstruction::CondBranch { .. })
+                matches!(
+                    last,
+                    IRInstruction::Return { .. }
+                        | IRInstruction::Branch { .. }
+                        | IRInstruction::CondBranch { .. }
+                )
             } else {
                 false
             }
