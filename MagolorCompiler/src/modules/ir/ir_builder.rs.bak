@@ -1,8 +1,5 @@
-// src/modules/ir/ir_builder.rs - COMPLETE WITH ALL FEATURES
-// Key fixes:
-// 1. Proper register allocation for recursive calls
-// 2. Array support with proper memory allocation
-// 3. For/foreach loop support
+// src/modules/ir/ir_builder.rs - COMPREHENSIVE FIX
+// Complete rewrite with proper control flow and variable handling
 
 use crate::modules::ast::*;
 use crate::modules::ir::ir_types::*;
@@ -114,9 +111,12 @@ impl IRBuilder {
                 .insert(name.clone(), (IRValue::Argument(i), ty.clone()));
         }
 
-        // Process ALL statements
         for stmt in func.body {
             self.build_statement(&mut ir_func, stmt)?;
+            // Stop processing if we hit a return
+            if self.has_terminator(&ir_func) {
+                break;
+            }
         }
 
         // Add default return if needed
@@ -124,7 +124,16 @@ impl IRBuilder {
             if ir_func.return_type == IRType::Void {
                 self.emit_instruction(&mut ir_func, IRInstruction::Return { value: None });
             } else {
-                let default_val = IRValue::Constant(IRConstant::I32(0));
+                // Return default value for non-void functions
+                let default_val = match ir_func.return_type {
+                    IRType::I32 | IRType::I64 | IRType::I8 | IRType::I16 => {
+                        IRValue::Constant(IRConstant::I32(0))
+                    }
+                    IRType::F32 => IRValue::Constant(IRConstant::F32(0.0.into())),
+                    IRType::F64 => IRValue::Constant(IRConstant::F64(0.0.into())),
+                    IRType::Bool => IRValue::Constant(IRConstant::Bool(false)),
+                    _ => IRValue::Constant(IRConstant::Null),
+                };
                 self.emit_instruction(&mut ir_func, IRInstruction::Return { value: Some(default_val) });
             }
         }
@@ -143,6 +152,7 @@ impl IRBuilder {
         let class_name = class.name.clone();
         self.current_class = Some(class_name.clone());
 
+        // Register static fields as globals
         for field in &class.fields {
             if field.is_static {
                 let global_name = self.get_full_name(&field.name);
@@ -191,7 +201,12 @@ impl IRBuilder {
                         ty: ty.clone(),
                     });
                 } else {
-                    let zero = IRValue::Constant(IRConstant::I32(0));
+                    // Initialize to zero
+                    let zero = match ty {
+                        IRType::F32 => IRValue::Constant(IRConstant::F32(0.0.into())),
+                        IRType::F64 => IRValue::Constant(IRConstant::F64(0.0.into())),
+                        _ => IRValue::Constant(IRConstant::I32(0)),
+                    };
                     self.emit_instruction(func, IRInstruction::Store {
                         addr: addr.clone(),
                         value: zero,
@@ -212,9 +227,10 @@ impl IRBuilder {
             }
 
             Statement::CompoundAssignment { target, op, value } => {
+                // Load current value
                 let addr = self.build_lvalue(func, target)?;
                 let current_reg = self.next_register();
-                let ty = IRType::I32;
+                let ty = IRType::I32; // TODO: proper type inference
                 
                 self.emit_instruction(func, IRInstruction::Load {
                     dst: current_reg,
@@ -222,6 +238,7 @@ impl IRBuilder {
                     ty: ty.clone(),
                 });
 
+                // Compute new value
                 let val_reg = self.build_expression(func, value)?;
                 let result_reg = self.next_register();
 
@@ -250,7 +267,7 @@ impl IRBuilder {
                         rhs: val_reg,
                         ty: ty.clone(),
                     },
-                    _ => return Err("Unsupported compound assignment".to_string()),
+                    _ => return Err("Unsupported compound assignment operator".to_string()),
                 };
 
                 self.emit_instruction(func, instr);
@@ -285,14 +302,6 @@ impl IRBuilder {
                 self.build_for_loop(func, init, condition, increment, body)
             }
 
-            Statement::ForEach { item, item_type, collection, body } => {
-                self.build_foreach_loop(func, item, item_type, collection, body)
-            }
-
-            Statement::Match { value, arms } => {
-                self.build_match_statement(func, value, arms)
-            }
-
             Statement::Break => {
                 if let Some(ctx) = self.loop_stack.last() {
                     self.emit_instruction(func, IRInstruction::Branch { target: ctx.break_block });
@@ -315,147 +324,20 @@ impl IRBuilder {
                 self.push_scope();
                 for stmt in stmts {
                     self.build_statement(func, stmt)?;
+                    if self.has_terminator(func) {
+                        break;
+                    }
                 }
                 self.pop_scope();
                 Ok(())
             }
 
+            Statement::Match { value, arms } => {
+                self.build_match_statement(func, value, arms)
+            }
+
             _ => Ok(()),
         }
-    }
-
-    fn build_foreach_loop(
-        &mut self,
-        func: &mut IRFunction,
-        item: String,
-        item_type: Type,
-        collection: ASTValue,
-        body: Vec<Statement>,
-    ) -> Result<(), String> {
-        // Simple foreach: iterate through array elements
-        // For now, we'll implement a simple version that works with stack arrays
-        
-        let collection_reg = self.build_expression(func, collection)?;
-        let ty = self.convert_type(&item_type);
-        
-        // Create loop variable
-        let item_local = self.local_counter;
-        self.local_counter += 1;
-        let item_addr = IRValue::Local(item_local);
-        
-        // Create index variable
-        let index_local = self.local_counter;
-        self.local_counter += 1;
-        let index_addr = IRValue::Local(index_local);
-        
-        // Initialize index to 0
-        self.emit_instruction(func, IRInstruction::Store {
-            addr: index_addr.clone(),
-            value: IRValue::Constant(IRConstant::I32(0)),
-            ty: IRType::I32,
-        });
-        
-        // For simplicity, assume array length is known (5 in your example)
-        // In a real implementation, this would be stored with the array
-        let array_length = 5;
-        
-        let header_block = self.create_block_id();
-        let body_block = self.create_block_id();
-        let inc_block = self.create_block_id();
-        let exit_block = self.create_block_id();
-        
-        self.emit_instruction(func, IRInstruction::Branch { target: header_block });
-        
-        // Header: check if index < length
-        self.switch_to_block(func, header_block);
-        let index_reg = self.next_register();
-        self.emit_instruction(func, IRInstruction::Load {
-            dst: index_reg,
-            addr: index_addr.clone(),
-            ty: IRType::I32,
-        });
-        
-        let cmp_reg = self.next_register();
-        self.emit_instruction(func, IRInstruction::Cmp {
-            dst: cmp_reg,
-            op: CmpOp::Lt,
-            lhs: IRValue::Register(index_reg),
-            rhs: IRValue::Constant(IRConstant::I32(array_length)),
-            ty: IRType::I32,
-        });
-        
-        self.emit_instruction(func, IRInstruction::CondBranch {
-            cond: IRValue::Register(cmp_reg),
-            true_target: body_block,
-            false_target: exit_block,
-        });
-        
-        // Body: load array[index] into item
-        self.switch_to_block(func, body_block);
-        
-        // Calculate array element address (simplified)
-        let element_reg = self.next_register();
-        self.emit_instruction(func, IRInstruction::Add {
-            dst: element_reg,
-            lhs: collection_reg.clone(),
-            rhs: IRValue::Register(index_reg),
-            ty: IRType::I32,
-        });
-        
-        // Store element in item variable
-        self.emit_instruction(func, IRInstruction::Store {
-            addr: item_addr.clone(),
-            value: IRValue::Register(element_reg),
-            ty: ty.clone(),
-        });
-        
-        // Register item in symbol table
-        self.push_scope();
-        self.symbol_table.last_mut().unwrap().insert(item.clone(), (item_addr, ty));
-        
-        self.loop_stack.push(LoopContext {
-            continue_block: inc_block,
-            break_block: exit_block,
-        });
-        
-        for stmt in body {
-            self.build_statement(func, stmt)?;
-        }
-        
-        if !self.has_terminator(func) {
-            self.emit_instruction(func, IRInstruction::Branch { target: inc_block });
-        }
-        
-        self.loop_stack.pop();
-        self.pop_scope();
-        
-        // Increment: index++
-        self.switch_to_block(func, inc_block);
-        let current_index_reg = self.next_register();
-        self.emit_instruction(func, IRInstruction::Load {
-            dst: current_index_reg,
-            addr: index_addr.clone(),
-            ty: IRType::I32,
-        });
-        
-        let new_index_reg = self.next_register();
-        self.emit_instruction(func, IRInstruction::Add {
-            dst: new_index_reg,
-            lhs: IRValue::Register(current_index_reg),
-            rhs: IRValue::Constant(IRConstant::I32(1)),
-            ty: IRType::I32,
-        });
-        
-        self.emit_instruction(func, IRInstruction::Store {
-            addr: index_addr,
-            value: IRValue::Register(new_index_reg),
-            ty: IRType::I32,
-        });
-        
-        self.emit_instruction(func, IRInstruction::Branch { target: header_block });
-        
-        self.switch_to_block(func, exit_block);
-        Ok(())
     }
 
     fn build_match_statement(
@@ -500,6 +382,9 @@ impl IRBuilder {
                     self.switch_to_block(func, body_block);
                     for stmt in &arm.body {
                         self.build_statement(func, stmt.clone())?;
+                        if self.has_terminator(func) {
+                            break;
+                        }
                     }
                     if !self.has_terminator(func) {
                         self.emit_instruction(func, IRInstruction::Branch { target: merge_block });
@@ -508,8 +393,12 @@ impl IRBuilder {
                     next_check_block = next_block;
                 }
                 Pattern::Wildcard => {
+                    // Default case - always matches
                     for stmt in &arm.body {
                         self.build_statement(func, stmt.clone())?;
+                        if self.has_terminator(func) {
+                            break;
+                        }
                     }
                     if !self.has_terminator(func) {
                         self.emit_instruction(func, IRInstruction::Branch { target: merge_block });
@@ -538,26 +427,6 @@ impl IRBuilder {
             }
             ASTValue::Null => Ok(IRValue::Constant(IRConstant::Null)),
 
-            ASTValue::ArrayLiteral(elements) => {
-                // Allocate space for array
-                let array_local = self.local_counter;
-                self.local_counter += elements.len();
-                
-                // Store each element
-                for (i, elem) in elements.iter().enumerate() {
-                    let elem_val = self.build_expression(func, elem.clone())?;
-                    let elem_addr = IRValue::Local(array_local + i);
-                    self.emit_instruction(func, IRInstruction::Store {
-                        addr: elem_addr,
-                        value: elem_val,
-                        ty: IRType::I32,
-                    });
-                }
-                
-                // Return pointer to first element
-                Ok(IRValue::Local(array_local))
-            }
-
             ASTValue::VarRef(name) => {
                 if let Some((val, ty)) = self.lookup_symbol(&name) {
                     match val {
@@ -585,7 +454,7 @@ impl IRBuilder {
                 let lhs = self.build_expression(func, *left)?;
                 let rhs = self.build_expression(func, *right)?;
 
-                // String concatenation
+                // Check for string concatenation
                 let is_string = matches!(&lhs, IRValue::Global(s) if s.starts_with("__str_"))
                     || matches!(&rhs, IRValue::Global(s) if s.starts_with("__str_"));
 
@@ -646,16 +515,17 @@ impl IRBuilder {
                 Ok(IRValue::Register(dst))
             }
 
-            _ => {
-                Ok(IRValue::Constant(IRConstant::I32(0)))
-            }
+            _ => Ok(IRValue::Undef),
         }
     }
 
     fn build_unary_op(&mut self, func: &mut IRFunction, op: UnaryOp, operand: ASTValue) -> Result<IRValue, String> {
         match op {
             UnaryOp::PostInc | UnaryOp::PreInc => {
+                // Get the address
                 let addr = self.build_lvalue(func, operand)?;
+                
+                // Load current value
                 let current_reg = self.next_register();
                 self.emit_instruction(func, IRInstruction::Load {
                     dst: current_reg,
@@ -663,6 +533,7 @@ impl IRBuilder {
                     ty: IRType::I32,
                 });
 
+                // Increment
                 let result_reg = self.next_register();
                 self.emit_instruction(func, IRInstruction::Add {
                     dst: result_reg,
@@ -671,66 +542,41 @@ impl IRBuilder {
                     ty: IRType::I32,
                 });
 
+                // Store back
                 self.emit_instruction(func, IRInstruction::Store {
                     addr,
                     value: IRValue::Register(result_reg),
                     ty: IRType::I32,
                 });
 
+                // Return appropriate value
                 Ok(if matches!(op, UnaryOp::PreInc) {
                     IRValue::Register(result_reg)
                 } else {
                     IRValue::Register(current_reg)
                 })
             }
-            _ => Err(format!("Unary operator {:?} not implemented", op)),
+            _ => Err(format!("Unary operator {:?} not yet implemented", op)),
         }
     }
 
     fn build_binary_op(&mut self, func: &mut IRFunction, op: BinaryOp, left: ASTValue, right: ASTValue) -> Result<IRValue, String> {
-        // CRITICAL FIX: Save left operand in a temporary BEFORE evaluating right
-        // This prevents register clobbering in recursive calls
-        
         let lhs = self.build_expression(func, left)?;
-        
-        // If lhs is a register that might get clobbered, save it
-        let lhs_safe = match &lhs {
-            IRValue::Register(_) => {
-                let temp_local = self.local_counter;
-                self.local_counter += 1;
-                let temp_addr = IRValue::Local(temp_local);
-                self.emit_instruction(func, IRInstruction::Store {
-                    addr: temp_addr.clone(),
-                    value: lhs.clone(),
-                    ty: IRType::I32,
-                });
-                
-                let reload_reg = self.next_register();
-                self.emit_instruction(func, IRInstruction::Load {
-                    dst: reload_reg,
-                    addr: temp_addr,
-                    ty: IRType::I32,
-                });
-                IRValue::Register(reload_reg)
-            }
-            _ => lhs.clone(),
-        };
-        
         let rhs = self.build_expression(func, right)?;
-        let ty = self.infer_type(&lhs_safe);
+        let ty = self.infer_type(&lhs);
         let dst = self.next_register();
 
         let instr = match op {
-            BinaryOp::Add => IRInstruction::Add { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Sub => IRInstruction::Sub { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Mul => IRInstruction::Mul { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Div => IRInstruction::Div { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Mod => IRInstruction::Mod { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::And => IRInstruction::And { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Or => IRInstruction::Or { dst, lhs: lhs_safe, rhs },
-            BinaryOp::BitXor => IRInstruction::Xor { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Shl => IRInstruction::Shl { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Shr => IRInstruction::Shr { dst, lhs: lhs_safe, rhs, signed: true },
+            BinaryOp::Add => IRInstruction::Add { dst, lhs, rhs, ty },
+            BinaryOp::Sub => IRInstruction::Sub { dst, lhs, rhs, ty },
+            BinaryOp::Mul => IRInstruction::Mul { dst, lhs, rhs, ty },
+            BinaryOp::Div => IRInstruction::Div { dst, lhs, rhs, ty },
+            BinaryOp::Mod => IRInstruction::Mod { dst, lhs, rhs, ty },
+            BinaryOp::And => IRInstruction::And { dst, lhs, rhs },
+            BinaryOp::Or => IRInstruction::Or { dst, lhs, rhs },
+            BinaryOp::BitXor => IRInstruction::Xor { dst, lhs, rhs },
+            BinaryOp::Shl => IRInstruction::Shl { dst, lhs, rhs },
+            BinaryOp::Shr => IRInstruction::Shr { dst, lhs, rhs, signed: true },
             _ => return Err("Unsupported binary operation".to_string()),
         };
 
@@ -763,6 +609,7 @@ impl IRBuilder {
             arg_vals.push(self.build_expression(func, arg)?);
         }
 
+        // Resolve function name - if it's not qualified, try current class context
         let resolved_name = if !name.contains('.') && self.current_class.is_some() {
             self.get_full_name(&name)
         } else {
@@ -804,6 +651,9 @@ impl IRBuilder {
         self.switch_to_block(func, then_block);
         for stmt in then_body {
             self.build_statement(func, stmt)?;
+            if self.has_terminator(func) {
+                break;
+            }
         }
         if !self.has_terminator(func) {
             self.emit_instruction(func, IRInstruction::Branch { target: merge_block });
@@ -814,6 +664,9 @@ impl IRBuilder {
         if let Some(else_stmts) = else_body {
             for stmt in else_stmts {
                 self.build_statement(func, stmt)?;
+                if self.has_terminator(func) {
+                    break;
+                }
             }
         }
         if !self.has_terminator(func) {
@@ -847,6 +700,9 @@ impl IRBuilder {
 
         for stmt in body {
             self.build_statement(func, stmt)?;
+            if self.has_terminator(func) {
+                break;
+            }
         }
 
         if !self.has_terminator(func) {
@@ -897,6 +753,9 @@ impl IRBuilder {
 
         for stmt in body {
             self.build_statement(func, stmt)?;
+            if self.has_terminator(func) {
+                break;
+            }
         }
 
         if !self.has_terminator(func) {

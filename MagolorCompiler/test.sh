@@ -1,56 +1,77 @@
 #!/bin/bash
 
-echo "🔍 Debugging Segmentation Fault"
-echo "================================"
+echo "🚀 Testing All Features"
+echo "======================="
 echo ""
 
-# Check what the assembly looks like
-echo "1. Checking generated main function:"
-echo "---"
-sed -n '/^main:/,/^[a-zA-Z]/p' hallo.s | head -30
-echo "---"
+# Step 1: Replace ir_builder.rs
+echo "Step 1: Backing up and replacing ir_builder.rs..."
+cp src/modules/ir/ir_builder.rs src/modules/ir/ir_builder.rs.old
+echo "   Copy the 'Complete Fix - IR Builder with All Features' artifact"
+echo "   to: src/modules/ir/ir_builder.rs"
 echo ""
+read -p "Press Enter when ready..."
 
-# Run with gdb to see where it crashes
-echo "2. Running with GDB to find crash location:"
+# Step 2: Rebuild
 echo ""
+echo "Step 2: Rebuilding compiler..."
+cargo build 2>&1 | grep -E "error" && {
+    echo "❌ Build failed!"
+    exit 1
+}
+echo "   ✅ Built successfully"
 
-if command -v gdb &> /dev/null; then
-    # Create GDB commands
-    cat > gdb_commands.txt << 'EOF'
-run
-backtrace
-info registers
-quit
-EOF
-    
-    gdb -batch -x gdb_commands.txt ./program 2>&1 | head -50
-    rm gdb_commands.txt
+# Step 3: Test with full example
+echo ""
+echo "Step 3: Testing with full example (including factorial)..."
+cargo run --quiet hallo.mg 2>&1 | tail -5
+
+# Step 4: Check factorial assembly
+echo ""
+echo "Step 4: Checking factorial assembly..."
+echo "   Looking for the multiplication with saved value:"
+if grep -A 35 "Calculator.MathOperations.factorial:" hallo.s | grep -E "Load.*Local|Store.*Local.*Register" > /dev/null; then
+    echo "   ✅ Found local variable storage (register preservation)"
 else
-    echo "GDB not available, using objdump..."
-    objdump -d ./program | grep -A 20 "<main>:"
+    echo "   ⚠️  No explicit preservation found, checking pattern..."
 fi
 
 echo ""
-echo "3. Checking for common issues in generated code:"
-echo ""
+echo "   Factorial assembly:"
+grep -A 35 "Calculator.MathOperations.factorial:" hallo.s | head -40
 
-# Check for uninitialized register usage
-if grep -q "mov qword ptr \[rax\], 0" hallo.s; then
-    echo "⚠️  Found: mov qword ptr [rax], 0"
-    echo "   Problem: Using uninitialized RAX as pointer!"
-    echo "   This will definitely segfault."
+# Step 5: Build and run
+echo ""
+echo "Step 5: Building executable..."
+gcc -c hallo.s -o hallo.o 2>&1 | head -3
+gcc hallo.o runtime.o -o program -no-pie -lm 2>&1 | head -3
+
+if [ $? -eq 0 ]; then
+    echo "   ✅ Executable created"
+else
+    echo "   ❌ Linking failed"
+    exit 1
 fi
 
-# Check for bad memory access patterns
-if grep -q "mov .*, \[0x" hallo.s; then
-    echo "⚠️  Found: Suspicious memory access"
+# Step 6: Run!
+echo ""
+echo "======================================"
+echo "🎉 RUNNING PROGRAM"
+echo "======================================"
+echo ""
+./program
+EXIT_CODE=$?
+
+echo ""
+echo "======================================"
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "✅ Program completed successfully!"
+    echo ""
+    echo "Expected output:"
+    echo "  5! = 120  (should be 120, not 1)"
+    echo "  Wednesday (from match)"
+    echo "  Total calls: 3"
+else
+    echo "⚠️  Exit code: $EXIT_CODE"
 fi
-
-echo ""
-echo "4. Disassembling main to see actual instructions:"
-objdump -d program -M intel | sed -n '/<main>:/,/<[^>]*>:/p' | head -40
-
-echo ""
-echo "================================"
-echo "Analysis complete"
+echo "======================================"

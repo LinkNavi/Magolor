@@ -1,24 +1,91 @@
 #!/bin/bash
-# Quick fix script - restore original ir_builder.rs
 
-echo "Restoring original ir_builder.rs from git..."
+echo "🔍 Checking runtime and execution"
+echo "================================="
+echo ""
 
-# Check if we have the original
-if git show HEAD:src/modules/ir/ir_builder.rs > /tmp/ir_builder_backup.rs 2>/dev/null; then
-    echo "✓ Found original in git"
-    cp /tmp/ir_builder_backup.rs src/modules/ir/ir_builder.rs
-    echo "✓ Restored original ir_builder.rs"
+# Check if runtime has the correct functions
+echo "1. Checking runtime.o symbols:"
+nm runtime.o | grep -E "console_print|string_concat"
+echo ""
+
+# Check what strings are in the program
+echo "2. Checking string literals in program:"
+strings program | head -20
+echo ""
+
+# Look at the actual assembly for the factorial call site
+echo "3. Looking at main() disassembly around factorial:"
+objdump -d program -M intel | sed -n '/<main>/,/<[^>]*>:/p' | tail -50
+echo ""
+
+# The issue might be statement ordering
+echo "4. Checking the order of operations in hallo.mg:"
+echo "---"
+cat hallo.mg | grep -A 2 -B 2 "factorial"
+echo "---"
+echo ""
+
+# Create a test with explicit ordering
+echo "5. Creating test with explicit order:"
+cat > test_order.mg << 'EOF'
+use Console;
+
+namespace Calculator {
+    public class MathOperations {
+        private static i32 callCount = 0;
+        
+        public static i32 fn add(i32 a, i32 b) {
+            callCount++;
+            return a + b;
+        }
+        
+        public static i32 fn factorial(i32 n) {
+            if (n <= 1) {
+                return 1;
+            }
+            return n * factorial(n - 1);
+        }
+        
+        public static i32 fn getCallCount() {
+            return callCount;
+        }
+    }
+}
+
+void fn main() {
+    console.print("=== Calculator Demo ===");
+    
+    let result1 = Calculator.MathOperations.add(5, 3);
+    console.print("5 + 3 = " + result1);
+    
+    console.print("About to call factorial...");
+    let fact = Calculator.MathOperations.factorial(5);
+    console.print("Factorial computed");
+    console.print("5! = " + fact);
+    
+    console.print("Done!");
+}
+EOF
+
+echo "6. Compiling test_order.mg:"
+cargo run --quiet test_order.mg 2>&1 | tail -1
+
+if [ -f test_order.s ]; then
+    gcc -c test_order.s -o test_order.o && \
+    gcc test_order.o runtime.o -o test_order -no-pie -lm && \
+    echo "" && \
+    echo "7. Running test_order:" && \
+    echo "---" && \
+    ./test_order && \
+    echo "---"
 else
-    echo "❌ Could not find original in git"
-    echo ""
-    echo "Manual fix needed:"
-    echo "The ir_builder.rs file needs to have a complete IRBuilder implementation."
-    echo "The artifact I provided was incomplete."
-    echo ""
-    echo "Solution: Keep your ORIGINAL ir_builder.rs file from document index 24"
-    echo "Only replace codegen.rs (document index 19) with the fixed version"
+    echo "❌ Compilation failed"
 fi
 
 echo ""
-echo "Now update codegen.rs with the lifetime fixes..."
-echo "Replace src/modules/ir/codegen.rs with the 'codegen_fixed' artifact"
+echo "8. If factorial still shows wrong value, check the assembly:"
+if [ -f test_order.s ]; then
+    echo "Looking for imul in factorial:"
+    grep -A 30 "Calculator.MathOperations.factorial:" test_order.s | grep -E "(imul|mul|call.*factorial)"
+fi

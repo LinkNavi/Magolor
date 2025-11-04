@@ -31,36 +31,6 @@ Calculator.MathOperations.factorial:
     pop rbp
     ret
 
-    .globl Calculator.MathOperations.add
-Calculator.MathOperations.add:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_add_0:
-    mov rbx, rax
-    add rbx, 1
-    mov qword ptr [Calculator.MathOperations.callCount], rbx
-    mov rcx, rdi
-    add rcx, rsi
-    mov rax, rcx
-    jmp .L_Calculator_MathOperations_add_epilogue
-.L_Calculator_MathOperations_add_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-    .globl Calculator.MathOperations.getCallCount
-Calculator.MathOperations.getCallCount:
-    push rbp
-    mov rbp, rsp
-.L_Calculator_MathOperations_getCallCount_0:
-    mov rax, qword ptr [Calculator.MathOperations.callCount]
-    mov rax, rax
-    jmp .L_Calculator_MathOperations_getCallCount_epilogue
-.L_Calculator_MathOperations_getCallCount_epilogue:
-    mov rsp, rbp
-    pop rbp
-    ret
-
     .globl Calculator.MathOperations.divide
 Calculator.MathOperations.divide:
     push rbp
@@ -92,11 +62,41 @@ Calculator.MathOperations.divide:
     pop rbp
     ret
 
+    .globl Calculator.MathOperations.getCallCount
+Calculator.MathOperations.getCallCount:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_getCallCount_0:
+    mov rax, qword ptr [Calculator.MathOperations.callCount]
+    mov rax, rax
+    jmp .L_Calculator_MathOperations_getCallCount_epilogue
+.L_Calculator_MathOperations_getCallCount_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+    .globl Calculator.MathOperations.add
+Calculator.MathOperations.add:
+    push rbp
+    mov rbp, rsp
+.L_Calculator_MathOperations_add_0:
+    mov rbx, rax
+    add rbx, 1
+    mov qword ptr [Calculator.MathOperations.callCount], rbx
+    mov rcx, rdi
+    add rcx, rsi
+    mov rax, rcx
+    jmp .L_Calculator_MathOperations_add_epilogue
+.L_Calculator_MathOperations_add_epilogue:
+    mov rsp, rbp
+    pop rbp
+    ret
+
     .globl main
 main:
     push rbp
     mov rbp, rsp
-    sub rsp, 64
+    sub rsp, 128
 .L_main_0:
     lea rdi, [__str_1]
     call console_print
@@ -139,44 +139,77 @@ main:
     mov rdi, r13
     call console_print
     mov r14, rax
-    mov qword ptr [rbp - 32], 0
-    mov qword ptr [rbp - 40], 0
-    mov r15, 0
-    lea rdi, [__str_5]
-    mov rsi, r15
-    call string_concat_int
-    mov rax, rax
-    mov rdi, qword ptr [rbp - 8]
-    call console_print
-    mov rax, rax
-    mov qword ptr [rbp - 48], 0
+    mov qword ptr [rbp - 40], 1
+    mov qword ptr [rbp - 48], 2
+    mov qword ptr [rbp - 56], 3
+    mov qword ptr [rbp - 64], 4
+    mov qword ptr [rbp - 72], 5
+    mov rax, qword ptr [rbp - 40]
+    mov qword ptr [rbp - 32], rax
+    mov qword ptr [rbp - 80], 0
+    mov qword ptr [rbp - 96], 0
     jmp .L_main_1
 .L_main_1:
-    mov rax, qword ptr [rbp - 24]
-    cmp rax, 3
+    mov rax, qword ptr [rbp - 8]
+    cmp rax, 5
     setl al
     movzx rax, al
     test rax, rax
     jnz .L_main_2
     jmp .L_main_4
 .L_main_2:
+    mov rax, r15
+    add rax, qword ptr [rbp - 8]
+    mov rax, qword ptr [rbp - 24]
+    mov qword ptr [rbp - 88], rax
+    mov rax, qword ptr [rbp - 32]
+    add rax, qword ptr [rbp - 40]
     mov rax, qword ptr [rbp - 48]
-    lea rdi, [__str_6]
-    mov rsi, qword ptr [rbp - 40]
-    call string_concat_int
-    mov rax, rax
-    mov rdi, qword ptr [rbp - 48]
-    call console_print
-    mov rax, rax
+    mov qword ptr [rbp - 80], rax
     jmp .L_main_3
 .L_main_3:
-    mov rax, qword ptr [rbp - 64]
+    mov rax, qword ptr [rbp - 56]
     add rax, 1
-    mov rax, qword ptr [rbp - 72]
-    mov qword ptr [rbp - 48], rax
+    mov rax, qword ptr [rbp - 64]
+    mov qword ptr [rbp - 96], rax
     jmp .L_main_1
 .L_main_4:
-    mov qword ptr [rbp - 56], 3
+    mov rax, qword ptr [rbp - 80]
+    lea rdi, [__str_5]
+    mov rsi, qword ptr [rbp - 72]
+    call string_concat_int
+    mov rax, rax
+    mov rdi, qword ptr [rbp - 80]
+    call console_print
+    mov rax, rax
+    mov qword ptr [rbp - 104], 0
+    jmp .L_main_5
+.L_main_5:
+    mov rax, qword ptr [rbp - 96]
+    cmp rax, 3
+    setl al
+    movzx rax, al
+    test rax, rax
+    jnz .L_main_6
+    jmp .L_main_8
+.L_main_6:
+    mov rax, qword ptr [rbp - 104]
+    lea rdi, [__str_6]
+    mov rsi, qword ptr [rbp - 112]
+    call string_concat_int
+    mov rax, rax
+    mov rdi, qword ptr [rbp - 120]
+    call console_print
+    mov rax, rax
+    jmp .L_main_7
+.L_main_7:
+    mov rax, qword ptr [rbp - 136]
+    add rax, 1
+    mov rax, qword ptr [rbp - 144]
+    mov qword ptr [rbp - 104], rax
+    jmp .L_main_5
+.L_main_8:
+    mov qword ptr [rbp - 112], 3
 .L_main_epilogue:
     mov rsp, rbp
     pop rbp
@@ -184,29 +217,29 @@ main:
 
 
     .data
-__str_8:
-    .asciz "Tuesday"
-__str_9:
-    .asciz "Wednesday"
-__str_0:
-    .asciz "Error: Division by zero"
-__str_4:
-    .asciz "5! = "
-__str_7:
-    .asciz "Monday"
 __str_11:
     .asciz "Total math operations: "
-__str_3:
-    .asciz "10 / 2 = "
-__str_2:
-    .asciz "5 + 3 = "
-__str_5:
-    .asciz "Sum of array: "
-__str_6:
-    .asciz "Loop iteration: "
+__str_8:
+    .asciz "Tuesday"
 __str_10:
     .asciz "Other day"
+__str_4:
+    .asciz "5! = "
+__str_2:
+    .asciz "5 + 3 = "
+__str_6:
+    .asciz "Loop iteration: "
+__str_9:
+    .asciz "Wednesday"
 __str_1:
     .asciz "=== Calculator Demo ==="
+__str_7:
+    .asciz "Monday"
+__str_0:
+    .asciz "Error: Division by zero"
+__str_3:
+    .asciz "10 / 2 = "
+__str_5:
+    .asciz "Sum of array: "
 Calculator.MathOperations.callCount:
     .quad 0
