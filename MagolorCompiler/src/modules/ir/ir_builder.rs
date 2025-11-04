@@ -1,6 +1,6 @@
-// src/modules/ir/ir_builder.rs - COMPLETE WITH ALL FEATURES
+// src/modules/ir/ir_builder.rs - COMPLETE WITH FACTORIAL FIX
 // Key fixes:
-// 1. Proper register allocation for recursive calls
+// 1. Proper register allocation for recursive calls (SAVES TO LOCALS)
 // 2. Array support with proper memory allocation
 // 3. For/foreach loop support
 
@@ -688,14 +688,14 @@ impl IRBuilder {
     }
 
     fn build_binary_op(&mut self, func: &mut IRFunction, op: BinaryOp, left: ASTValue, right: ASTValue) -> Result<IRValue, String> {
-        // CRITICAL FIX: Save left operand in a temporary BEFORE evaluating right
+        // CRITICAL FIX: Save left operand in a LOCAL BEFORE evaluating right
         // This prevents register clobbering in recursive calls
         
         let lhs = self.build_expression(func, left)?;
         
-        // If lhs is a register that might get clobbered, save it
-        let lhs_safe = match &lhs {
-            IRValue::Register(_) => {
+        // ALWAYS save register values before potentially clobbering operations
+        let (lhs_safe, temp_local) = match &lhs {
+            IRValue::Register(_) | IRValue::Argument(_) => {
                 let temp_local = self.local_counter;
                 self.local_counter += 1;
                 let temp_addr = IRValue::Local(temp_local);
@@ -704,33 +704,41 @@ impl IRBuilder {
                     value: lhs.clone(),
                     ty: IRType::I32,
                 });
-                
-                let reload_reg = self.next_register();
-                self.emit_instruction(func, IRInstruction::Load {
-                    dst: reload_reg,
-                    addr: temp_addr,
-                    ty: IRType::I32,
-                });
-                IRValue::Register(reload_reg)
+                (temp_addr, Some(temp_local))
             }
-            _ => lhs.clone(),
+            _ => (lhs.clone(), None),
         };
         
+        // Now evaluate right side (might contain recursive calls)
         let rhs = self.build_expression(func, right)?;
-        let ty = self.infer_type(&lhs_safe);
+        
+        // Reload the saved left value
+        let lhs_final = if let Some(_) = temp_local {
+            let reload_reg = self.next_register();
+            self.emit_instruction(func, IRInstruction::Load {
+                dst: reload_reg,
+                addr: lhs_safe.clone(),
+                ty: IRType::I32,
+            });
+            IRValue::Register(reload_reg)
+        } else {
+            lhs_safe
+        };
+        
+        let ty = self.infer_type(&lhs_final);
         let dst = self.next_register();
 
         let instr = match op {
-            BinaryOp::Add => IRInstruction::Add { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Sub => IRInstruction::Sub { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Mul => IRInstruction::Mul { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Div => IRInstruction::Div { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::Mod => IRInstruction::Mod { dst, lhs: lhs_safe, rhs, ty },
-            BinaryOp::And => IRInstruction::And { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Or => IRInstruction::Or { dst, lhs: lhs_safe, rhs },
-            BinaryOp::BitXor => IRInstruction::Xor { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Shl => IRInstruction::Shl { dst, lhs: lhs_safe, rhs },
-            BinaryOp::Shr => IRInstruction::Shr { dst, lhs: lhs_safe, rhs, signed: true },
+            BinaryOp::Add => IRInstruction::Add { dst, lhs: lhs_final, rhs, ty },
+            BinaryOp::Sub => IRInstruction::Sub { dst, lhs: lhs_final, rhs, ty },
+            BinaryOp::Mul => IRInstruction::Mul { dst, lhs: lhs_final, rhs, ty },
+            BinaryOp::Div => IRInstruction::Div { dst, lhs: lhs_final, rhs, ty },
+            BinaryOp::Mod => IRInstruction::Mod { dst, lhs: lhs_final, rhs, ty },
+            BinaryOp::And => IRInstruction::And { dst, lhs: lhs_final, rhs },
+            BinaryOp::Or => IRInstruction::Or { dst, lhs: lhs_final, rhs },
+            BinaryOp::BitXor => IRInstruction::Xor { dst, lhs: lhs_final, rhs },
+            BinaryOp::Shl => IRInstruction::Shl { dst, lhs: lhs_final, rhs },
+            BinaryOp::Shr => IRInstruction::Shr { dst, lhs: lhs_final, rhs, signed: true },
             _ => return Err("Unsupported binary operation".to_string()),
         };
 
