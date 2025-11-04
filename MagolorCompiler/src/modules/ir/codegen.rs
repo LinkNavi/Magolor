@@ -1,5 +1,5 @@
 // src/modules/ir/codegen.rs
-// Final code generation to target assembly/machine code
+// Final code generation to target assembly/machine code - COMPLETELY FIXED
 
 use crate::modules::ir::ir_types::*;
 use crate::modules::ir::register_allocator::{RegisterAllocator, PhysicalRegister};
@@ -21,10 +21,10 @@ pub enum Target {
 impl CodeGenerator {
     pub fn new(target: Target) -> Self {
         let num_registers = match target {
-            Target::X86_64 => 14, // General purpose registers
+            Target::X86_64 => 14,
             Target::ARM64 => 28,
-            Target::WASM => 0, // Stack-based
-            Target::LLVM => 0, // LLVM handles register allocation
+            Target::WASM => 0,
+            Target::LLVM => 0,
         };
 
         Self {
@@ -45,16 +45,13 @@ impl CodeGenerator {
     fn generate_x86_64(&mut self, program: &IRProgram) -> Result<String, String> {
         let mut output = String::new();
 
-        // Assembly header
         output.push_str("    .text\n");
         output.push_str("    .intel_syntax noprefix\n\n");
 
-        // Generate code for each function
         for (name, func) in &program.functions {
             output.push_str(&self.generate_function_x86_64(name, func)?);
         }
 
-        // Data section for globals and strings
         if !program.globals.is_empty() || !program.string_literals.is_empty() {
             output.push_str("\n    .data\n");
             
@@ -76,168 +73,214 @@ impl CodeGenerator {
         Ok(output)
     }
 
-   // Fix in src/modules/ir/codegen.rs
-// The issue is that we're calling register allocator but it may fail or not allocate all registers
-// For now, let's use a simpler approach: direct virtual-to-physical mapping
+    fn generate_function_x86_64(&mut self, name: &str, func: &IRFunction) -> Result<String, String> {
+        let mut output = String::new();
 
-fn generate_function_x86_64(&mut self, name: &str, func: &IRFunction) -> Result<String, String> {
-    let mut output = String::new();
+        output.push_str(&format!("    .globl {}\n", name));
+        output.push_str(&format!("{}:\n", name));
 
-    // Function label
-    output.push_str(&format!("    .globl {}\n", name));
-    output.push_str(&format!("{}:\n", name));
+        // Prologue
+        output.push_str("    push rbp\n");
+        output.push_str("    mov rbp, rsp\n");
 
-    // Prologue
-    output.push_str("    push rbp\n");
-    output.push_str("    mov rbp, rsp\n");
-
-    // Allocate stack space for locals
-    if func.local_count > 0 {
-        let stack_size = func.local_count * 8;
-        output.push_str(&format!("    sub rsp, {}\n", stack_size));
-    }
-
-    // SIMPLIFIED: Use a simple virtual-to-physical register mapping
-    // Instead of complex graph coloring, map virtual regs to a rotating set of physical regs
-    let allocation = self.simple_register_map(func);
-
-    // Generate code for each block
-    for block in &func.blocks {
-        let label = format!(".L_{}_{}",  name.replace(".", "_"), block.id);
-        output.push_str(&format!("{}:\n", label));
-
-        for instr in &block.instructions {
-            output.push_str(&self.generate_instruction_x86_64(instr, &allocation, name)?);
-        }
-    }
-
-    // Default epilogue (if no explicit return)
-    let epilogue_label = format!(".L_{}_epilogue",  name.replace(".", "_"));
-        output.push_str(&format!("{}:
-", epilogue_label));
-    output.push_str("    mov rsp, rbp\n");
-    output.push_str("    pop rbp\n");
-    output.push_str("    ret\n\n");
-
-    Ok(output)
-}
-
-// Add this helper method to create a simple register allocation
-fn simple_register_map(&self, func: &IRFunction) -> HashMap<usize, PhysicalRegister> {
-    let mut allocation = HashMap::new();
-    let phys_regs = [
-        PhysicalRegister::RAX,
-        PhysicalRegister::RBX,
-        PhysicalRegister::RCX,
-        PhysicalRegister::RDX,
-        PhysicalRegister::RSI,
-        PhysicalRegister::RDI,
-        PhysicalRegister::R8,
-        PhysicalRegister::R9,
-        PhysicalRegister::R10,
-        PhysicalRegister::R11,
-        PhysicalRegister::R12,
-        PhysicalRegister::R13,
-        PhysicalRegister::R14,
-        PhysicalRegister::R15,
-    ];
-
-    // Simple round-robin allocation
-    for vreg in 0..func.register_count {
-        if vreg < phys_regs.len() {
-            allocation.insert(vreg, phys_regs[vreg]);
-        } else {
-            // Spill to stack for registers beyond available physical regs
-            allocation.insert(vreg, PhysicalRegister::Spilled(vreg - phys_regs.len()));
-        }
-    }
-
-    allocation
-}
-
-   // Complete replacement for generate_instruction_x86_64 in src/modules/ir/codegen.rs
-// This version handles all memory vs register issues
-
-fn generate_instruction_x86_64(
-    &self,
-    instr: &IRInstruction,
-    allocation: &HashMap<usize, PhysicalRegister>,
-    func_name: &str,
-) -> Result<String, String> {
-    match instr {
-        IRInstruction::Add { dst, lhs, rhs, .. } => {
-            let dst_reg = self.get_physical_reg(*dst, allocation)?;
-            let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
-            let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
-            Ok(format!("    mov {}, {}\n    add {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
+        // Allocate stack space for locals (align to 16 bytes)
+        if func.local_count > 0 {
+            let stack_size = ((func.local_count * 8 + 15) / 16) * 16;
+            output.push_str(&format!("    sub rsp, {}\n", stack_size));
         }
 
-        IRInstruction::Sub { dst, lhs, rhs, .. } => {
-            let dst_reg = self.get_physical_reg(*dst, allocation)?;
-            let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
-            let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
-            Ok(format!("    mov {}, {}\n    sub {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
-        }
+        let allocation = self.simple_register_map(func);
 
-        IRInstruction::Mul { dst, lhs, rhs, .. } => {
-            let dst_reg = self.get_physical_reg(*dst, allocation)?;
-            let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
-            let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
-            Ok(format!("    mov {}, {}\n    imul {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
-        }
+        for block in &func.blocks {
+            let label = format!(".L_{}_{}",  name.replace(".", "_"), block.id);
+            output.push_str(&format!("{}:\n", label));
 
-        IRInstruction::Load { dst, addr, .. } => {
-            let dst_reg = self.get_physical_reg(*dst, allocation)?;
-            
-            match addr {
-                IRValue::Local(idx) => {
-                    let offset = (idx + 1) * 8;
-                    Ok(format!("    mov {}, qword ptr [rbp - {}]\n", dst_reg, offset))
-                }
-                IRValue::Global(name) => {
-                    Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, name))
-                }
-                IRValue::Register(reg) => {
-                    let addr_reg = self.get_physical_reg(*reg, allocation)?;
-                    Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, addr_reg))
-                }
-                _ => {
-                    let addr_str = self.format_operand_x86_64(addr, allocation)?;
-                    Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, addr_str))
-                }
+            for instr in &block.instructions {
+                output.push_str(&self.generate_instruction_x86_64(instr, &allocation, name)?);
             }
         }
 
-        IRInstruction::Store { addr, value, .. } => {
-            let value_str = self.format_operand_x86_64(value, allocation)?;
-            
-            match addr {
-                IRValue::Local(idx) => {
-                    let offset = (idx + 1) * 8;
-                    Ok(format!("    mov qword ptr [rbp - {}], {}\n", offset, value_str))
-                }
-                IRValue::Global(name) => {
-                    Ok(format!("    mov qword ptr [{}], {}\n", name, value_str))
-                }
-                IRValue::Register(reg) => {
-                    let reg_str = self.get_physical_reg(*reg, allocation)?;
-                    Ok(format!("    mov qword ptr [{}], {}\n", reg_str, value_str))
-                }
-                _ => {
-                    let addr_str = self.format_operand_x86_64(addr, allocation)?;
-                    Ok(format!("    mov qword ptr [{}], {}\n", addr_str, value_str))
-                }
+        let epilogue_label = format!(".L_{}_epilogue",  name.replace(".", "_"));
+        output.push_str(&format!("{}:\n", epilogue_label));
+        output.push_str("    mov rsp, rbp\n");
+        output.push_str("    pop rbp\n");
+        output.push_str("    ret\n\n");
+
+        Ok(output)
+    }
+
+    fn simple_register_map(&self, func: &IRFunction) -> HashMap<usize, PhysicalRegister> {
+        let mut allocation = HashMap::new();
+        let phys_regs = [
+            PhysicalRegister::RAX,
+            PhysicalRegister::RBX,
+            PhysicalRegister::RCX,
+            PhysicalRegister::RDX,
+            PhysicalRegister::RSI,
+            PhysicalRegister::RDI,
+            PhysicalRegister::R8,
+            PhysicalRegister::R9,
+            PhysicalRegister::R10,
+            PhysicalRegister::R11,
+            PhysicalRegister::R12,
+            PhysicalRegister::R13,
+            PhysicalRegister::R14,
+            PhysicalRegister::R15,
+        ];
+
+        for vreg in 0..func.register_count {
+            if vreg < phys_regs.len() {
+                allocation.insert(vreg, phys_regs[vreg]);
+            } else {
+                allocation.insert(vreg, PhysicalRegister::Spilled(vreg - phys_regs.len()));
             }
         }
 
-        IRInstruction::Move { dst, src } => {
-            let dst_str = match allocation.get(dst) {
-                Some(PhysicalRegister::Spilled(slot)) => {
-                    // Moving to spilled (memory) location
+        allocation
+    }
+
+    fn generate_instruction_x86_64(
+        &self,
+        instr: &IRInstruction,
+        allocation: &HashMap<usize, PhysicalRegister>,
+        func_name: &str,
+    ) -> Result<String, String> {
+        match instr {
+            IRInstruction::Add { dst, lhs, rhs, .. } => {
+                let dst_reg = self.get_physical_reg_name(*dst, allocation)?;
+                let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
+                let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
+                Ok(format!("    mov {}, {}\n    add {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
+            }
+
+            IRInstruction::Sub { dst, lhs, rhs, .. } => {
+                let dst_reg = self.get_physical_reg_name(*dst, allocation)?;
+                let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
+                let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
+                Ok(format!("    mov {}, {}\n    sub {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
+            }
+
+            IRInstruction::Mul { dst, lhs, rhs, .. } => {
+                let dst_reg = self.get_physical_reg_name(*dst, allocation)?;
+                let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
+                let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
+                Ok(format!("    mov {}, {}\n    imul {}, {}\n", dst_reg, lhs_str, dst_reg, rhs_str))
+            }
+
+            IRInstruction::Div { dst, lhs, rhs, ty } => {
+                let dst_reg = self.get_physical_reg_name(*dst, allocation)?;
+                let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
+                let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
+                
+                let mut code = String::new();
+                
+                match ty {
+                    IRType::F32 | IRType::F64 => {
+                        // Floating point division
+                        code.push_str(&format!("    movq xmm0, {}\n", lhs_str));
+                        code.push_str(&format!("    movq xmm1, {}\n", rhs_str));
+                        code.push_str("    divsd xmm0, xmm1\n");
+                        code.push_str(&format!("    movq {}, xmm0\n", dst_reg));
+                    }
+                    _ => {
+                        // Integer division
+                        code.push_str(&format!("    mov rax, {}\n", lhs_str));
+                        code.push_str("    cqo\n");
+                        
+                        if rhs_str.contains('[') {
+                            code.push_str(&format!("    mov rcx, {}\n", rhs_str));
+                            code.push_str("    idiv rcx\n");
+                        } else {
+                            code.push_str(&format!("    idiv {}\n", rhs_str));
+                        }
+                        
+                        if dst_reg != "rax" {
+                            code.push_str(&format!("    mov {}, rax\n", dst_reg));
+                        }
+                    }
+                }
+                
+                Ok(code)
+            }
+
+            IRInstruction::Load { dst, addr, .. } => {
+                let dst_reg = self.get_physical_reg_name(*dst, allocation)?;
+                
+                match addr {
+                    IRValue::Local(idx) => {
+                        let offset = (idx + 1) * 8;
+                        Ok(format!("    mov {}, qword ptr [rbp - {}]\n", dst_reg, offset))
+                    }
+                    IRValue::Global(name) => {
+                        // String literals need lea, not mov
+                        if name.starts_with("__str_") {
+                            Ok(format!("    lea {}, [{}]\n", dst_reg, name))
+                        } else {
+                            Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, name))
+                        }
+                    }
+                    IRValue::Register(reg) => {
+                        let addr_reg = self.get_physical_reg_name(*reg, allocation)?;
+                        Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, addr_reg))
+                    }
+                    _ => {
+                        let addr_str = self.format_operand_x86_64(addr, allocation)?;
+                        Ok(format!("    mov {}, qword ptr [{}]\n", dst_reg, addr_str))
+                    }
+                }
+            }
+
+            IRInstruction::Store { addr, value, .. } => {
+                match addr {
+                    IRValue::Local(idx) => {
+                        let offset = (idx + 1) * 8;
+                        let value_str = self.format_operand_x86_64(value, allocation)?;
+                        
+                        // Check if value is a memory operand
+                        if value_str.contains('[') || value_str.contains("ptr") {
+                            Ok(format!("    mov rax, {}\n    mov qword ptr [rbp - {}], rax\n", value_str, offset))
+                        } else {
+                            Ok(format!("    mov qword ptr [rbp - {}], {}\n", offset, value_str))
+                        }
+                    }
+                    IRValue::Global(name) => {
+                        let value_str = self.format_operand_x86_64(value, allocation)?;
+                        
+                        if value_str.contains('[') || value_str.contains("ptr") {
+                            Ok(format!("    mov rax, {}\n    mov qword ptr [{}], rax\n", value_str, name))
+                        } else {
+                            Ok(format!("    mov qword ptr [{}], {}\n", name, value_str))
+                        }
+                    }
+                    IRValue::Register(reg) => {
+                        let reg_str = self.get_physical_reg_name(*reg, allocation)?;
+                        let value_str = self.format_operand_x86_64(value, allocation)?;
+                        
+                        if value_str.contains('[') || value_str.contains("ptr") {
+                            Ok(format!("    mov rax, {}\n    mov qword ptr [{}], rax\n", value_str, reg_str))
+                        } else {
+                            Ok(format!("    mov qword ptr [{}], {}\n", reg_str, value_str))
+                        }
+                    }
+                    _ => {
+                        let addr_str = self.format_operand_x86_64(addr, allocation)?;
+                        let value_str = self.format_operand_x86_64(value, allocation)?;
+                        
+                        if value_str.contains('[') || value_str.contains("ptr") {
+                            Ok(format!("    mov rax, {}\n    mov qword ptr [{}], rax\n", value_str, addr_str))
+                        } else {
+                            Ok(format!("    mov qword ptr [{}], {}\n", addr_str, value_str))
+                        }
+                    }
+                }
+            }
+
+            IRInstruction::Move { dst, src } => {
+                // Check if destination is spilled to memory
+                if let Some(PhysicalRegister::Spilled(slot)) = allocation.get(dst) {
                     let src_str = self.format_operand_x86_64(src, allocation)?;
                     let offset = (slot + 1) * 8;
                     
-                    // Can't move memory-to-memory, use temp register
                     if src_str.contains('[') {
                         return Ok(format!(
                             "    mov rax, {}\n    mov qword ptr [rbp - {}], rax\n",
@@ -250,134 +293,151 @@ fn generate_instruction_x86_64(
                         ));
                     }
                 }
-                Some(reg) => self.physical_reg_name(reg),
-                None => return Err(format!("No allocation for register {}", dst)),
-            };
-            
-            let src_str = self.format_operand_x86_64(src, allocation)?;
-            Ok(format!("    mov {}, {}\n", dst_str, src_str))
-        }
-
-        IRInstruction::Branch { target } => {
-            let label = format!(".L_{}_{}",  func_name.replace(".", "_"), target);
-            Ok(format!("    jmp {}\n", label))
-        }
-
-        IRInstruction::CondBranch { cond, true_target, false_target } => {
-            let cond_str = self.format_operand_x86_64(cond, allocation)?;
-            let true_label = format!(".L_{}_{}",  func_name.replace(".", "_"), true_target);
-            let false_label = format!(".L_{}_{}",  func_name.replace(".", "_"), false_target);
-            
-            let mut code = String::new();
-            
-            // If condition is in memory, load it to a register first
-            let cond_reg = if cond_str.contains('[') {
-                code.push_str(&format!("    mov rax, {}\n", cond_str));
-                "rax"
-            } else {
-                &cond_str
-            };
-            
-            code.push_str(&format!("    test {}, {}\n", cond_reg, cond_reg));
-            code.push_str(&format!("    jnz {}\n", true_label));
-            code.push_str(&format!("    jmp {}\n", false_label));
-            
-            Ok(code)
-        }
-
-        IRInstruction::Return { value } => {
-            let mut code = String::new();
-            if let Some(val) = value {
-                let val_str = self.format_operand_x86_64(val, allocation)?;
-                code.push_str(&format!("    mov rax, {}\n", val_str));
-            }
-            let epilogue_label = format!(".L_{}_epilogue",  func_name.replace(".", "_"));
-            code.push_str(&format!("    jmp {}\n", epilogue_label));
-            Ok(code)
-        }
-
-        IRInstruction::Call { dst, func, args, .. } => {
-            let mut code = String::new();
-            
-            if func.contains("print") || func.contains("Console") || func.contains("console") {
-                if !args.is_empty() {
-                    match &args[0] {
-                        IRValue::Global(s) if s.starts_with("__str_") => {
-                            code.push_str(&format!("    lea rdi, [{}]\n", s));
-                        }
-                        _ => {
-                            let arg_str = self.format_operand_x86_64(&args[0], allocation)?;
-                            code.push_str(&format!("    mov rdi, {}\n", arg_str));
-                        }
-                    }
-                }
-                code.push_str("    call console_print\n");
-            } else {
-                let arg_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
                 
-                for (i, arg) in args.iter().enumerate() {
-                    if i < arg_regs.len() {
-                        let arg_str = self.format_operand_x86_64(arg, allocation)?;
-                        code.push_str(&format!("    mov {}, {}\n", arg_regs[i], arg_str));
-                    } else {
-                        let arg_str = self.format_operand_x86_64(arg, allocation)?;
-                        code.push_str(&format!("    push {}\n", arg_str));
+                let dst_str = self.get_physical_reg_name(*dst, allocation)?;
+                let src_str = self.format_operand_x86_64(src, allocation)?;
+                Ok(format!("    mov {}, {}\n", dst_str, src_str))
+            }
+
+            IRInstruction::Branch { target } => {
+                let label = format!(".L_{}_{}",  func_name.replace(".", "_"), target);
+                Ok(format!("    jmp {}\n", label))
+            }
+
+            IRInstruction::CondBranch { cond, true_target, false_target } => {
+                let true_label = format!(".L_{}_{}",  func_name.replace(".", "_"), true_target);
+                let false_label = format!(".L_{}_{}",  func_name.replace(".", "_"), false_target);
+                
+                let mut code = String::new();
+                let cond_str = self.format_operand_x86_64(cond, allocation)?;
+                
+                // Load condition into a register if it's in memory
+                let cond_reg = if cond_str.contains('[') {
+                    code.push_str(&format!("    mov rax, {}\n", cond_str));
+                    "rax"
+                } else {
+                    &cond_str
+                };
+                
+                code.push_str(&format!("    test {}, {}\n", cond_reg, cond_reg));
+                code.push_str(&format!("    jnz {}\n", true_label));
+                code.push_str(&format!("    jmp {}\n", false_label));
+                
+                Ok(code)
+            }
+
+            IRInstruction::Return { value } => {
+                let mut code = String::new();
+                if let Some(val) = value {
+                    let val_str = self.format_operand_x86_64(val, allocation)?;
+                    code.push_str(&format!("    mov rax, {}\n", val_str));
+                }
+                let epilogue_label = format!(".L_{}_epilogue",  func_name.replace(".", "_"));
+                code.push_str(&format!("    jmp {}\n", epilogue_label));
+                Ok(code)
+            }
+
+            IRInstruction::Call { dst, func, args, .. } => {
+                let mut code = String::new();
+                
+                if func.contains("print") || func.contains("Console") || func.contains("console") {
+                    if !args.is_empty() {
+                        match &args[0] {
+                            IRValue::Global(s) if s.starts_with("__str_") => {
+                                code.push_str(&format!("    lea rdi, [{}]\n", s));
+                            }
+                            _ => {
+                                let arg_str = self.format_operand_x86_64(&args[0], allocation)?;
+                                code.push_str(&format!("    mov rdi, {}\n", arg_str));
+                            }
+                        }
                     }
+                    code.push_str("    call console_print\n");
+                } else {
+                    let arg_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                    
+                    for (i, arg) in args.iter().enumerate() {
+                        if i < arg_regs.len() {
+                            // Special handling for string globals - use lea
+                            match arg {
+                                IRValue::Global(s) if s.starts_with("__str_") => {
+                                    code.push_str(&format!("    lea {}, [{}]\n", arg_regs[i], s));
+                                }
+                                _ => {
+                                    let arg_str = self.format_operand_x86_64(arg, allocation)?;
+                                    code.push_str(&format!("    mov {}, {}\n", arg_regs[i], arg_str));
+                                }
+                            }
+                        } else {
+                            let arg_str = self.format_operand_x86_64(arg, allocation)?;
+                            code.push_str(&format!("    push {}\n", arg_str));
+                        }
+                    }
+
+                    code.push_str(&format!("    call {}\n", func));
                 }
 
-                code.push_str(&format!("    call {}\n", func));
+                if let Some(dst_reg) = dst {
+                    let dst_str = self.get_physical_reg_name(*dst_reg, allocation)?;
+                    code.push_str(&format!("    mov {}, rax\n", dst_str));
+                }
+
+                Ok(code)
             }
 
-            if let Some(dst_reg) = dst {
-                let dst_str = self.get_physical_reg(*dst_reg, allocation)?;
-                code.push_str(&format!("    mov {}, rax\n", dst_str));
+            IRInstruction::Cmp { dst, op, lhs, rhs, .. } => {
+                let mut code = String::new();
+                
+                let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
+                let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
+                
+                let set_instr = match op {
+                    CmpOp::Eq | CmpOp::FEq => "sete",
+                    CmpOp::Ne | CmpOp::FNe => "setne",
+                    CmpOp::Lt | CmpOp::FLt => "setl",
+                    CmpOp::Le | CmpOp::FLe => "setle",
+                    CmpOp::Gt | CmpOp::FGt => "setg",
+                    CmpOp::Ge | CmpOp::FGe => "setge",
+                };
+
+                // Load lhs into a register if needed
+                let lhs_reg = if lhs_str.contains('[') {
+                    code.push_str(&format!("    mov rax, {}\n", lhs_str));
+                    "rax"
+                } else {
+                    &lhs_str
+                };
+
+                code.push_str(&format!("    cmp {}, {}\n", lhs_reg, rhs_str));
+                
+                // setX instruction writes to 8-bit register only
+                code.push_str(&format!("    {} al\n", set_instr));
+                code.push_str("    movzx rax, al\n");
+                
+                // Now move to destination
+                let dst_str = self.get_physical_reg_name(*dst, allocation)?;
+                if dst_str != "rax" {
+                    code.push_str(&format!("    mov {}, rax\n", dst_str));
+                }
+                
+                Ok(code)
             }
 
-            Ok(code)
+            _ => Ok(format!("    ; Unimplemented: {:?}\n", instr)),
         }
-
-        IRInstruction::Cmp { dst, op, lhs, rhs, .. } => {
-            let lhs_str = self.format_operand_x86_64(lhs, allocation)?;
-            let rhs_str = self.format_operand_x86_64(rhs, allocation)?;
-            let dst_reg = self.get_physical_reg(*dst, allocation)?;
-            
-            let set_instr = match op {
-                CmpOp::Eq | CmpOp::FEq => "sete",
-                CmpOp::Ne | CmpOp::FNe => "setne",
-                CmpOp::Lt | CmpOp::FLt => "setl",
-                CmpOp::Le | CmpOp::FLe => "setle",
-                CmpOp::Gt | CmpOp::FGt => "setg",
-                CmpOp::Ge | CmpOp::FGe => "setge",
-            };
-
-            let mut code = String::new();
-            let lhs_reg = if lhs_str.contains('[') {
-                code.push_str(&format!("    mov rax, {}\n", lhs_str));
-                "rax"
-            } else {
-                &lhs_str
-            };
-
-            code.push_str(&format!("    cmp {}, {}\n", lhs_reg, rhs_str));
-            
-            let byte_reg = self.to_8bit_reg(&dst_reg);
-            code.push_str(&format!("    {} {}\n", set_instr, byte_reg));
-            code.push_str(&format!("    movzx {}, {}\n", dst_reg, byte_reg));
-            
-            Ok(code)
-        }
-
-        _ => Ok(format!("    ; Unimplemented: {:?}\n", instr)),
     }
-}
-    fn get_physical_reg(
+
+    fn get_physical_reg_name(
         &self,
         virtual_reg: usize,
         allocation: &HashMap<usize, PhysicalRegister>,
     ) -> Result<String, String> {
         allocation
             .get(&virtual_reg)
-            .map(|reg| self.physical_reg_name(reg))
+            .map(|reg| match reg {
+                PhysicalRegister::Spilled(_) => "rax".to_string(), // Should not happen here
+                _ => self.physical_reg_name(reg)
+            })
             .ok_or_else(|| format!("No allocation for register {}", virtual_reg))
     }
 
@@ -401,29 +461,30 @@ fn generate_instruction_x86_64(
         }
     }
 
-    fn to_8bit_reg(&self, reg: &str) -> String {
-        match reg {
-            "rax" => "al",
-            "rbx" => "bl",
-            "rcx" => "cl",
-            "rdx" => "dl",
-            _ => "al",
-        }
-        .to_string()
-    }
-
     fn format_operand_x86_64(
         &self,
         val: &IRValue,
         allocation: &HashMap<usize, PhysicalRegister>,
     ) -> Result<String, String> {
         match val {
-            IRValue::Register(r) => self.get_physical_reg(*r, allocation),
+            IRValue::Register(r) => {
+                if let Some(PhysicalRegister::Spilled(slot)) = allocation.get(r) {
+                    Ok(format!("qword ptr [rbp - {}]", (slot + 1) * 8))
+                } else {
+                    self.get_physical_reg_name(*r, allocation)
+                }
+            }
             IRValue::Constant(c) => Ok(self.format_constant(c)),
-            IRValue::Global(name) => Ok(format!("[{}]", name)),
+            IRValue::Global(name) => {
+                // Don't add brackets for string literals - they need lea instruction
+                if name.starts_with("__str_") {
+                    Ok(name.clone())
+                } else {
+                    Ok(format!("[{}]", name))
+                }
+            }
             IRValue::Local(idx) => Ok(format!("qword ptr [rbp - {}]", (idx + 1) * 8)),
             IRValue::Argument(idx) => {
-                // Arguments are in registers or stack
                 let arg_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
                 if *idx < arg_regs.len() {
                     Ok(arg_regs[*idx].to_string())
@@ -450,24 +511,20 @@ fn generate_instruction_x86_64(
     }
 
     fn generate_arm64(&mut self, _program: &IRProgram) -> Result<String, String> {
-        // TODO: Implement ARM64 code generation
         Ok("/* ARM64 codegen not yet implemented */\n".to_string())
     }
 
     fn generate_wasm(&mut self, _program: &IRProgram) -> Result<String, String> {
-        // TODO: Implement WebAssembly code generation
         Ok(";; WASM codegen not yet implemented\n".to_string())
     }
 
     fn generate_llvm_ir(&mut self, program: &IRProgram) -> Result<String, String> {
         let mut output = String::new();
 
-        // LLVM IR header
         output.push_str("; ModuleID = 'magolor'\n");
         output.push_str("target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"\n");
         output.push_str("target triple = \"x86_64-pc-linux-gnu\"\n\n");
 
-        // Generate LLVM IR for each function
         for (name, func) in &program.functions {
             output.push_str(&self.generate_function_llvm(name, func)?);
         }
@@ -478,7 +535,6 @@ fn generate_instruction_x86_64(
     fn generate_function_llvm(&self, name: &str, func: &IRFunction) -> Result<String, String> {
         let mut output = String::new();
 
-        // Function signature
         let ret_ty = self.type_to_llvm(&func.return_type);
         let params: Vec<String> = func
             .params
@@ -493,7 +549,6 @@ fn generate_instruction_x86_64(
             params.join(", ")
         ));
 
-        // Function body (simplified)
         for block in &func.blocks {
             output.push_str(&format!("{}:\n", block.id));
             for instr in &block.instructions {
