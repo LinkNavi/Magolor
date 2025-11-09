@@ -1,4 +1,4 @@
-
+// src/modules/IR.rs - Fixed for inkwell 0.6.0
 
 use inkwell::context::Context;
 use inkwell::builder::Builder;
@@ -44,7 +44,8 @@ impl<'ctx> LLVMCompiler<'ctx> {
 
     fn declare_runtime_functions(&mut self) {
         let i32_type = self.context.i32_type();
-        let i8_ptr_type = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
+        // Use Context::ptr_type instead of deprecated Type::ptr_type
+        let i8_ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
         
         // void console_print(char*)
         let print_type = self.context.void_type().fn_type(&[i8_ptr_type.into()], false);
@@ -111,9 +112,11 @@ impl<'ctx> LLVMCompiler<'ctx> {
         // Add return if missing
         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
             if func.return_type == Type::Void {
-                self.builder.build_return(None);
+                self.builder.build_return(None)
+                    .map_err(|e| format!("Failed to build return: {:?}", e))?;
             } else {
-                self.builder.build_return(Some(&i32_type.const_zero()));
+                self.builder.build_return(Some(&i32_type.const_zero()))
+                    .map_err(|e| format!("Failed to build return: {:?}", e))?;
             }
         }
         
@@ -124,7 +127,8 @@ impl<'ctx> LLVMCompiler<'ctx> {
         match stmt {
             Statement::Return(Some(expr)) => {
                 let val = self.compile_expression(expr, function)?;
-                self.builder.build_return(Some(&val));
+                self.builder.build_return(Some(&val))
+                    .map_err(|e| format!("Failed to build return: {:?}", e))?;
                 Ok(())
             }
             Statement::If { condition, then_body, else_body, .. } => {
@@ -134,13 +138,14 @@ impl<'ctx> LLVMCompiler<'ctx> {
                     cond_val,
                     self.context.i32_type().const_zero(),
                     "ifcond"
-                );
+                ).map_err(|e| format!("Failed to build comparison: {:?}", e))?;
                 
                 let then_bb = self.context.append_basic_block(function, "then");
                 let else_bb = self.context.append_basic_block(function, "else");
                 let merge_bb = self.context.append_basic_block(function, "ifcont");
                 
-                self.builder.build_conditional_branch(cond_bool, then_bb, else_bb);
+                self.builder.build_conditional_branch(cond_bool, then_bb, else_bb)
+                    .map_err(|e| format!("Failed to build conditional branch: {:?}", e))?;
                 
                 // Then block
                 self.builder.position_at_end(then_bb);
@@ -148,7 +153,8 @@ impl<'ctx> LLVMCompiler<'ctx> {
                     self.compile_statement(stmt, function)?;
                 }
                 if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                    self.builder.build_unconditional_branch(merge_bb);
+                    self.builder.build_unconditional_branch(merge_bb)
+                        .map_err(|e| format!("Failed to build branch: {:?}", e))?;
                 }
                 
                 // Else block
@@ -159,7 +165,8 @@ impl<'ctx> LLVMCompiler<'ctx> {
                     }
                 }
                 if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                    self.builder.build_unconditional_branch(merge_bb);
+                    self.builder.build_unconditional_branch(merge_bb)
+                        .map_err(|e| format!("Failed to build branch: {:?}", e))?;
                 }
                 
                 self.builder.position_at_end(merge_bb);
@@ -177,18 +184,22 @@ impl<'ctx> LLVMCompiler<'ctx> {
             ASTValue::Binary { op: BinaryOp::Mul, left, right } => {
                 let lhs = self.compile_expression(*left, function)?;
                 let rhs = self.compile_expression(*right, function)?;
-                Ok(self.builder.build_int_mul(lhs, rhs, "multmp"))
+                self.builder.build_int_mul(lhs, rhs, "multmp")
+                    .map_err(|e| format!("Failed to build mul: {:?}", e))
             }
             ASTValue::Binary { op: BinaryOp::Sub, left, right } => {
                 let lhs = self.compile_expression(*left, function)?;
                 let rhs = self.compile_expression(*right, function)?;
-                Ok(self.builder.build_int_sub(lhs, rhs, "subtmp"))
+                self.builder.build_int_sub(lhs, rhs, "subtmp")
+                    .map_err(|e| format!("Failed to build sub: {:?}", e))
             }
             ASTValue::Comparison { op: ComparisonOp::LessEqual, left, right } => {
                 let lhs = self.compile_expression(*left, function)?;
                 let rhs = self.compile_expression(*right, function)?;
-                let cmp = self.builder.build_int_compare(IntPredicate::SLE, lhs, rhs, "cmple");
-                Ok(self.builder.build_int_z_extend(cmp, self.context.i32_type(), "zext"))
+                let cmp = self.builder.build_int_compare(IntPredicate::SLE, lhs, rhs, "cmple")
+                    .map_err(|e| format!("Failed to build comparison: {:?}", e))?;
+                self.builder.build_int_z_extend(cmp, self.context.i32_type(), "zext")
+                    .map_err(|e| format!("Failed to build zext: {:?}", e))
             }
             ASTValue::FuncCall { name, args } => {
                 let callee = self.module.get_function(&name)
@@ -199,8 +210,14 @@ impl<'ctx> LLVMCompiler<'ctx> {
                     compiled_args.push(self.compile_expression(arg, function)?.into());
                 }
                 
-                let result = self.builder.build_call(callee, &compiled_args, "calltmp");
-                Ok(result.try_as_basic_value().left().unwrap().into_int_value())
+                let result = self.builder.build_call(callee, &compiled_args, "calltmp")
+                    .map_err(|e| format!("Failed to build call: {:?}", e))?;
+                result.try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| "Function call did not return a value".to_string())?
+                    .into_int_value()
+                    .map(Ok)
+                    .unwrap_or_else(|| Err("Return value is not an integer".to_string()))
             }
             ASTValue::VarRef(name) if name == "n" => {
                 // For now, just get the parameter
