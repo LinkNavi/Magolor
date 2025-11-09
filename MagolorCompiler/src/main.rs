@@ -7,10 +7,7 @@ mod modules;
 
 use modules::parser;
 use modules::tokenizer;
-use modules::ir::ir_optimizer::OptimizationLevel;
-use modules::ir::ir_builder::IRBuilder;
-use modules::ir::codegen::{CodeGenerator, Target};
-use modules::ir::ir_optimizer::IROptimizer;
+
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
