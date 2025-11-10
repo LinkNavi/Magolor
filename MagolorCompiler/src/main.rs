@@ -1,4 +1,4 @@
-// src/main.rs - Fixed imports and structure
+// src/main.rs - Complete implementation with LLVM
 use anyhow::Result;
 use std::env;
 use std::fs;
@@ -7,7 +7,7 @@ mod modules;
 
 use modules::parser;
 use modules::tokenizer;
-
+use modules::IR::LLVMCompiler;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let output_file = if args.len() >= 4 && args[2] == "-o" {
         args[3].clone()
     } else {
-        filename.replace(".mg", ".s")
+        filename.replace(".mg", ".ll")
     };
 
     eprintln!("Compiling: {}", filename);
@@ -43,29 +43,44 @@ fn main() -> Result<()> {
                 eprintln!("{:#?}", ast);
             }
 
-            eprintln!("\n=== IR Generation ===");
+            eprintln!("\n=== LLVM IR Generation ===");
             
-            // Build IR
-            let builder = IRBuilder::new();
-            let mut ir_program = builder.build(ast)
-                .map_err(|e| anyhow::anyhow!("IR build error: {}", e))?;
+            // Create LLVM context and compiler
+            let context = inkwell::context::Context::create();
+            let mut compiler = LLVMCompiler::new(&context, "magolor_program");
             
-            eprintln!("Generated {} functions", ir_program.functions.len());
+            // Compile to LLVM IR
+            let llvm_ir = compiler.compile(ast)
+                .map_err(|e| anyhow::anyhow!("LLVM compilation error: {}", e))?;
             
-            // Optimize
-            let mut optimizer = IROptimizer::new(OptimizationLevel::Aggressive);
-            optimizer.optimize(&mut ir_program)
-                .map_err(|e| anyhow::anyhow!("Optimization error: {}", e))?;
+            // Write LLVM IR to file
+            fs::write(&output_file, &llvm_ir)?;
+            eprintln!("✅ LLVM IR written to: {}", output_file);
             
-            // Generate code
-            let mut codegen = CodeGenerator::new(Target::X86_64);
-            let output = codegen.generate(&ir_program)
-                .map_err(|e| anyhow::anyhow!("Code generation error: {}", e))?;
+            // Optionally compile to assembly using llc
+            if env::var("COMPILE_TO_ASM").is_ok() {
+                let asm_file = output_file.replace(".ll", ".s");
+                eprintln!("\n=== Compiling to Assembly ===");
+                let status = std::process::Command::new("llc")
+                    .arg(&output_file)
+                    .arg("-o")
+                    .arg(&asm_file)
+                    .status();
+                
+                match status {
+                    Ok(s) if s.success() => {
+                        eprintln!("✅ Assembly written to: {}", asm_file);
+                    }
+                    _ => {
+                        eprintln!("⚠️  llc not found or failed. Install LLVM tools to generate assembly.");
+                    }
+                }
+            }
             
-            fs::write(&output_file, &output)?;
-            eprintln!("✅ Assembly written to: {}", output_file);
-            
-            print!("{}", output);
+            if env::var("SHOW_IR").is_ok() {
+                println!("\n=== LLVM IR ===");
+                print!("{}", llvm_ir);
+            }
         }
         Err(e) => {
             eprintln!("Parse error: {}", e);

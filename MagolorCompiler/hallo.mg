@@ -1,31 +1,61 @@
-// test_simple.mg - Simple test to isolate the parameter issue
+// test.mg - Sample Magolor program
 
-use Console;
-
-namespace Test {
-    public class Simple {
-        // Test 1: Just return a parameter
-        public static i32 fn returnParam(i32 x) {
-            return x;
-        }
-        
-        // Test 2: Simple add
-        public static i32 fn addTwo(i32 a, i32 b) {
-            return a + b;
-        }
+// Simple factorial function
+i32 fn factorial(i32 n) {
+    if (n <= 1) {
+        return 1;
     }
+    return n * factorial(n - 1);
 }
 
-void fn main() {
-    console.print("Test 1: Return parameter");
-    let result1 = Test.Simple.returnParam(42);
-    console.print("Result should be 42:");
-    // result1 should be 42
+// Fibonacci function
+i32 fn fibonacci(i32 n) {
+    if (n <= 1) {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+// Sum function with a loop
+i32 fn sum(i32 n) {
+    let mut i32 result = 0;
+    let mut i32 i = 1;
     
-    console.print("Test 2: Add two numbers");
-    let result2 = Test.Simple.addTwo(5, 3);
-    console.print("Result should be 8:");
-    // result2 should be 8
+    while (i <= n) {
+        result = result + i;
+        i = i + 1;
+    }
     
-    console.print("Done");
+    return result;
+}
+
+// Main entry point
+i32 fn main() {
+    let i32 x = 5;
+    let i32 fact = factorial(x);
+    let i32 fib = fibonacci(10);
+    let i32 total = sum(100);
+    
+    return fact;
+}
+
+// Class example
+class Calculator {
+    private static i32 lastResult = 0;
+    
+    public static i32 fn add(i32 a, i32 b) {
+        return a + b;
+    }
+    
+    public static i32 fn multiply(i32 a, i32 b) {
+        let mut i32 result = 0;
+        let mut i32 i = 0;
+        
+        while (i < b) {
+            result = result + a;
+            i = i + 1;
+        }
+        
+        return result;
+    }
 }
