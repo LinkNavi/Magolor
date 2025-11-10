@@ -15,7 +15,7 @@ pub struct LLVMCompiler<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
-    variables: HashMap<String, PointerValue<'ctx>>,
+    variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
     current_function: Option<FunctionValue<'ctx>>,
 }
 
@@ -157,7 +157,7 @@ impl<'ctx> LLVMCompiler<'ctx> {
                     .map_err(|e| format!("Failed to build alloca: {:?}", e))?;
                 self.builder.build_store(alloca, arg)
                     .map_err(|e| format!("Failed to store param: {:?}", e))?;
-                self.variables.insert(param.name.clone(), alloca);
+                self.variables.insert(param.name.clone(), (alloca, param_type));
             }
         }
         
@@ -207,7 +207,7 @@ impl<'ctx> LLVMCompiler<'ctx> {
                         .map_err(|e| format!("Failed to store: {:?}", e))?;
                 }
                 
-                self.variables.insert(name, alloca);
+                self.variables.insert(name, (alloca, llvm_type));
                 Ok(())
             }
             
@@ -215,7 +215,7 @@ impl<'ctx> LLVMCompiler<'ctx> {
                 let val = self.compile_expression(value)?;
                 
                 if let ASTValue::VarRef(name) = target {
-                    if let Some(var_ptr) = self.variables.get(&name) {
+                    if let Some((var_ptr, _)) = self.variables.get(&name) {
                         self.builder.build_store(*var_ptr, val)
                             .map_err(|e| format!("Failed to store: {:?}", e))?;
                     } else {
@@ -365,8 +365,8 @@ impl<'ctx> LLVMCompiler<'ctx> {
             }
             
             ASTValue::VarRef(name) => {
-                if let Some(var_ptr) = self.variables.get(&name) {
-                    self.builder.build_load(var_ptr.get_type(), *var_ptr, &name)
+                if let Some((var_ptr, var_type)) = self.variables.get(&name) {
+                    self.builder.build_load(*var_type, *var_ptr, &name)
                         .map_err(|e| format!("Failed to load variable: {:?}", e))
                 } else if let Some(func) = self.current_function {
                     // Check function parameters
