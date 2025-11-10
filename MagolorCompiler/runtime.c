@@ -1,4 +1,4 @@
-// runtime.c - Magolor Runtime Library (FIXED)
+// runtime.c - Magolor Runtime Library
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +16,23 @@ void console_print(const char* msg) {
 
 void Console_print(const char* msg) {
     console_print(msg);
+}
+
+// Print functions for different types
+void print_int(int n) {
+    printf("%d\n", n);
+}
+
+void print_str(const char* s) {
+    printf("%s\n", s ? s : "(null)");
+}
+
+void print_f32(float f) {
+    printf("%f\n", f);
+}
+
+void print_f64(double f) {
+    printf("%f\n", f);
 }
 
 // ============================================
@@ -74,26 +91,3 @@ char* string_concat_int(const char* s, int n) {
     free(num_str);
     return result;
 }
-
-// ============================================
-// Global Variables (for static class fields)
-// ============================================
-
-// The compiler might generate references to these
-// Add any global variables your program needs here
-
-// ============================================
-// Entry Point
-// ============================================
-
-// Your compiled code will have functions, we just won't call main
-// Instead, we'll link everything and you can call specific functions
-// Or we can provide a stub main if your code doesn't have one
-
-// If your code HAS a main function, DON'T include this:
-/*
-int main(int argc, char** argv) {
-    printf("Magolor Runtime Ready\n");
-    return 0;
-}
-*/

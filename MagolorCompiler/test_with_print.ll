@@ -7,6 +7,14 @@ declare ptr @malloc(i64)
 
 declare void @free(ptr)
 
+declare void @print_int(i32)
+
+declare void @print_str(ptr)
+
+declare void @print_f32(float)
+
+declare void @print_f64(double)
+
 define i32 @factorial(i32 %0) {
 entry:
   %n = alloca i32, align 4
@@ -41,5 +49,6 @@ entry:
   %call = call i32 @factorial(i32 %x1)
   store i32 %call, ptr %fact, align 4
   %fact2 = load i32, ptr %fact, align 4
-  ret i32 %fact2
+  call void @print_int(i32 %fact2)
+  ret i32 0
 }
