@@ -1,957 +1,573 @@
-// src/modules/bytecode.rs - Fast Bytecode VM for game scripting
-
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::modules::ast::*;
 
-// ============================================
-// Bytecode Instructions - Optimized for speed
-// ============================================
-
 #[derive(Debug, Clone)]
-pub enum OpCode {
-    // Constants
-    LoadConst(u16),           // Push constant from pool
-    LoadInt(i64),             // Inline small integers
-    LoadFloat(f64),           // Inline floats
-    LoadTrue,
-    LoadFalse,
-    LoadNull,
-    
-    // Variables
-    LoadLocal(u16),           // Load local variable by index
-    StoreLocal(u16),          // Store to local variable
-    LoadGlobal(u16),          // Load global by index
-    StoreGlobal(u16),         // Store to global
-    
-    // Arithmetic - optimized ops
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Neg,
-    
-    // Fast integer ops (avoid type checks)
-    AddI,                     // Integer-only addition
-    SubI,
-    MulI,
-    DivI,
-    
-    // Comparison
-    Eq,
-    NotEq,
-    Less,
-    LessEq,
-    Greater,
-    GreaterEq,
-    
-    // Logical
-    And,
-    Or,
-    Not,
-    
-    // Control flow - direct jumps
-    Jump(u32),                // Unconditional jump
-    JumpIfFalse(u32),         // Pop and jump if false
-    JumpIfTrue(u32),          // Pop and jump if true
-    
-    // Functions - fast calling
-    Call(u16, u8),            // Call function (index, arg_count)
-    CallNative(u16, u8),      // Call native function
-    Return,
-    ReturnValue,
-    
-    // Stack manipulation
-    Pop,
-    Dup,                      // Duplicate top
-    
-    // Array/Object operations
-    NewArray(u16),            // Create array with size
-    ArrayGet,                 // array[index]
-    ArraySet,                 // array[index] = value
-    
-    // Property access - cached for speed
-    GetProperty(u16),         // Get property by cached index
-    SetProperty(u16),         // Set property by cached index
-    
-    // Built-in function calls - no lookup overhead
-    Print,
-    PrintInt,
-    PrintFloat,
-    PrintStr,
-    
-    // Fast loops
-    ForLoop {
-        counter_slot: u16,
-        end_value_slot: u16,
-        loop_start: u32,
-        loop_end: u32,
-    },
-    
-    // Exit
+pub enum Op {
+    Const(u16), Int(i64), Float(f64), True, False, Null,
+    LoadLocal(u16), StoreLocal(u16), LoadGlobal(u16), StoreGlobal(u16),
+    Add, Sub, Mul, Div, Mod, Neg, BitNot,
+    BitAnd, BitOr, BitXor, Shl, Shr,
+    Eq, NotEq, Lt, LtEq, Gt, GtEq,
+    And, Or, Not,
+    Jump(u32), JumpIfFalse(u32), JumpIfTrue(u32),
+    Call(u16, u8), Return, ReturnVal,
+    Pop, Dup,
+    NewArray(u16), ArrayGet, ArraySet, ArrayLen,
+    GetField(u16), SetField(u16),
+    Print, PrintInt, PrintStr,
+    Inc, Dec,
     Halt,
 }
 
-// ============================================
-// Value Types - Tagged unions for speed
-// ============================================
-
 #[derive(Debug, Clone)]
-pub enum Value {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(Rc<String>),
-    Array(Rc<RefCell<Vec<Value>>>),
-    Object(Rc<RefCell<HashMap<String, Value>>>),
-    Function(FunctionRef),
-    NativeFunction(NativeFn),
-    Null,
+pub enum Val {
+    Int(i64), Float(f64), Bool(bool), Str(Rc<String>),
+    Array(Rc<RefCell<Vec<Val>>>), Obj(Rc<RefCell<HashMap<String, Val>>>),
+    Fn(FnRef), Null,
 }
 
-impl Value {
-    pub fn is_truthy(&self) -> bool {
-        match self {
-            Value::Bool(b) => *b,
-            Value::Null => false,
-            Value::Int(0) => false,
-            _ => true,
-        }
+impl Val {
+    pub fn truthy(&self) -> bool {
+        match self { Val::Bool(b) => *b, Val::Null => false, Val::Int(0) => false, _ => true }
     }
-    
     pub fn as_int(&self) -> Result<i64, String> {
-        match self {
-            Value::Int(n) => Ok(*n),
-            _ => Err(format!("Expected integer, got {:?}", self)),
-        }
+        match self { Val::Int(n) => Ok(*n), _ => Err("Expected int".into()) }
     }
-    
     pub fn as_float(&self) -> Result<f64, String> {
-        match self {
-            Value::Float(f) => Ok(*f),
-            Value::Int(n) => Ok(*n as f64),
-            _ => Err(format!("Expected number, got {:?}", self)),
-        }
+        match self { Val::Float(f) => Ok(*f), Val::Int(n) => Ok(*n as f64), _ => Err("Expected number".into()) }
     }
 }
-
-// ============================================
-// Function References
-// ============================================
 
 #[derive(Debug, Clone)]
-pub struct FunctionRef {
-    pub entry_point: u32,
-    pub param_count: u8,
-    pub local_count: u16,
-    pub name: String,
+pub struct FnRef { pub entry: u32, pub params: u8, pub locals: u16, pub name: String, pub idx: u16 }
+
+pub struct Module {
+    pub code: Vec<Op>,
+    pub consts: Vec<Val>,
+    pub globals: Vec<String>,
+    pub funcs: Vec<FnRef>,
+    pub func_map: HashMap<String, u16>,
+    pub entry: u32,
 }
 
-pub type NativeFn = fn(&[Value]) -> Result<Value, String>;
+impl Module { pub fn new() -> Self { Self { code: Vec::new(), consts: Vec::new(), globals: Vec::new(), funcs: Vec::new(), func_map: HashMap::new(), entry: 0 } } }
 
-// ============================================
-// Bytecode Module - Contains all compiled code
-// ============================================
-
-pub struct BytecodeModule {
-    pub instructions: Vec<OpCode>,
-    pub constants: Vec<Value>,
-    pub global_names: Vec<String>,
-    pub functions: HashMap<String, FunctionRef>,
-    pub entry_point: u32,
-}
-
-impl BytecodeModule {
-    pub fn new() -> Self {
-        Self {
-            instructions: Vec::new(),
-            constants: Vec::new(),
-            global_names: Vec::new(),
-            functions: HashMap::new(),
-            entry_point: 0,
-        }
-    }
-}
-
-// ============================================
-// Fast Bytecode Compiler - Optimized passes
-// ============================================
-
-pub struct BytecodeCompiler {
-    module: BytecodeModule,
-    
-    // Compilation state
-    current_function: Option<String>,
-    local_vars: Vec<HashMap<String, u16>>,  // Stack of scopes
+pub struct Compiler {
+    module: Module,
+    locals: Vec<HashMap<String, u16>>,
     local_count: u16,
     global_map: HashMap<String, u16>,
-    
-    // Optimization state
-    last_was_load: Option<u16>,  // Track last load for peephole optimization
+    loop_breaks: Vec<Vec<usize>>,
+    loop_continues: Vec<u32>,
 }
 
-impl BytecodeCompiler {
+impl Compiler {
     pub fn new() -> Self {
-        Self {
-            module: BytecodeModule::new(),
-            current_function: None,
-            local_vars: vec![HashMap::new()],
-            local_count: 0,
-            global_map: HashMap::new(),
-            last_was_load: None,
-        }
+        Self { module: Module::new(), locals: vec![HashMap::new()], local_count: 0, global_map: HashMap::new(), loop_breaks: Vec::new(), loop_continues: Vec::new() }
     }
     
-    pub fn compile(mut self, program: Program) -> Result<BytecodeModule, String> {
-        // First pass: collect all function signatures
-        for item in &program {
-            self.collect_function(&item)?;
+    pub fn compile(mut self, prog: Program) -> Result<Module, String> {
+        // Reserve space for main call at entry
+        let has_main = prog.iter().any(|t| matches!(t, TopLevel::Function(f) if f.name == "main"));
+        if has_main {
+            self.emit(Op::Call(0, 0)); // Placeholder, will patch
+            self.emit(Op::Halt);
         }
         
-        // Second pass: compile everything
-        for item in program {
-            self.compile_top_level(item)?;
+        // First pass: register function names with indices
+        for item in &prog {
+            if let TopLevel::Function(f) = item {
+                let idx = self.module.funcs.len() as u16;
+                self.module.func_map.insert(f.name.clone(), idx);
+                self.module.funcs.push(FnRef { entry: 0, params: f.params.len() as u8, locals: 0, name: f.name.clone(), idx });
+            }
         }
         
-        // Add halt at the end
-        self.emit(OpCode::Halt);
+        // Second pass: compile all functions
+        for item in prog { self.compile_top(item)?; }
         
+        // Patch the main call now that we know the index
+        if has_main {
+            if let Some(&main_idx) = self.module.func_map.get("main") {
+                self.module.code[0] = Op::Call(main_idx, 0);
+            }
+        }
+        
+        self.emit(Op::Halt);
         Ok(self.module)
     }
     
-    fn collect_function(&mut self, item: &TopLevel) -> Result<(), String> {
-        match item {
-            TopLevel::Function(func) => {
-                let entry = self.module.instructions.len() as u32;
-                let func_ref = FunctionRef {
-                    entry_point: entry,
-                    param_count: func.params.len() as u8,
-                    local_count: 0,  // Will be updated during compilation
-                    name: func.name.clone(),
-                };
-                self.module.functions.insert(func.name.clone(), func_ref);
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-    
-    fn compile_top_level(&mut self, item: TopLevel) -> Result<(), String> {
-        match item {
-            TopLevel::Function(func) => self.compile_function(func),
-            TopLevel::Constant { name, value, .. } => {
-                let val = self.compile_const_expr(value)?;
-                let global_idx = self.get_or_create_global(&name);
-                let const_idx = self.add_constant(val);
-                self.emit(OpCode::LoadConst(const_idx));
-                self.emit(OpCode::StoreGlobal(global_idx));
-                Ok(())
-            }
-            _ => Ok(()), // Skip classes/structs for now
-        }
-    }
-    
-    fn compile_function(&mut self, func: FunctionDef) -> Result<(), String> {
-        self.current_function = Some(func.name.clone());
-        self.local_vars.clear();
-        self.local_vars.push(HashMap::new());
-        self.local_count = 0;
-        
-        // Entry point already set in first pass
-        let _entry = self.module.functions.get(&func.name).unwrap().entry_point;
-        
-        // Reserve slots for parameters
-        for (i, param) in func.params.iter().enumerate() {
-            self.local_vars[0].insert(param.name.clone(), i as u16);
-            self.local_count = (i + 1) as u16;
-        }
-        
-        // Compile function body
-        for stmt in func.body {
-            self.compile_statement(stmt)?;
-        }
-        
-        // Ensure return
-        if func.return_type == Type::Void {
-            self.emit(OpCode::LoadNull);
-        }
-        self.emit(OpCode::Return);
-        
-        // Update local count
-        if let Some(func_ref) = self.module.functions.get_mut(&func.name) {
-            func_ref.local_count = self.local_count;
-        }
-        
+    fn collect_fn(&mut self, _item: &TopLevel) -> Result<(), String> {
         Ok(())
     }
     
-    fn compile_statement(&mut self, stmt: Statement) -> Result<(), String> {
-        match stmt {
-            Statement::VarDecl { name, value, .. } => {
-                // Allocate local slot
-                let slot = self.local_count;
-                self.local_count += 1;
-                self.local_vars.last_mut().unwrap().insert(name, slot);
-                
-                // Initialize value
-                if let Some(val) = value {
-                    self.compile_expression(val)?;
-                } else {
-                    self.emit(OpCode::LoadNull);
-                }
-                self.emit(OpCode::StoreLocal(slot));
+    fn compile_top(&mut self, item: TopLevel) -> Result<(), String> {
+        match item {
+            TopLevel::Function(f) => self.compile_fn(f),
+            TopLevel::Const { name, value, .. } => {
+                let val = self.const_expr(&value)?;
+                let gidx = self.get_global(&name);
+                let cidx = self.add_const(val);
+                self.emit(Op::Const(cidx));
+                self.emit(Op::StoreGlobal(gidx));
                 Ok(())
             }
-            
-            Statement::Assignment { target, value } => {
-                self.compile_expression(value)?;
-                
-                if let ASTValue::VarRef(name) = target {
-                    if let Some(slot) = self.find_local(&name) {
-                        self.emit(OpCode::StoreLocal(slot));
-                    } else {
-                        let global_idx = self.get_or_create_global(&name);
-                        self.emit(OpCode::StoreGlobal(global_idx));
+            TopLevel::Enum(e) => {
+                for v in e.variants {
+                    if let Some(val) = v.value {
+                        let gidx = self.get_global(&format!("{}::{}", e.name, v.name));
+                        self.emit(Op::Int(val));
+                        self.emit(Op::StoreGlobal(gidx));
                     }
                 }
                 Ok(())
             }
-            
-            Statement::Return(val) => {
-                if let Some(expr) = val {
-                    self.compile_expression(expr)?;
-                    self.emit(OpCode::ReturnValue);
-                } else {
-                    self.emit(OpCode::LoadNull);
-                    self.emit(OpCode::Return);
-                }
-                Ok(())
-            }
-            
-            Statement::If { condition, then_body, else_body, .. } => {
-                self.compile_expression(condition)?;
-                
-                let jump_to_else = self.emit_jump(OpCode::JumpIfFalse(0));
-                
-                // Then branch
-                for stmt in then_body {
-                    self.compile_statement(stmt)?;
-                }
-                
-                let jump_to_end = self.emit_jump(OpCode::Jump(0));
-                
-                // Patch else jump
-                self.patch_jump(jump_to_else);
-                
-                // Else branch
-                if let Some(else_stmts) = else_body {
-                    for stmt in else_stmts {
-                        self.compile_statement(stmt)?;
-                    }
-                }
-                
-                // Patch end jump
-                self.patch_jump(jump_to_end);
-                Ok(())
-            }
-            
-            Statement::While { condition, body } => {
-                let loop_start = self.module.instructions.len() as u32;
-                
-                self.compile_expression(condition)?;
-                let jump_to_end = self.emit_jump(OpCode::JumpIfFalse(0));
-                
-                // Body
-                for stmt in body {
-                    self.compile_statement(stmt)?;
-                }
-                
-                // Jump back to condition
-                self.emit(OpCode::Jump(loop_start));
-                
-                // Patch end jump
-                self.patch_jump(jump_to_end);
-                Ok(())
-            }
-            
-            Statement::Expression(expr) => {
-                self.compile_expression(expr)?;
-                self.emit(OpCode::Pop);  // Discard result
-                Ok(())
-            }
-            
             _ => Ok(()),
         }
     }
     
-    fn compile_expression(&mut self, expr: ASTValue) -> Result<(), String> {
+    fn compile_fn(&mut self, f: FnDef) -> Result<(), String> {
+        // Set entry point to current code position
+        let entry = self.module.code.len() as u32;
+        if let Some(&idx) = self.module.func_map.get(&f.name) {
+            self.module.funcs[idx as usize].entry = entry;
+        }
+        
+        self.locals.clear();
+        self.locals.push(HashMap::new());
+        self.local_count = 0;
+        
+        for (i, p) in f.params.iter().enumerate() {
+            self.locals[0].insert(p.name.clone(), i as u16);
+            self.local_count = (i + 1) as u16;
+        }
+        
+        for stmt in f.body { self.compile_stmt(stmt)?; }
+        
+        if f.ret == Type::Void { self.emit(Op::Null); }
+        self.emit(Op::Return);
+        
+        if let Some(&idx) = self.module.func_map.get(&f.name) { self.module.funcs[idx as usize].locals = self.local_count; }
+        Ok(())
+    }
+    
+    fn compile_stmt(&mut self, stmt: Stmt) -> Result<(), String> {
+        match stmt {
+            Stmt::Let { name, value, .. } => {
+                let slot = self.local_count;
+                self.local_count += 1;
+                self.locals.last_mut().unwrap().insert(name, slot);
+                if let Some(v) = value { self.compile_expr(v)?; } else { self.emit(Op::Null); }
+                self.emit(Op::StoreLocal(slot));
+            }
+            Stmt::Assign { target, value } => {
+                self.compile_expr(value)?;
+                self.compile_assign_target(&target)?;
+            }
+            Stmt::CompoundAssign { target, op, value } => {
+                self.compile_expr(target.clone())?;
+                self.compile_expr(value)?;
+                self.emit(match op {
+                    BinaryOp::Add => Op::Add, BinaryOp::Sub => Op::Sub, BinaryOp::Mul => Op::Mul,
+                    BinaryOp::Div => Op::Div, BinaryOp::Mod => Op::Mod, _ => return Err("Invalid compound op".into()),
+                });
+                self.compile_assign_target(&target)?;
+            }
+            Stmt::Return(v) => {
+                if let Some(e) = v { self.compile_expr(e)?; self.emit(Op::ReturnVal); }
+                else { self.emit(Op::Null); self.emit(Op::Return); }
+            }
+            Stmt::If { cond, then_body, elifs, else_body } => {
+                self.compile_expr(cond)?;
+                let jmp_else = self.emit_jmp(Op::JumpIfFalse(0));
+                for s in then_body { self.compile_stmt(s)?; }
+                let mut end_jmps = vec![self.emit_jmp(Op::Jump(0))];
+                self.patch(jmp_else);
+                for (c, b) in elifs {
+                    self.compile_expr(c)?;
+                    let j = self.emit_jmp(Op::JumpIfFalse(0));
+                    for s in b { self.compile_stmt(s)?; }
+                    end_jmps.push(self.emit_jmp(Op::Jump(0)));
+                    self.patch(j);
+                }
+                if let Some(eb) = else_body { for s in eb { self.compile_stmt(s)?; } }
+                for j in end_jmps { self.patch(j); }
+            }
+            Stmt::While { cond, body } => {
+                let start = self.module.code.len() as u32;
+                self.loop_continues.push(start);
+                self.loop_breaks.push(Vec::new());
+                self.compile_expr(cond)?;
+                let jmp_end = self.emit_jmp(Op::JumpIfFalse(0));
+                for s in body { self.compile_stmt(s)?; }
+                self.emit(Op::Jump(start));
+                self.patch(jmp_end);
+                let breaks = self.loop_breaks.pop().unwrap();
+                for b in breaks { self.patch(b); }
+                self.loop_continues.pop();
+            }
+            Stmt::For { init, cond, inc, body } => {
+                if let Some(i) = init { self.compile_stmt(*i)?; }
+                let start = self.module.code.len() as u32;
+                let inc_start = start;
+                self.loop_continues.push(inc_start);
+                self.loop_breaks.push(Vec::new());
+                let jmp_end = if let Some(c) = cond {
+                    self.compile_expr(c)?;
+                    Some(self.emit_jmp(Op::JumpIfFalse(0)))
+                } else { None };
+                for s in body { self.compile_stmt(s)?; }
+                if let Some(i) = inc { self.compile_stmt(*i)?; }
+                self.emit(Op::Jump(start));
+                if let Some(j) = jmp_end { self.patch(j); }
+                let breaks = self.loop_breaks.pop().unwrap();
+                for b in breaks { self.patch(b); }
+                self.loop_continues.pop();
+            }
+            Stmt::ForEach { item, collection, body, .. } => {
+                let arr_slot = self.local_count; self.local_count += 1;
+                let idx_slot = self.local_count; self.local_count += 1;
+                let item_slot = self.local_count; self.local_count += 1;
+                self.locals.last_mut().unwrap().insert(item, item_slot);
+                self.compile_expr(collection)?;
+                self.emit(Op::StoreLocal(arr_slot));
+                self.emit(Op::Int(0));
+                self.emit(Op::StoreLocal(idx_slot));
+                let start = self.module.code.len() as u32;
+                self.loop_continues.push(start);
+                self.loop_breaks.push(Vec::new());
+                self.emit(Op::LoadLocal(idx_slot));
+                self.emit(Op::LoadLocal(arr_slot));
+                self.emit(Op::ArrayLen);
+                self.emit(Op::Lt);
+                let jmp_end = self.emit_jmp(Op::JumpIfFalse(0));
+                self.emit(Op::LoadLocal(arr_slot));
+                self.emit(Op::LoadLocal(idx_slot));
+                self.emit(Op::ArrayGet);
+                self.emit(Op::StoreLocal(item_slot));
+                for s in body { self.compile_stmt(s)?; }
+                self.emit(Op::LoadLocal(idx_slot));
+                self.emit(Op::Int(1));
+                self.emit(Op::Add);
+                self.emit(Op::StoreLocal(idx_slot));
+                self.emit(Op::Jump(start));
+                self.patch(jmp_end);
+                let breaks = self.loop_breaks.pop().unwrap();
+                for b in breaks { self.patch(b); }
+                self.loop_continues.pop();
+            }
+            Stmt::Break => {
+                let j = self.emit_jmp(Op::Jump(0));
+                if let Some(breaks) = self.loop_breaks.last_mut() { breaks.push(j); }
+            }
+            Stmt::Continue => {
+                if let Some(&start) = self.loop_continues.last() { self.emit(Op::Jump(start)); }
+            }
+            Stmt::Block(stmts) => {
+                self.locals.push(HashMap::new());
+                for s in stmts { self.compile_stmt(s)?; }
+                self.locals.pop();
+            }
+            Stmt::Expr(e) => { self.compile_expr(e)?; self.emit(Op::Pop); }
+        }
+        Ok(())
+    }
+    
+    fn compile_assign_target(&mut self, target: &Expr) -> Result<(), String> {
+        match target {
+            Expr::Var(name) => {
+                if let Some(slot) = self.find_local(name) { self.emit(Op::StoreLocal(slot)); }
+                else { let g = self.get_global(name); self.emit(Op::StoreGlobal(g)); }
+            }
+            Expr::Index { array, index } => {
+                self.compile_expr(*array.clone())?;
+                self.compile_expr(*index.clone())?;
+                self.emit(Op::ArraySet);
+            }
+            _ => return Err("Invalid assignment target".into()),
+        }
+        Ok(())
+    }
+    
+    fn compile_expr(&mut self, expr: Expr) -> Result<(), String> {
         match expr {
-            ASTValue::Int(n) => {
-                // Inline small integers for speed
-                if n >= -32768 && n <= 32767 {
-                    self.emit(OpCode::LoadInt(n));
-                } else {
-                    let idx = self.add_constant(Value::Int(n));
-                    self.emit(OpCode::LoadConst(idx));
-                }
-                Ok(())
+            Expr::Int(n) => { if n >= -32768 && n <= 32767 { self.emit(Op::Int(n)); } else { let c = self.add_const(Val::Int(n)); self.emit(Op::Const(c)); } }
+            Expr::Float(f) => { self.emit(Op::Float(f)); }
+            Expr::Bool(b) => { self.emit(if b { Op::True } else { Op::False }); }
+            Expr::Str(s) => { let c = self.add_const(Val::Str(Rc::new(s))); self.emit(Op::Const(c)); }
+            Expr::Null => { self.emit(Op::Null); }
+            Expr::Var(name) => {
+                if let Some(slot) = self.find_local(&name) { self.emit(Op::LoadLocal(slot)); }
+                else { let g = self.get_global(&name); self.emit(Op::LoadGlobal(g)); }
             }
-            
-            ASTValue::Float(f) => {
-                self.emit(OpCode::LoadFloat(f));
-                Ok(())
+            Expr::Array(elems) => {
+                let len = elems.len();
+                for e in elems { self.compile_expr(e)?; }
+                self.emit(Op::NewArray(len as u16));
             }
-            
-            ASTValue::Bool(b) => {
-                self.emit(if b { OpCode::LoadTrue } else { OpCode::LoadFalse });
-                Ok(())
+            Expr::Index { array, index } => {
+                self.compile_expr(*array)?;
+                self.compile_expr(*index)?;
+                self.emit(Op::ArrayGet);
             }
-            
-            ASTValue::Str(s) => {
-                let idx = self.add_constant(Value::String(Rc::new(s)));
-                self.emit(OpCode::LoadConst(idx));
-                Ok(())
+            Expr::Binary { op, left, right } => {
+                self.compile_expr(*left)?;
+                self.compile_expr(*right)?;
+                self.emit(match op {
+                    BinaryOp::Add => Op::Add, BinaryOp::Sub => Op::Sub, BinaryOp::Mul => Op::Mul,
+                    BinaryOp::Div => Op::Div, BinaryOp::Mod => Op::Mod,
+                    BinaryOp::And => Op::And, BinaryOp::Or => Op::Or,
+                    BinaryOp::BitAnd => Op::BitAnd, BinaryOp::BitOr => Op::BitOr, BinaryOp::BitXor => Op::BitXor,
+                    BinaryOp::Shl => Op::Shl, BinaryOp::Shr => Op::Shr,
+                });
             }
-            
-            ASTValue::Null => {
-                self.emit(OpCode::LoadNull);
-                Ok(())
+            Expr::Compare { op, left, right } => {
+                self.compile_expr(*left)?;
+                self.compile_expr(*right)?;
+                self.emit(match op {
+                    ComparisonOp::Equal => Op::Eq, ComparisonOp::NotEqual => Op::NotEq,
+                    ComparisonOp::Less => Op::Lt, ComparisonOp::LessEqual => Op::LtEq,
+                    ComparisonOp::Greater => Op::Gt, ComparisonOp::GreaterEqual => Op::GtEq,
+                });
             }
-            
-            ASTValue::VarRef(name) => {
-                if let Some(slot) = self.find_local(&name) {
-                    self.emit(OpCode::LoadLocal(slot));
-                    self.last_was_load = Some(slot);
-                } else {
-                    let global_idx = self.get_or_create_global(&name);
-                    self.emit(OpCode::LoadGlobal(global_idx));
-                }
-                Ok(())
-            }
-            
-            ASTValue::Binary { op, left, right } => {
-                self.compile_expression(*left)?;
-                self.compile_expression(*right)?;
-                
-                // Emit optimized integer ops when possible
-                let opcode = match op {
-                    BinaryOp::Add => OpCode::Add,
-                    BinaryOp::Sub => OpCode::Sub,
-                    BinaryOp::Mul => OpCode::Mul,
-                    BinaryOp::Div => OpCode::Div,
-                    BinaryOp::Mod => OpCode::Mod,
-                    BinaryOp::And => OpCode::And,
-                    BinaryOp::Or => OpCode::Or,
-                    _ => return Err(format!("Unsupported binary op: {:?}", op)),
-                };
-                
-                self.emit(opcode);
-                Ok(())
-            }
-            
-            ASTValue::Comparison { op, left, right } => {
-                self.compile_expression(*left)?;
-                self.compile_expression(*right)?;
-                
-                let opcode = match op {
-                    ComparisonOp::Equal => OpCode::Eq,
-                    ComparisonOp::NotEqual => OpCode::NotEq,
-                    ComparisonOp::Less => OpCode::Less,
-                    ComparisonOp::LessEqual => OpCode::LessEq,
-                    ComparisonOp::Greater => OpCode::Greater,
-                    ComparisonOp::GreaterEqual => OpCode::GreaterEq,
-                };
-                
-                self.emit(opcode);
-                Ok(())
-            }
-            
-            ASTValue::Unary { op, operand } => {
-                self.compile_expression(*operand)?;
-                
+            Expr::Unary { op, operand } => {
                 match op {
-                    UnaryOp::Negate => self.emit(OpCode::Neg),
-                    UnaryOp::Not => self.emit(OpCode::Not),
-                    _ => return Err(format!("Unsupported unary op: {:?}", op)),
-                }
-                Ok(())
-            }
-            
-            ASTValue::FuncCall { name, args, .. } => {
-                // Compile arguments
-                for arg in &args {
-                    self.compile_expression(arg.clone())?;
-                }
-                
-                // Special built-in functions - no lookup
-                if name == "print" {
-                    self.emit(OpCode::Print);
-                } else if name == "print_int" {
-                    self.emit(OpCode::PrintInt);
-                } else {
-                    // Regular function call
-                    if let Some(func_idx) = self.module.functions.keys()
-                        .position(|k| k == &name) {
-                        self.emit(OpCode::Call(func_idx as u16, args.len() as u8));
-                    } else {
-                        return Err(format!("Unknown function: {}", name));
+                    UnaryOp::PreInc | UnaryOp::PreDec => {
+                        self.compile_expr(*operand.clone())?;
+                        self.emit(if matches!(op, UnaryOp::PreInc) { Op::Inc } else { Op::Dec });
+                        self.emit(Op::Dup);
+                        self.compile_assign_target(&operand)?;
+                    }
+                    UnaryOp::PostInc | UnaryOp::PostDec => {
+                        self.compile_expr(*operand.clone())?;
+                        self.emit(Op::Dup);
+                        self.emit(if matches!(op, UnaryOp::PostInc) { Op::Inc } else { Op::Dec });
+                        self.compile_assign_target(&operand)?;
+                    }
+                    _ => {
+                        self.compile_expr(*operand)?;
+                        self.emit(match op {
+                            UnaryOp::Negate => Op::Neg, UnaryOp::Not => Op::Not, UnaryOp::BitNot => Op::BitNot,
+                            _ => unreachable!(),
+                        });
                     }
                 }
-                Ok(())
             }
-            
-            _ => Err(format!("Unsupported expression: {:?}", expr)),
+            Expr::Ternary { cond, then_val, else_val } => {
+                self.compile_expr(*cond)?;
+                let jmp_else = self.emit_jmp(Op::JumpIfFalse(0));
+                self.compile_expr(*then_val)?;
+                let jmp_end = self.emit_jmp(Op::Jump(0));
+                self.patch(jmp_else);
+                self.compile_expr(*else_val)?;
+                self.patch(jmp_end);
+            }
+            Expr::Call { name, args } => {
+                for a in &args { self.compile_expr(a.clone())?; }
+                match name.as_str() {
+                    "print" => self.emit(Op::Print),
+                    "print_int" => self.emit(Op::PrintInt),
+                    "print_str" => self.emit(Op::PrintStr),
+                    "len" => self.emit(Op::ArrayLen),
+                    _ => {
+                        if let Some(&idx) = self.module.func_map.get(&name) {
+                            self.emit(Op::Call(idx, args.len() as u8));
+                        } else { return Err(format!("Unknown function: {}", name)); }
+                    }
+                }
+            }
+            _ => {}
         }
+        Ok(())
     }
     
-    fn compile_const_expr(&self, expr: ASTValue) -> Result<Value, String> {
+    fn const_expr(&self, expr: &Expr) -> Result<Val, String> {
         match expr {
-            ASTValue::Int(n) => Ok(Value::Int(n)),
-            ASTValue::Float(f) => Ok(Value::Float(f)),
-            ASTValue::Bool(b) => Ok(Value::Bool(b)),
-            ASTValue::Str(s) => Ok(Value::String(Rc::new(s))),
-            _ => Err("Non-constant expression in constant".to_string()),
+            Expr::Int(n) => Ok(Val::Int(*n)),
+            Expr::Float(f) => Ok(Val::Float(*f)),
+            Expr::Bool(b) => Ok(Val::Bool(*b)),
+            Expr::Str(s) => Ok(Val::Str(Rc::new(s.clone()))),
+            _ => Err("Non-constant expression".into()),
         }
     }
     
-    // Helper methods
-    
-    fn emit(&mut self, op: OpCode) {
-        self.module.instructions.push(op);
-        self.last_was_load = None;
-    }
-    
-    fn emit_jump(&mut self, op: OpCode) -> usize {
-        let pos = self.module.instructions.len();
-        self.module.instructions.push(op);
-        pos
-    }
-    
-    fn patch_jump(&mut self, jump_pos: usize) {
-        let target = self.module.instructions.len() as u32;
-        match &mut self.module.instructions[jump_pos] {
-            OpCode::Jump(ref mut addr) => *addr = target,
-            OpCode::JumpIfFalse(ref mut addr) => *addr = target,
-            OpCode::JumpIfTrue(ref mut addr) => *addr = target,
-            _ => panic!("Attempting to patch non-jump instruction"),
+    fn emit(&mut self, op: Op) { self.module.code.push(op); }
+    fn emit_jmp(&mut self, op: Op) -> usize { let pos = self.module.code.len(); self.module.code.push(op); pos }
+    fn patch(&mut self, pos: usize) {
+        let target = self.module.code.len() as u32;
+        match &mut self.module.code[pos] {
+            Op::Jump(a) | Op::JumpIfFalse(a) | Op::JumpIfTrue(a) => *a = target,
+            _ => panic!("Not a jump"),
         }
     }
-    
-    fn add_constant(&mut self, value: Value) -> u16 {
-        let idx = self.module.constants.len();
-        self.module.constants.push(value);
-        idx as u16
-    }
-    
+    fn add_const(&mut self, v: Val) -> u16 { let i = self.module.consts.len(); self.module.consts.push(v); i as u16 }
     fn find_local(&self, name: &str) -> Option<u16> {
-        for scope in self.local_vars.iter().rev() {
-            if let Some(&slot) = scope.get(name) {
-                return Some(slot);
-            }
-        }
+        for scope in self.locals.iter().rev() { if let Some(&s) = scope.get(name) { return Some(s); } }
         None
     }
-    
-    fn get_or_create_global(&mut self, name: &str) -> u16 {
-        if let Some(&idx) = self.global_map.get(name) {
-            idx
-        } else {
-            let idx = self.module.global_names.len() as u16;
-            self.module.global_names.push(name.to_string());
-            self.global_map.insert(name.to_string(), idx);
-            idx
-        }
+    fn get_global(&mut self, name: &str) -> u16 {
+        if let Some(&i) = self.global_map.get(name) { i }
+        else { let i = self.module.globals.len() as u16; self.module.globals.push(name.to_string()); self.global_map.insert(name.to_string(), i); i }
     }
 }
-
-// ============================================
-// High-Performance Virtual Machine
-// ============================================
 
 pub struct VM {
-    // Execution state
-    ip: usize,                              // Instruction pointer
-    stack: Vec<Value>,                      // Value stack
-    call_frames: Vec<CallFrame>,            // Call stack
-    
-    // Memory
-    globals: Vec<Value>,                    // Global variables
-    
-    // Module reference
-    module: BytecodeModule,
-    
-    // Native function registry
-    native_functions: HashMap<String, NativeFn>,
+    ip: usize,
+    stack: Vec<Val>,
+    frames: Vec<Frame>,
+    globals: Vec<Val>,
+    module: Module,
 }
 
-#[derive(Debug)]
-struct CallFrame {
-    return_ip: usize,
-    base_pointer: usize,
-}
+struct Frame { ret_ip: usize, base: usize }
 
 impl VM {
-    pub fn new(module: BytecodeModule) -> Self {
-        let global_count = module.global_names.len();
-        Self {
-            ip: 0,
-            stack: Vec::with_capacity(1024),
-            call_frames: Vec::with_capacity(64),
-            globals: vec![Value::Null; global_count],
-            module,
-            native_functions: HashMap::new(),
-        }
+    pub fn new(module: Module) -> Self {
+        let gc = module.globals.len();
+        Self { ip: 0, stack: Vec::with_capacity(4096), frames: Vec::with_capacity(256), globals: vec![Val::Null; gc], module }
     }
     
-    pub fn register_native(&mut self, name: &str, func: NativeFn) {
-        self.native_functions.insert(name.to_string(), func);
-    }
-    
-    pub fn run(&mut self) -> Result<Value, String> {
-        self.ip = self.module.entry_point as usize;
-        
+    pub fn run(&mut self) -> Result<Val, String> {
+        self.ip = self.module.entry as usize;
         loop {
-            if self.ip >= self.module.instructions.len() {
-                return Err("IP out of bounds".to_string());
-            }
-            
-            let op = self.module.instructions[self.ip].clone();
+            if self.ip >= self.module.code.len() { return Err("IP out of bounds".into()); }
+            let op = self.module.code[self.ip].clone();
             self.ip += 1;
-            
             match op {
-                OpCode::LoadConst(idx) => {
-                    let val = self.module.constants[idx as usize].clone();
-                    self.stack.push(val);
+                Op::Const(i) => self.stack.push(self.module.consts[i as usize].clone()),
+                Op::Int(n) => self.stack.push(Val::Int(n)),
+                Op::Float(f) => self.stack.push(Val::Float(f)),
+                Op::True => self.stack.push(Val::Bool(true)),
+                Op::False => self.stack.push(Val::Bool(false)),
+                Op::Null => self.stack.push(Val::Null),
+                Op::LoadLocal(s) => { let bp = self.frames.last().map(|f| f.base).unwrap_or(0); self.stack.push(self.stack[bp + s as usize].clone()); }
+                Op::StoreLocal(s) => { let bp = self.frames.last().map(|f| f.base).unwrap_or(0); let v = self.stack.pop().unwrap(); let idx = bp + s as usize; if idx >= self.stack.len() { self.stack.resize(idx + 1, Val::Null); } self.stack[idx] = v; }
+                Op::LoadGlobal(i) => self.stack.push(self.globals[i as usize].clone()),
+                Op::StoreGlobal(i) => { let v = self.stack.pop().unwrap(); self.globals[i as usize] = v; }
+                Op::Add => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(self.add(a, b)?); }
+                Op::Sub => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(self.sub(a, b)?); }
+                Op::Mul => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(self.mul(a, b)?); }
+                Op::Div => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(self.div(a, b)?); }
+                Op::Mod => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("Mod requires ints".into()); }; self.stack.push(Val::Int(a % b)); }
+                Op::Neg => { let v = self.stack.pop().unwrap(); self.stack.push(match v { Val::Int(n) => Val::Int(-n), Val::Float(f) => Val::Float(-f), _ => return Err("Cannot negate".into()) }); }
+                Op::BitNot => { let Val::Int(n) = self.stack.pop().unwrap() else { return Err("BitNot requires int".into()); }; self.stack.push(Val::Int(!n)); }
+                Op::BitAnd => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("BitAnd requires ints".into()); }; self.stack.push(Val::Int(a & b)); }
+                Op::BitOr => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("BitOr requires ints".into()); }; self.stack.push(Val::Int(a | b)); }
+                Op::BitXor => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("BitXor requires ints".into()); }; self.stack.push(Val::Int(a ^ b)); }
+                Op::Shl => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("Shl requires ints".into()); }; self.stack.push(Val::Int(a << b)); }
+                Op::Shr => { let (Val::Int(b), Val::Int(a)) = (self.stack.pop().unwrap(), self.stack.pop().unwrap()) else { return Err("Shr requires ints".into()); }; self.stack.push(Val::Int(a >> b)); }
+                Op::Eq => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(self.eq(&a, &b))); }
+                Op::NotEq => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(!self.eq(&a, &b))); }
+                Op::Lt => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(self.cmp(&a, &b)? < 0)); }
+                Op::LtEq => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(self.cmp(&a, &b)? <= 0)); }
+                Op::Gt => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(self.cmp(&a, &b)? > 0)); }
+                Op::GtEq => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(self.cmp(&a, &b)? >= 0)); }
+                Op::And => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(a.truthy() && b.truthy())); }
+                Op::Or => { let b = self.stack.pop().unwrap(); let a = self.stack.pop().unwrap(); self.stack.push(Val::Bool(a.truthy() || b.truthy())); }
+                Op::Not => { let v = self.stack.pop().unwrap(); self.stack.push(Val::Bool(!v.truthy())); }
+                Op::Jump(a) => self.ip = a as usize,
+                Op::JumpIfFalse(a) => { if !self.stack.pop().unwrap().truthy() { self.ip = a as usize; } }
+                Op::JumpIfTrue(a) => { if self.stack.pop().unwrap().truthy() { self.ip = a as usize; } }
+                Op::Call(fi, argc) => {
+                    let func = self.module.funcs[fi as usize].clone();
+                    self.frames.push(Frame { ret_ip: self.ip, base: self.stack.len() - argc as usize });
+                    self.ip = func.entry as usize;
                 }
-                
-                OpCode::LoadInt(n) => {
-                    self.stack.push(Value::Int(n));
+                Op::Return | Op::ReturnVal => {
+                    let ret = if matches!(op, Op::ReturnVal) { self.stack.pop().unwrap() } else { Val::Null };
+                    if let Some(f) = self.frames.pop() { self.stack.truncate(f.base); self.stack.push(ret); self.ip = f.ret_ip; }
+                    else { return Ok(ret); }
                 }
-                
-                OpCode::LoadFloat(f) => {
-                    self.stack.push(Value::Float(f));
+                Op::Pop => { self.stack.pop(); }
+                Op::Dup => { let v = self.stack.last().unwrap().clone(); self.stack.push(v); }
+                Op::NewArray(n) => {
+                    let mut arr = Vec::with_capacity(n as usize);
+                    for _ in 0..n { arr.push(self.stack.pop().unwrap()); }
+                    arr.reverse();
+                    self.stack.push(Val::Array(Rc::new(RefCell::new(arr))));
                 }
-                
-                OpCode::LoadTrue => {
-                    self.stack.push(Value::Bool(true));
+                Op::ArrayGet => {
+                    let Val::Int(idx) = self.stack.pop().unwrap() else { return Err("Index must be int".into()); };
+                    let Val::Array(arr) = self.stack.pop().unwrap() else { return Err("Not an array".into()); };
+                    self.stack.push(arr.borrow()[idx as usize].clone());
                 }
-                
-                OpCode::LoadFalse => {
-                    self.stack.push(Value::Bool(false));
-                }
-                
-                OpCode::LoadNull => {
-                    self.stack.push(Value::Null);
-                }
-                
-                OpCode::LoadLocal(slot) => {
-                    let bp = self.call_frames.last()
-                        .map(|f| f.base_pointer)
-                        .unwrap_or(0);
-                    let val = self.stack[bp + slot as usize].clone();
-                    self.stack.push(val);
-                }
-                
-                OpCode::StoreLocal(slot) => {
-                    let bp = self.call_frames.last()
-                        .map(|f| f.base_pointer)
-                        .unwrap_or(0);
+                Op::ArraySet => {
                     let val = self.stack.pop().unwrap();
-                    if bp + slot as usize >= self.stack.len() {
-                        self.stack.resize(bp + slot as usize + 1, Value::Null);
-                    }
-                    self.stack[bp + slot as usize] = val;
+                    let Val::Int(idx) = self.stack.pop().unwrap() else { return Err("Index must be int".into()); };
+                    let Val::Array(arr) = self.stack.pop().unwrap() else { return Err("Not an array".into()); };
+                    arr.borrow_mut()[idx as usize] = val;
                 }
-                
-                OpCode::LoadGlobal(idx) => {
-                    let val = self.globals[idx as usize].clone();
-                    self.stack.push(val);
+                Op::ArrayLen => {
+                    let Val::Array(arr) = self.stack.pop().unwrap() else { return Err("Not an array".into()); };
+                    self.stack.push(Val::Int(arr.borrow().len() as i64));
                 }
-                
-                OpCode::StoreGlobal(idx) => {
-                    let val = self.stack.pop().unwrap();
-                    self.globals[idx as usize] = val;
-                }
-                
-                // Arithmetic operations - fast path for integers
-                OpCode::Add => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x + y),
-                        (Value::Float(x), Value::Float(y)) => Value::Float(x + y),
-                        (Value::Int(x), Value::Float(y)) => Value::Float(x as f64 + y),
-                        (Value::Float(x), Value::Int(y)) => Value::Float(x + y as f64),
-                        _ => return Err("Type error in addition".to_string()),
-                    };
-                    self.stack.push(result);
-                }
-                
-                OpCode::Sub => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x - y),
-                        (Value::Float(x), Value::Float(y)) => Value::Float(x - y),
-                        _ => return Err("Type error in subtraction".to_string()),
-                    };
-                    self.stack.push(result);
-                }
-                
-                OpCode::Mul => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
-                        (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
-                        _ => return Err("Type error in multiplication".to_string()),
-                    };
-                    self.stack.push(result);
-                }
-                
-                OpCode::Div => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => {
-                            if y == 0 {
-                                return Err("Division by zero".to_string());
-                            }
-                            Value::Int(x / y)
-                        }
-                        (Value::Float(x), Value::Float(y)) => Value::Float(x / y),
-                        _ => return Err("Type error in division".to_string()),
-                    };
-                    self.stack.push(result);
-                }
-                
-                OpCode::Mod => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    if let (Value::Int(x), Value::Int(y)) = (a, b) {
-                        self.stack.push(Value::Int(x % y));
-                    } else {
-                        return Err("Modulo requires integers".to_string());
-                    }
-                }
-                
-                OpCode::Neg => {
-                    let val = self.stack.pop().unwrap();
-                    let result = match val {
-                        Value::Int(n) => Value::Int(-n),
-                        Value::Float(f) => Value::Float(-f),
-                        _ => return Err("Cannot negate non-number".to_string()),
-                    };
-                    self.stack.push(result);
-                }
-                
-                // Comparison operations
-                OpCode::Eq => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = self.values_equal(&a, &b);
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::NotEq => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = !self.values_equal(&a, &b);
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::Less => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x < y,
-                        (Value::Float(x), Value::Float(y)) => x < y,
-                        _ => return Err("Type error in comparison".to_string()),
-                    };
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::LessEq => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x <= y,
-                        (Value::Float(x), Value::Float(y)) => x <= y,
-                        _ => return Err("Type error in comparison".to_string()),
-                    };
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::Greater => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x > y,
-                        (Value::Float(x), Value::Float(y)) => x > y,
-                        _ => return Err("Type error in comparison".to_string()),
-                    };
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::GreaterEq => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = match (a, b) {
-                        (Value::Int(x), Value::Int(y)) => x >= y,
-                        (Value::Float(x), Value::Float(y)) => x >= y,
-                        _ => return Err("Type error in comparison".to_string()),
-                    };
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                // Logical operations
-                OpCode::And => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = a.is_truthy() && b.is_truthy();
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::Or => {
-                    let b = self.stack.pop().unwrap();
-                    let a = self.stack.pop().unwrap();
-                    let result = a.is_truthy() || b.is_truthy();
-                    self.stack.push(Value::Bool(result));
-                }
-                
-                OpCode::Not => {
-                    let val = self.stack.pop().unwrap();
-                    self.stack.push(Value::Bool(!val.is_truthy()));
-                }
-                
-                // Control flow
-                OpCode::Jump(addr) => {
-                    self.ip = addr as usize;
-                }
-                
-                OpCode::JumpIfFalse(addr) => {
-                    let cond = self.stack.pop().unwrap();
-                    if !cond.is_truthy() {
-                        self.ip = addr as usize;
-                    }
-                }
-                
-                OpCode::JumpIfTrue(addr) => {
-                    let cond = self.stack.pop().unwrap();
-                    if cond.is_truthy() {
-                        self.ip = addr as usize;
-                    }
-                }
-                
-                // Function calls
-                OpCode::Call(func_idx, arg_count) => {
-                    let func_name = self.module.functions.keys()
-                        .nth(func_idx as usize)
-                        .unwrap();
-                    let func = self.module.functions.get(func_name).unwrap().clone();
-                    
-                    // Create call frame
-                    let frame = CallFrame {
-                        return_ip: self.ip,
-                        base_pointer: self.stack.len() - arg_count as usize,
-                    };
-                    self.call_frames.push(frame);
-                    
-                    // Jump to function
-                    self.ip = func.entry_point as usize;
-                }
-                
-                OpCode::Return | OpCode::ReturnValue => {
-                    let return_val = if matches!(op, OpCode::ReturnValue) {
-                        self.stack.pop().unwrap()
-                    } else {
-                        Value::Null
-                    };
-                    
-                    if let Some(frame) = self.call_frames.pop() {
-                        // Clean up locals
-                        self.stack.truncate(frame.base_pointer);
-                        
-                        // Push return value
-                        self.stack.push(return_val);
-                        
-                        // Return to caller
-                        self.ip = frame.return_ip;
-                    } else {
-                        // Main function return
-                        return Ok(return_val);
-                    }
-                }
-                
-                // Stack manipulation
-                OpCode::Pop => {
-                    self.stack.pop();
-                }
-                
-                OpCode::Dup => {
-                    let val = self.stack.last().unwrap().clone();
-                    self.stack.push(val);
-                }
-                
-                // Built-in functions
-                OpCode::Print => {
-                    let val = self.stack.pop().unwrap();
-                    println!("{:?}", val);
-                }
-                
-                OpCode::PrintInt => {
-                    let val = self.stack.pop().unwrap();
-                    if let Value::Int(n) = val {
-                        println!("{}", n);
-                    }
-                }
-                
-                OpCode::PrintFloat => {
-                    let val = self.stack.pop().unwrap();
-                    if let Value::Float(f) = val {
-                        println!("{}", f);
-                    }
-                }
-                
-                OpCode::PrintStr => {
-                    let val = self.stack.pop().unwrap();
-                    if let Value::String(s) = val {
-                        println!("{}", s);
-                    }
-                }
-                
-                OpCode::Halt => {
-                    return Ok(Value::Null);
-                }
-                
-                _ => {
-                    return Err(format!("Unimplemented opcode: {:?}", op));
-                }
+                Op::Inc => { let v = self.stack.pop().unwrap(); self.stack.push(match v { Val::Int(n) => Val::Int(n + 1), Val::Float(f) => Val::Float(f + 1.0), _ => return Err("Cannot increment".into()) }); }
+                Op::Dec => { let v = self.stack.pop().unwrap(); self.stack.push(match v { Val::Int(n) => Val::Int(n - 1), Val::Float(f) => Val::Float(f - 1.0), _ => return Err("Cannot decrement".into()) }); }
+                Op::Print => { let v = self.stack.pop().unwrap(); println!("{:?}", v); self.stack.push(Val::Null); }
+                Op::PrintInt => { let Val::Int(n) = self.stack.pop().unwrap() else { return Err("Expected int".into()); }; println!("{}", n); self.stack.push(Val::Null); }
+                Op::PrintStr => { let Val::Str(s) = self.stack.pop().unwrap() else { return Err("Expected string".into()); }; println!("{}", s); self.stack.push(Val::Null); }
+                Op::Halt => return Ok(Val::Null),
+                _ => return Err(format!("Unimplemented: {:?}", op)),
             }
         }
     }
     
-    fn values_equal(&self, a: &Value, b: &Value) -> bool {
+    fn add(&self, a: Val, b: Val) -> Result<Val, String> {
+        Ok(match (a, b) {
+            (Val::Int(x), Val::Int(y)) => Val::Int(x + y),
+            (Val::Float(x), Val::Float(y)) => Val::Float(x + y),
+            (Val::Int(x), Val::Float(y)) => Val::Float(x as f64 + y),
+            (Val::Float(x), Val::Int(y)) => Val::Float(x + y as f64),
+            (Val::Str(x), Val::Str(y)) => Val::Str(Rc::new(format!("{}{}", x, y))),
+            _ => return Err("Type error in add".into()),
+        })
+    }
+    fn sub(&self, a: Val, b: Val) -> Result<Val, String> {
+        Ok(match (a, b) {
+            (Val::Int(x), Val::Int(y)) => Val::Int(x - y),
+            (Val::Float(x), Val::Float(y)) => Val::Float(x - y),
+            (Val::Int(x), Val::Float(y)) => Val::Float(x as f64 - y),
+            (Val::Float(x), Val::Int(y)) => Val::Float(x - y as f64),
+            _ => return Err("Type error in sub".into()),
+        })
+    }
+    fn mul(&self, a: Val, b: Val) -> Result<Val, String> {
+        Ok(match (a, b) {
+            (Val::Int(x), Val::Int(y)) => Val::Int(x * y),
+            (Val::Float(x), Val::Float(y)) => Val::Float(x * y),
+            (Val::Int(x), Val::Float(y)) => Val::Float(x as f64 * y),
+            (Val::Float(x), Val::Int(y)) => Val::Float(x * y as f64),
+            _ => return Err("Type error in mul".into()),
+        })
+    }
+    fn div(&self, a: Val, b: Val) -> Result<Val, String> {
+        Ok(match (a, b) {
+            (Val::Int(x), Val::Int(y)) => { if y == 0 { return Err("Division by zero".into()); } Val::Int(x / y) }
+            (Val::Float(x), Val::Float(y)) => Val::Float(x / y),
+            (Val::Int(x), Val::Float(y)) => Val::Float(x as f64 / y),
+            (Val::Float(x), Val::Int(y)) => Val::Float(x / y as f64),
+            _ => return Err("Type error in div".into()),
+        })
+    }
+    fn eq(&self, a: &Val, b: &Val) -> bool {
         match (a, b) {
-            (Value::Int(x), Value::Int(y)) => x == y,
-            (Value::Float(x), Value::Float(y)) => x == y,
-            (Value::Bool(x), Value::Bool(y)) => x == y,
-            (Value::Null, Value::Null) => true,
-            (Value::String(x), Value::String(y)) => x == y,
+            (Val::Int(x), Val::Int(y)) => x == y,
+            (Val::Float(x), Val::Float(y)) => x == y,
+            (Val::Bool(x), Val::Bool(y)) => x == y,
+            (Val::Str(x), Val::Str(y)) => x == y,
+            (Val::Null, Val::Null) => true,
             _ => false,
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_basic_arithmetic() {
-        let mut compiler = BytecodeCompiler::new();
-        // Test will be added with actual AST
+    fn cmp(&self, a: &Val, b: &Val) -> Result<i32, String> {
+        Ok(match (a, b) {
+            (Val::Int(x), Val::Int(y)) => x.cmp(y) as i32,
+            (Val::Float(x), Val::Float(y)) => x.partial_cmp(y).map(|o| o as i32).unwrap_or(0),
+            (Val::Int(x), Val::Float(y)) => (*x as f64).partial_cmp(y).map(|o| o as i32).unwrap_or(0),
+            (Val::Float(x), Val::Int(y)) => x.partial_cmp(&(*y as f64)).map(|o| o as i32).unwrap_or(0),
+            _ => return Err("Cannot compare".into()),
+        })
     }
 }

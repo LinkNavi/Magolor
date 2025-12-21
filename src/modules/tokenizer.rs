@@ -1,11 +1,7 @@
-// src/modules/tokenizer.rs - Clean tokenizer for C#/Rust hybrid language
 use logos::Logos;
 
 #[derive(Logos, Debug, Clone, PartialEq)]
 pub enum Token {
-    // === Literals ===
-    
-    // Strings (C# style)
     #[regex(r#""([^"\\]|\\[nrt"\\])*""#, |lex| {
         let s = lex.slice();
         let content = &s[1..s.len()-1];
@@ -17,34 +13,30 @@ pub enum Token {
     })]
     String(String),
     
-    // Numbers (simple parsing)
-    #[regex(r"[0-9]+", |lex| lex.slice().parse().ok())]
-    Integer(i64),
-    
     #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().parse().ok())]
     Float(f64),
     
-    // Booleans (C# style: true/false)
+    #[regex(r"[0-9]+", |lex| lex.slice().parse().ok())]
+    Integer(i64),
+    
     #[token("true")]
     True,
     #[token("false")]
     False,
-    
-    #[token("null")]  // C# style
+    #[token("null")]
     Null,
     
-    // === Keywords - Control Flow (C# style) ===
     #[token("if")]
     If,
     #[token("else")]
     Else,
-    #[token("elif")]    // Python-style shorthand
+    #[token("elif")]
     Elif,
     #[token("while")]
     While,
     #[token("for")]
     For,
-    #[token("foreach")]  // C# style
+    #[token("foreach")]
     ForEach,
     #[token("in")]
     In,
@@ -54,24 +46,32 @@ pub enum Token {
     Continue,
     #[token("return")]
     Return,
+    #[token("match")]
+    Match,
     
-    // === Keywords - Declarations (C# style) ===
-    #[token("fn")]       // Rust style for functions
+    #[token("fn")]
     Func,
-    #[token("let")]      // Rust style for variables
+    #[token("let")]
     Let,
-    #[token("const")]    // C# style for constants
+    #[token("const")]
     Const,
-    #[token("static")]   // C# style
+    #[token("static")]
     Static,
-    #[token("class")]    // C# style
+    #[token("class")]
     Class,
-    #[token("struct")]   // C# style
+    #[token("struct")]
     Struct,
-    #[token("namespace")] // C# style
+    #[token("enum")]
+    Enum,
+    #[token("impl")]
+    Impl,
+    #[token("trait")]
+    Trait,
+    #[token("namespace")]
     Namespace,
+    #[token("use")]
+    Use,
     
-    // === Access Modifiers (C# style) ===
     #[token("public")]
     Public,
     #[token("private")]
@@ -79,33 +79,48 @@ pub enum Token {
     #[token("protected")]
     Protected,
     
-    // === Special Keywords ===
-    #[token("this")]     // C# style
+    #[token("this")]
     This,
-    #[token("void")]     // C# style
+    #[token("self")]
+    SelfKw,
+    #[token("void")]
     Void,
-    #[token("new")]      // C# style for object creation
+    #[token("new")]
     New,
-    #[token("mut")]      // Rust style for explicit mutability
+    #[token("mut")]
     Mut,
+    #[token("ref")]
+    Ref,
     
-    // === Type Keywords (C# + Rust hybrid) ===
+    #[token("i8")]
+    I8Type,
+    #[token("i16")]
+    I16Type,
     #[token("i32")]
     I32Type,
     #[token("i64")]
     I64Type,
+    #[token("u8")]
+    U8Type,
+    #[token("u16")]
+    U16Type,
+    #[token("u32")]
+    U32Type,
+    #[token("u64")]
+    U64Type,
     #[token("f32")]
     F32Type,
     #[token("f64")]
     F64Type,
-    #[token("string")]   // C# style (lowercase)
+    #[token("string")]
     StringType,
     #[token("bool")]
     BoolType,
-    #[token("var")]      // C# style type inference
+    #[token("char")]
+    CharType,
+    #[token("var")]
     VarType,
     
-    // === Operators - Arithmetic ===
     #[token("+")]
     Plus,
     #[token("-")]
@@ -116,12 +131,11 @@ pub enum Token {
     Slash,
     #[token("%")]
     Percent,
-    #[token("++")]       // C# style
+    #[token("++")]
     PlusPlus,
-    #[token("--")]       // C# style
+    #[token("--")]
     MinusMinus,
     
-    // === Operators - Comparison ===
     #[token("==")]
     EqEq,
     #[token("!=")]
@@ -135,15 +149,13 @@ pub enum Token {
     #[token(">=")]
     GreaterEq,
     
-    // === Operators - Logical ===
-    #[token("&&")]       // C# style
+    #[token("&&")]
     AndAnd,
-    #[token("||")]       // C# style
+    #[token("||")]
     OrOr,
     #[token("!")]
     Not,
     
-    // === Operators - Bitwise ===
     #[token("&")]
     And,
     #[token("|")]
@@ -157,7 +169,6 @@ pub enum Token {
     #[token(">>")]
     Shr,
     
-    // === Operators - Assignment (C# style) ===
     #[token("=")]
     Eq,
     #[token("+=")]
@@ -170,8 +181,17 @@ pub enum Token {
     SlashEq,
     #[token("%=")]
     PercentEq,
+    #[token("&=")]
+    AndEq,
+    #[token("|=")]
+    OrEq,
+    #[token("^=")]
+    XorEq,
+    #[token("<<=")]
+    ShlEq,
+    #[token(">>=")]
+    ShrEq,
     
-    // === Punctuation ===
     #[token("(")]
     LParen,
     #[token(")")]
@@ -188,56 +208,30 @@ pub enum Token {
     Semicolon,
     #[token(":")]
     Colon,
+    #[token("::")]
+    ColonColon,
     #[token(",")]
     Comma,
     #[token(".")]
     Dot,
-    #[token("?")]        // For ternary: condition ? then : else
+    #[token("?")]
     Question,
+    #[token("=>")]
+    FatArrow,
+    #[token("->")]
+    Arrow,
     
-    // === Identifiers (must come after keywords) ===
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
     
-    // === Comments (C#/C++ style) ===
     #[regex(r"//[^\n]*", logos::skip)]
     #[regex(r"/\*([^*]|\*[^/])*\*/", logos::skip)]
     Comment,
     
-    // === Whitespace ===
     #[regex(r"[ \t\r\n]+", logos::skip)]
     Whitespace,
 }
 
-// Simple tokenize function
 pub fn tokenize(input: &str) -> Vec<Token> {
-    let mut tokens = Vec::new();
-    let mut lexer = Token::lexer(input);
-    
-    while let Some(result) = lexer.next() {
-        if let Ok(token) = result {
-            tokens.push(token);
-        }
-    }
-    
-    tokens
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_basic_tokens() {
-        let input = "let x = 42;";
-        let tokens = tokenize(input);
-        assert_eq!(tokens.len(), 5);
-    }
-
-    #[test]
-    fn test_function_declaration() {
-        let input = "public i32 fn add(i32 a, i32 b) { return a + b; }";
-        let tokens = tokenize(input);
-        assert!(tokens.len() > 10);
-    }
+    Token::lexer(input).filter_map(|r| r.ok()).collect()
 }

@@ -1,25 +1,11 @@
-// src/modules/ast.rs - Comprehensive AST with full C#/Rust features
-
-use std::collections::HashMap;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
-    // Primitive types
-    I32,
-    I64,
-    F32,
-    F64,
-    String,
-    Bool,
-    Void,
-    
-    // Arrays (C# style: int[])
+    I8, I16, I32, I64,
+    U8, U16, U32, U64,
+    F32, F64,
+    String, Bool, Char, Void,
     Array(Box<Type>),
-    
-    // User-defined types
     Custom(String),
-    
-    // Type inference (var in C#)
     Inferred,
 }
 
@@ -32,308 +18,112 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ComparisonOp {
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
+    Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOp {
-    Not,
-    Negate,
-    PreInc,   // ++x
-    PreDec,   // --x
-    PostInc,  // x++
-    PostDec,  // x--
+    Not, Negate, BitNot,
+    PreInc, PreDec, PostInc, PostDec,
 }
 
 #[derive(Debug, Clone)]
-pub enum ASTValue {
-    // Literals
+pub enum Expr {
     Int(i64),
     Float(f64),
     Bool(bool),
     Str(String),
     Null,
-    
-    // Variables
-    VarRef(String),
-    
-    // Collections
-    ArrayLiteral(Vec<ASTValue>),
-    
-    // Access
-    ArrayAccess {
-        array: Box<ASTValue>,
-        index: Box<ASTValue>,
-    },
-    MemberAccess {
-        object: Box<ASTValue>,
-        member: String,
-    },
-    
-    // Function calls
-    FuncCall {
-        name: String,
-        args: Vec<ASTValue>,
-    },
-    MethodCall {
-        object: Box<ASTValue>,
-        method: String,
-        args: Vec<ASTValue>,
-    },
-    
-    // Object creation (C# style: new MyClass())
-    NewObject {
-        class_name: String,
-        args: Vec<ASTValue>,
-    },
-    
-    // Operators
-    Binary {
-        op: BinaryOp,
-        left: Box<ASTValue>,
-        right: Box<ASTValue>,
-    },
-    Unary {
-        op: UnaryOp,
-        operand: Box<ASTValue>,
-    },
-    Comparison {
-        op: ComparisonOp,
-        left: Box<ASTValue>,
-        right: Box<ASTValue>,
-    },
-    
-    // Ternary (C# style: condition ? then : else)
-    Ternary {
-        condition: Box<ASTValue>,
-        then_val: Box<ASTValue>,
-        else_val: Box<ASTValue>,
-    },
-    
-    // This keyword (C# style)
+    Var(String),
+    Array(Vec<Expr>),
+    Index { array: Box<Expr>, index: Box<Expr> },
+    Field { object: Box<Expr>, field: String },
+    Call { name: String, args: Vec<Expr> },
+    Method { object: Box<Expr>, method: String, args: Vec<Expr> },
+    New { class: String, args: Vec<Expr> },
+    Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr> },
+    Unary { op: UnaryOp, operand: Box<Expr> },
+    Compare { op: ComparisonOp, left: Box<Expr>, right: Box<Expr> },
+    Ternary { cond: Box<Expr>, then_val: Box<Expr>, else_val: Box<Expr> },
     This,
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    // Variable declaration (C# style: int x = 5; or var x = 5;)
-    VarDecl {
-        name: String,
-        var_type: Type,
-        value: Option<ASTValue>,
-        is_mutable: bool,  // true by default in C#, explicit in Rust
-    },
-    
-    // Assignment
-    Assignment {
-        target: ASTValue,
-        value: ASTValue,
-    },
-    
-    // Compound assignment (C# style: x += 5)
-    CompoundAssignment {
-        target: ASTValue,
-        op: BinaryOp,
-        value: ASTValue,
-    },
-    
-    // Expression statement
-    Expression(ASTValue),
-    
-    // Return
-    Return(Option<ASTValue>),
-    
-    // Control flow
+pub enum Stmt {
+    Let { name: String, ty: Type, value: Option<Expr>, mutable: bool },
+    Assign { target: Expr, value: Expr },
+    CompoundAssign { target: Expr, op: BinaryOp, value: Expr },
+    Expr(Expr),
+    Return(Option<Expr>),
     Break,
     Continue,
-    
-    // If statement (C# style: if/elif/else)
-    If {
-        condition: ASTValue,
-        then_body: Vec<Statement>,
-        elif_branches: Vec<(ASTValue, Vec<Statement>)>,
-        else_body: Option<Vec<Statement>>,
-    },
-    
-    // While loop
-    While {
-        condition: ASTValue,
-        body: Vec<Statement>,
-    },
-    
-    // For loop (C-style)
-    For {
-        init: Option<Box<Statement>>,
-        condition: Option<ASTValue>,
-        increment: Option<Box<Statement>>,
-        body: Vec<Statement>,
-    },
-    
-    // Foreach loop (C# style)
-    ForEach {
-        item: String,
-        item_type: Type,
-        collection: ASTValue,
-        body: Vec<Statement>,
-    },
-    
-    // Block
-    Block(Vec<Statement>),
+    If { cond: Expr, then_body: Vec<Stmt>, elifs: Vec<(Expr, Vec<Stmt>)>, else_body: Option<Vec<Stmt>> },
+    While { cond: Expr, body: Vec<Stmt> },
+    For { init: Option<Box<Stmt>>, cond: Option<Expr>, inc: Option<Box<Stmt>>, body: Vec<Stmt> },
+    ForEach { item: String, ty: Type, collection: Expr, body: Vec<Stmt> },
+    Block(Vec<Stmt>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum AccessModifier {
-    Public,
-    Private,
-    Protected,
-}
-
-impl Default for AccessModifier {
-    fn default() -> Self {
-        AccessModifier::Public
-    }
-}
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Access { #[default] Public, Private, Protected }
 
 #[derive(Debug, Clone)]
-pub struct Parameter {
-    pub name: String,
-    pub param_type: Type,
-}
+pub struct Param { pub name: String, pub ty: Type }
 
 #[derive(Debug, Clone)]
-pub struct FunctionDef {
+pub struct FnDef {
     pub name: String,
-    pub params: Vec<Parameter>,
-    pub return_type: Type,
-    pub body: Vec<Statement>,
-    pub access: AccessModifier,
+    pub params: Vec<Param>,
+    pub ret: Type,
+    pub body: Vec<Stmt>,
+    pub access: Access,
     pub is_static: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
-    pub field_type: Type,
-    pub access: AccessModifier,
+    pub ty: Type,
+    pub access: Access,
     pub is_static: bool,
-    pub default_value: Option<ASTValue>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Constructor {
-    pub params: Vec<Parameter>,
-    pub body: Vec<Statement>,
-    pub access: AccessModifier,
+    pub default: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ClassDef {
     pub name: String,
     pub fields: Vec<Field>,
-    pub methods: Vec<FunctionDef>,
-    pub constructors: Vec<Constructor>,
-    pub access: AccessModifier,
+    pub methods: Vec<FnDef>,
+    pub access: Access,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub name: String,
     pub fields: Vec<Field>,
-    pub access: AccessModifier,
+    pub access: Access,
 }
 
 #[derive(Debug, Clone)]
-pub struct ConstantDef {
+pub struct EnumVariant {
     pub name: String,
-    pub const_type: Type,
-    pub value: ASTValue,
-    pub access: AccessModifier,
+    pub value: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
-pub struct NamespaceDef {
+pub struct EnumDef {
     pub name: String,
-    pub items: Vec<TopLevel>,
+    pub variants: Vec<EnumVariant>,
+    pub access: Access,
 }
 
 #[derive(Debug, Clone)]
 pub enum TopLevel {
-    Function(FunctionDef),
+    Function(FnDef),
     Class(ClassDef),
     Struct(StructDef),
-    Namespace(NamespaceDef),
-    Constant(ConstantDef),
+    Enum(EnumDef),
+    Const { name: String, ty: Type, value: Expr, access: Access },
 }
 
 pub type Program = Vec<TopLevel>;
-
-// Helper methods
-impl Type {
-    pub fn is_numeric(&self) -> bool {
-        matches!(self, Type::I32 | Type::I64 | Type::F32 | Type::F64)
-    }
-    
-    pub fn is_integer(&self) -> bool {
-        matches!(self, Type::I32 | Type::I64)
-    }
-    
-    pub fn is_void(&self) -> bool {
-        matches!(self, Type::Void)
-    }
-}
-
-impl FunctionDef {
-    pub fn new(name: String, params: Vec<Parameter>, return_type: Type, body: Vec<Statement>) -> Self {
-        Self {
-            name,
-            params,
-            return_type,
-            body,
-            access: AccessModifier::Public,
-            is_static: false,
-        }
-    }
-}
-
-impl ClassDef {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            fields: Vec::new(),
-            methods: Vec::new(),
-            constructors: Vec::new(),
-            access: AccessModifier::Public,
-        }
-    }
-    
-    pub fn add_field(&mut self, field: Field) {
-        self.fields.push(field);
-    }
-    
-    pub fn add_method(&mut self, method: FunctionDef) {
-        self.methods.push(method);
-    }
-    
-    pub fn add_constructor(&mut self, constructor: Constructor) {
-        self.constructors.push(constructor);
-    }
-}
-
-impl StructDef {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            fields: Vec::new(),
-            access: AccessModifier::Public,
-        }
-    }
-    
-    pub fn add_field(&mut self, field: Field) {
-        self.fields.push(field);
-    }
-}
