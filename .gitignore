@@ -1,2 +1,6 @@
 target/
-
+Gear/.build/
+Gear/target/
+MagolorCompiler/target
+MagorlorCompiler/.build
+Magpie/MagpieRuntime/target
