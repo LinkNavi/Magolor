@@ -440,30 +440,30 @@ impl Compiler {
         Ok(())
     }
 
- fn compile_assign_target(&mut self, target: &Expr) -> Result<(), String> {
-    match target {
-        Expr::Var(name) => {
-            if let Some(slot) = self.find_local(name) { 
-                self.emit(Op::StoreLocal(slot)); 
-            } else { 
-                let g = self.get_global(name); 
-                self.emit(Op::StoreGlobal(g)); 
+    fn compile_assign_target(&mut self, target: &Expr) -> Result<(), String> {
+        match target {
+            Expr::Var(name) => {
+                if let Some(slot) = self.find_local(name) {
+                    self.emit(Op::StoreLocal(slot));
+                } else {
+                    let g = self.get_global(name);
+                    self.emit(Op::StoreGlobal(g));
+                }
             }
+            Expr::Index { array, index } => {
+                self.compile_expr(*array.clone())?;
+                self.compile_expr(*index.clone())?;
+                self.emit(Op::ArraySet);
+            }
+            Expr::Field { object, field } => {
+                self.compile_expr(*object.clone())?;
+                let field_const = self.add_const(Val::Str(Rc::new(field.clone())));
+                self.emit(Op::SetField(field_const));
+            }
+            _ => return Err("Invalid assignment target".into()),
         }
-        Expr::Index { array, index } => {
-            self.compile_expr(*array.clone())?;
-            self.compile_expr(*index.clone())?;
-            self.emit(Op::ArraySet);
-        }
-        Expr::Field { object, field } => {
-            self.compile_expr(*object.clone())?;
-            let field_const = self.add_const(Val::Str(Rc::new(field.clone())));
-            self.emit(Op::SetField(field_const));
-        }
-        _ => return Err("Invalid assignment target".into()),
+        Ok(())
     }
-    Ok(())
-}
 
     fn compile_expr(&mut self, expr: Expr) -> Result<(), String> {
         match expr {
@@ -503,28 +503,33 @@ impl Compiler {
                 }
                 self.emit(Op::NewArray(len as u16));
             }
-         Expr::Object(props) => {
-                // Create empty object
-                self.emit(Op::NewObject);
+ Expr::Object(props) => {
+    self.emit(Op::NewObject);
 
-                // Set each property
-                for (key, value) in props {
-                    self.emit(Op::Dup); // Duplicate object reference
-                    self.compile_expr(value)?;
-                    let key_const = self.add_const(Val::Str(Rc::new(key)));
-                    self.emit(Op::SetField(key_const));
-                }
-            }
+    for (key, value) in props {
+        self.compile_expr(value)?;  // Stack: [obj, value]
+        let key_const = self.add_const(Val::Str(Rc::new(key)));
+        self.emit(Op::SetField(key_const));  // Consumes value and object, pushes object back
+    }
+}
             Expr::Index { array, index } => {
                 self.compile_expr(*array)?;
                 self.compile_expr(*index)?;
                 self.emit(Op::ArrayGet);
             }
-            Expr::Field { object, field } => {
-                self.compile_expr(*object)?;
-                let field_const = self.add_const(Val::Str(Rc::new(field)));
-                self.emit(Op::GetField(field_const));
-            }
+        Expr::Field { object, field } => {
+    // Stack has [value] on entry
+    // We need [object, value] for SetField
+    let temp_slot = self.local_count;
+    self.local_count += 1;
+    self.emit(Op::StoreLocal(temp_slot)); // Store value temporarily
+    self.compile_expr(*object.clone())?;   // Load object
+    self.emit(Op::LoadLocal(temp_slot));   // Load value back
+    let field_const = self.add_const(Val::Str(Rc::new(field.clone())));
+    self.emit(Op::SetField(field_const));
+    self.emit(Op::Pop); // Pop the returned object since this is an assignment statement
+    self.local_count -= 1;
+}
             Expr::Binary { op, left, right } => {
                 self.compile_expr(*left)?;
                 self.compile_expr(*right)?;
@@ -938,17 +943,19 @@ impl VM {
                     }
                 }
 
-                Op::SetField(field_idx) => {
-                    let value = self.stack.pop().unwrap();
-                    let Val::Str(field_name) = &self.module.consts[field_idx as usize] else {
-                        return Err("Field name must be string".into());
-                    };
-                    let Val::Obj(obj) = self.stack.pop().unwrap() else {
-                        return Err("Cannot set field on non-object".into());
-                    };
+       Op::SetField(field_idx) => {
+    let value = self.stack.pop().unwrap();
+    let Val::Str(field_name) = &self.module.consts[field_idx as usize] else {
+        return Err("Field name must be string".into());
+    };
+    let obj_val = self.stack.pop().unwrap();
+    let Val::Obj(obj) = &obj_val else {
+        return Err("Cannot set field on non-object".into());
+    };
 
-                    obj.borrow_mut().insert(field_name.to_string(), value);
-                }
+    obj.borrow_mut().insert(field_name.to_string(), value);
+    self.stack.push(obj_val); // Push object back
+}
                 Op::ArrayGet => {
                     let idx_val = self.stack.pop().unwrap();
                     let container = self.stack.pop().unwrap();
