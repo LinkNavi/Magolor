@@ -2,8 +2,14 @@
 #include "jsonrpc.hpp"
 #include "lsp_semantic.hpp"
 #include "lsp_completion.hpp"
+#include "diagnostics.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
+#include "typechecker.hpp"
+#include "error.hpp"
 #include <unordered_map>
 #include <string>
+#include <memory>
 
 struct TextDocument {
     std::string uri;
@@ -11,6 +17,7 @@ struct TextDocument {
     int version = 0;
     std::string content;
     std::vector<size_t> lineOffsets;
+    std::vector<LspDiagnostic> diagnostics;
     
     void updateLineOffsets() {
         lineOffsets.clear();
@@ -20,6 +27,18 @@ struct TextDocument {
                 lineOffsets.push_back(i + 1);
             }
         }
+    }
+    
+    Position offsetToPosition(size_t offset) const {
+        Position pos;
+        for (size_t i = 0; i < lineOffsets.size(); i++) {
+            if (i + 1 >= lineOffsets.size() || lineOffsets[i + 1] > offset) {
+                pos.line = i;
+                pos.character = offset - lineOffsets[i];
+                break;
+            }
+        }
+        return pos;
     }
     
     std::string getLine(int line) const {
@@ -84,6 +103,55 @@ private:
     std::unordered_map<std::string, TextDocument> documents;
 };
 
+class DiagnosticCollector : public ErrorReporter {
+public:
+    DiagnosticCollector(const std::string& uri, const std::string& content)
+        : ErrorReporter("", content), uri(uri) {}
+    
+    std::vector<LspDiagnostic> getDiagnostics() const {
+        return lspDiagnostics;
+    }
+    
+    void error(const std::string& msg, SourceLocation loc, const std::string& hint = "") override {
+        LspDiagnostic diag;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.message = msg;
+        diag.range = sourceLocationToRange(loc);
+        diag.source = "magolor";
+        
+        if (!hint.empty()) {
+            diag.message += "\nHelp: " + hint;
+        }
+        
+        lspDiagnostics.push_back(diag);
+        ErrorReporter::error(msg, loc, hint);
+    }
+    
+    void warning(const std::string& msg, SourceLocation loc) override {
+        LspDiagnostic diag;
+        diag.severity = DiagnosticSeverity::Warning;
+        diag.message = msg;
+        diag.range = sourceLocationToRange(loc);
+        diag.source = "magolor";
+        
+        lspDiagnostics.push_back(diag);
+        ErrorReporter::warning(msg, loc);
+    }
+
+private:
+    std::string uri;
+    std::vector<LspDiagnostic> lspDiagnostics;
+    
+    Range sourceLocationToRange(const SourceLocation& loc) {
+        Range range;
+        range.start.line = loc.line - 1; // LSP is 0-based
+        range.start.character = loc.col - 1;
+        range.end.line = loc.line - 1;
+        range.end.character = loc.col - 1 + loc.length;
+        return range;
+    }
+};
+
 class MagolorLanguageServer {
 public:
     void run() {
@@ -118,5 +186,10 @@ private:
     void handleReferences(const Message& msg);
     void handleDocumentSymbol(const Message& msg);
     
+    // NEW: Diagnostic functions
+    void analyzeAndPublishDiagnostics(const std::string& uri, const std::string& content);
+    void publishDiagnostics(const std::string& uri, const std::vector<LspDiagnostic>& diagnostics);
+    
     JsonValue rangeToJson(const Range& r);
+    JsonValue diagnosticToJson(const LspDiagnostic& diag);
 };

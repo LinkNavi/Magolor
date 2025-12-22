@@ -32,7 +32,9 @@ public:
         buildLineIndex();
     }
     
-    void error(const std::string& msg, SourceLocation loc, const std::string& hint = "") {
+    virtual ~ErrorReporter() = default;
+    
+    virtual void error(const std::string& msg, SourceLocation loc, const std::string& hint = "") {
         Diagnostic diag;
         diag.level = ErrorLevel::ERROR;
         diag.message = msg;
@@ -42,7 +44,7 @@ public:
         hasErrors = true;
     }
     
-    void warning(const std::string& msg, SourceLocation loc) {
+    virtual void warning(const std::string& msg, SourceLocation loc) {
         Diagnostic diag;
         diag.level = ErrorLevel::WARNING;
         diag.message = msg;
@@ -58,13 +60,17 @@ public:
     
     bool hasError() const { return hasErrors; }
     
+    const std::vector<Diagnostic>& getDiagnosticList() const {
+        return diagnostics;
+    }
+    
     void printDiagnostics() {
         for (const auto& diag : diagnostics) {
             printDiagnostic(diag);
         }
     }
     
-private:
+protected:
     std::string filename;
     std::string source;
     std::vector<Diagnostic> diagnostics;
