@@ -41,23 +41,19 @@ void Parser::errorWithHint(const std::string& msg, const Token& tok, const std::
 }
 
 void Parser::synchronize() {
-    advance();  // Skip the error token
+    advance();
     
-    // Skip until we find a statement/declaration boundary
     while (!check(TokenType::EOF_TOK)) {
-        // Stop at statement boundaries
         if (check(TokenType::SEMICOLON)) {
             advance();
             return;
         }
         
-        // Stop at declaration keywords
         if (check(TokenType::FN) || check(TokenType::CLASS) || 
             check(TokenType::USING) || check(TokenType::CIMPORT)) {
             return;
         }
         
-        // Stop at block boundaries
         if (check(TokenType::RBRACE)) {
             return;
         }
@@ -65,6 +61,7 @@ void Parser::synchronize() {
         advance();
     }
 }
+
 Program Parser::parse() {
     Program prog;
     while (!check(TokenType::EOF_TOK)) {
@@ -79,10 +76,9 @@ Program Parser::parse() {
                 prog.functions.push_back(parseFunction());
             } else {
                 error("Unexpected token: " + peek().value, peek());
-                synchronize();  // NEW: Recover and continue parsing
+                synchronize();
             }
         } catch (const std::exception& e) {
-            // If parsing throws, synchronize and continue
             synchronize();
         }
     }
@@ -106,14 +102,11 @@ CImportDecl Parser::parseCImport() {
     expect(TokenType::CIMPORT, "Expected 'cimport'");
     CImportDecl decl;
     
-    // Check for < or " to determine system vs local header
     if (match(TokenType::LT)) {
-        // System header: cimport <stdio.h>
         decl.isSystemHeader = true;
         Token headerName = expect(TokenType::IDENT, "Expected header name");
         decl.header = headerName.value;
         
-        // Handle extension (e.g., .h)
         if (match(TokenType::DOT)) {
             decl.header += ".";
             Token ext = expect(TokenType::IDENT, "Expected header extension");
@@ -122,20 +115,17 @@ CImportDecl Parser::parseCImport() {
         
         expect(TokenType::GT, "Expected '>' after system header");
     } else {
-        // String literal: cimport "myheader.h"
         Token headerToken = expect(TokenType::STRING_LIT, "Expected header name in quotes or <>");
         decl.header = headerToken.value;
         decl.isSystemHeader = false;
     }
     
-    // Optional: as namespace
     if (check(TokenType::IDENT) && peek().value == "as") {
-        advance(); // consume 'as'
+        advance();
         Token ns = expect(TokenType::IDENT, "Expected namespace name after 'as'");
         decl.asNamespace = ns.value;
     }
     
-    // Optional: only import specific symbols
     if (check(TokenType::LPAREN)) {
         advance();
         if (!check(TokenType::RPAREN)) {
@@ -196,28 +186,24 @@ TypePtr Parser::parseFunctionType() {
 Field Parser::parseField() {
     Field field;
     
-    // Check for 'pub' modifier
     field.isPublic = false;
     if (check(TokenType::PUB)) {
         field.isPublic = true;
         advance();
     }
     
-    // Check for 'static' modifier
     field.isStatic = false;
     if (check(TokenType::STATIC)) {
         field.isStatic = true;
         advance();
     }
     
-    // Get field name - FIXED: don't call match().value, call expect()
     Token nameToken = expect(TokenType::IDENT, "Expected field name");
     field.name = nameToken.value;
     
     expect(TokenType::COLON, "Expected ':' after field name");
     field.type = parseType();
     
-    // Check for initialization (for static const)
     if (check(TokenType::ASSIGN)) {
         advance();
         field.initValue = parseExpr();
@@ -230,14 +216,12 @@ Field Parser::parseField() {
 FnDecl Parser::parseFunction() {
     FnDecl fn;
     
-    // Check for 'pub' modifier
     fn.isPublic = false;
     if (check(TokenType::PUB)) {
         fn.isPublic = true;
         advance();
     }
     
-    // Check for 'static' modifier
     fn.isStatic = false;
     if (check(TokenType::STATIC)) {
         fn.isStatic = true;
@@ -288,17 +272,27 @@ ClassDecl Parser::parseClass() {
     
     while (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOK)) {
         bool isPublic = match(TokenType::PUB);
+        bool isStatic = match(TokenType::STATIC);
+        
         if (check(TokenType::FN)) {
             FnDecl m = parseFunction();
             m.isPublic = isPublic;
+            m.isStatic = isStatic;
             cls.methods.push_back(m);
         } else {
             Field f;
             f.isPublic = isPublic;
+            f.isStatic = isStatic;
             Token fieldName = expect(TokenType::IDENT, "Expected field name");
             f.name = fieldName.value;
             expect(TokenType::COLON, "Expected ':' after field name");
             f.type = parseType();
+            
+            if (check(TokenType::ASSIGN)) {
+                advance();
+                f.initValue = parseExpr();
+            }
+            
             expect(TokenType::SEMICOLON, "Expected ';' after field declaration");
             cls.fields.push_back(f);
         }
@@ -327,7 +321,7 @@ StmtPtr Parser::parseStmt() {
     if (check(TokenType::CPP_BLOCK)) {
         auto stmt = std::make_shared<Stmt>();
         CppStmt cpp;
-        cpp.code = advance().value;  // Get the C++ code
+        cpp.code = advance().value;
         stmt->data = cpp;
         return stmt;
     }
@@ -462,7 +456,35 @@ StmtPtr Parser::parseMatch() {
     return stmt;
 }
 
-ExprPtr Parser::parseExpr() { return parseOr(); }
+// FIX: Handle assignment
+ExprPtr Parser::parseExpr() { 
+    auto left = parseOr();
+    
+    // Check for assignment
+    if (check(TokenType::ASSIGN)) {
+        // Validate l-value
+        bool isLValue = std::holds_alternative<IdentExpr>(left->data) || 
+                       std::holds_alternative<MemberExpr>(left->data) ||
+                       std::holds_alternative<IndexExpr>(left->data);
+        
+        if (!isLValue) {
+            error("Cannot assign to non-variable expression", peek());
+            advance();
+            parseExpr();
+            return left;
+        }
+        
+        advance();
+        auto expr = std::make_shared<Expr>();
+        AssignExpr ae;
+        ae.target = left;
+        ae.value = parseExpr();
+        expr->data = ae;
+        return expr;
+    }
+    
+    return left;
+}
 
 ExprPtr Parser::parseOr() {
     auto left = parseAnd();
@@ -600,7 +622,6 @@ ExprPtr Parser::parseCall() {
             indexExpr->data = ie;
             expr = indexExpr;
         } else if (match(TokenType::DOUBLE_COLON)) {
-            // Handle :: for namespaced access (e.g., Math::sqrt)
             auto memberExpr = std::make_shared<Expr>();
             MemberExpr me;
             me.object = expr;
@@ -768,9 +789,8 @@ ExprPtr Parser::parsePrimary() {
     errorWithHint("Unexpected token in expression: " + bad.value, bad,
                   "expected a literal, identifier, or '('");
     
-    // Return a dummy expression to continue parsing
     auto e = std::make_shared<Expr>();
     e->data = IntLitExpr{0};
-    advance(); // skip the bad token
+    advance();
     return e;
 }

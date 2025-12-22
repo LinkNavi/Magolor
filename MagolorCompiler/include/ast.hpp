@@ -37,6 +37,7 @@ struct UnaryExpr { std::string op; ExprPtr operand; };
 struct CallExpr { ExprPtr callee; std::vector<ExprPtr> args; };
 struct MemberExpr { ExprPtr object; std::string member; };
 struct IndexExpr { ExprPtr object; ExprPtr index; };
+struct AssignExpr { ExprPtr target; ExprPtr value; };
 struct LambdaExpr { std::vector<Param> params; TypePtr returnType; std::vector<StmtPtr> body; };
 struct NewExpr { std::string className; std::vector<ExprPtr> args; };
 struct SomeExpr { ExprPtr value; };
@@ -46,7 +47,7 @@ struct ArrayExpr { std::vector<ExprPtr> elements; };
 
 using ExprVariant = std::variant<
     IntLitExpr, FloatLitExpr, StringLitExpr, BoolLitExpr, IdentExpr,
-    BinaryExpr, UnaryExpr, CallExpr, MemberExpr, IndexExpr,
+    BinaryExpr, UnaryExpr, CallExpr, MemberExpr, IndexExpr, AssignExpr,
     LambdaExpr, NewExpr, SomeExpr, NoneExpr, ThisExpr, ArrayExpr
 >;
 
@@ -81,16 +82,16 @@ struct FnDecl {
     std::vector<Param> params;
     TypePtr returnType;
     std::vector<StmtPtr> body;
-    bool isPublic;  // NEW: true if marked with 'pub'
-    bool isStatic;  // NEW: true if marked with 'static'
+    bool isPublic;  // true if marked with 'pub'
+    bool isStatic;  // true if marked with 'static'
 };
 
 struct Field {
     std::string name;
     TypePtr type;
-    bool isPublic;  // NEW: true if marked with 'pub'
-    bool isStatic;  // NEW: true if marked with 'static'
-    ExprPtr initValue;  // NEW: for static const initialization
+    bool isPublic;  // true if marked with 'pub'
+    bool isStatic;  // true if marked with 'static'
+    ExprPtr initValue;  // for static const initialization
 };
 
 struct ClassDecl {
@@ -98,12 +99,12 @@ struct ClassDecl {
     std::vector<Field> fields;
     std::vector<FnDecl> methods;
     std::string parent;
-    bool isPublic;  // NEW: classes can be pub (for exporting from modules)
+    bool isPublic;  // classes can be pub (for exporting from modules)
 };
 
 struct UsingDecl {
     std::vector<std::string> path; // e.g., ["Std", "IO"] or ["Math"]
-    bool isWildcard;  // NEW: for future use (using Math.*)
+    bool isWildcard;  // for future use (using Math.*)
 };
 
 // C/C++ import declaration
@@ -114,7 +115,7 @@ struct CImportDecl {
     std::vector<std::string> symbols; // specific symbols to import (empty = all)
 };
 
-// NEW: Module declaration (represents a .mg file)
+// Module declaration (represents a .mg file)
 struct ModuleDecl {
     std::string name;  // Module name (derived from filename)
     std::vector<ClassDecl> exports;  // Public classes that can be imported
@@ -125,5 +126,5 @@ struct Program {
     std::vector<CImportDecl> cimports;  // C/C++ imports
     std::vector<ClassDecl> classes;
     std::vector<FnDecl> functions;
-    std::string moduleName;  // NEW: Name of this module (from filename)
+    std::string moduleName;  // Name of this module (from filename)
 };

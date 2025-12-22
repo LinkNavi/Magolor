@@ -434,6 +434,16 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
             voidType->kind = Type::VOID;
             return voidType;
         }
+        else if constexpr (std::is_same_v<T, AssignExpr>) {
+            TypePtr targetType = checkExpr(e.target);
+            TypePtr valueType = checkExpr(e.value);
+            
+            if (!isAssignable(valueType, targetType)) {
+                typeError(typeToString(targetType), typeToString(valueType));
+            }
+            
+            return targetType;
+        }
         else if constexpr (std::is_same_v<T, LambdaExpr>) {
             auto fnType = std::make_shared<Type>();
             fnType->kind = Type::FUNCTION;

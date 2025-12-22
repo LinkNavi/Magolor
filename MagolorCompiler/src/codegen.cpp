@@ -47,7 +47,6 @@ std::string CodeGen::typeToString(const TypePtr &type) {
 }
 
 void CodeGen::genStdLib() {
-  // Use the new stdlib generator
   out << StdLibGenerator::generateAll();
 }
 
@@ -55,13 +54,9 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   if (cimports.empty())
     return;
 
-  out << "// "
-         "====================================================================="
-         "=======\n";
+  out << "// ===================================================================\n";
   out << "// C/C++ Imports\n";
-  out << "// "
-         "====================================================================="
-         "=======\n";
+  out << "// ===================================================================\n";
 
   for (const auto &imp : cimports) {
     // Generate include directive
@@ -75,21 +70,22 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
     if (!imp.asNamespace.empty()) {
       out << "namespace " << imp.asNamespace << " {\n";
 
-      // If specific symbols are requested, import them
       if (!imp.symbols.empty()) {
+        // Import specific symbols
         for (const auto &sym : imp.symbols) {
           out << "    using ::" << sym << ";\n";
         }
       } else {
-        // Import everything from global namespace (this is a bit tricky in C++)
-        out << "    // Note: Import all symbols from global namespace\n";
-        out << "    // You may need to explicitly use :: prefix for some "
-               "symbols\n";
+        // No specific symbols - import common std:: functions
+        out << "    // Common C++ standard library functions\n";
+        out << "    using std::sqrt; using std::sin; using std::cos; using std::tan;\n";
+        out << "    using std::asin; using std::acos; using std::atan; using std::atan2;\n";
+        out << "    using std::pow; using std::exp; using std::log; using std::log10;\n";
+        out << "    using std::abs; using std::fabs; using std::floor; using std::ceil;\n";
+        out << "    using std::round; using std::fmod; using std::cbrt;\n";
       }
 
       out << "}\n";
-
-      // Track namespace for code generation
       importedNamespaces.insert(imp.asNamespace);
     } else if (!imp.symbols.empty()) {
       // Import specific symbols into global namespace
@@ -102,9 +98,7 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   out << "\n";
 }
 
-// Helper method to check if a name is a class name
 bool CodeGen::isClassName(const std::string& name) const {
-    // Check if it's in our known class names set
     return knownClassNames.count(name) > 0;
 }
 
@@ -373,9 +367,8 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           indent--;
           emitLine("}");
         } else if constexpr (std::is_same_v<T, CppStmt>) {
-          // NEW: Output inline C++ code directly
           emitLine("// Inline C++ code:");
-          out << s.code; // Raw C++ code
+          out << s.code;
           if (!s.code.empty() && s.code.back() != '\n') {
             out << "\n";
           }
@@ -490,6 +483,14 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
           emit(")");
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
+          // Check if target is also a MemberExpr (nested like Std.Math.sqrt)
+          if (auto *memberObj = std::get_if<MemberExpr>(&e.object->data)) {
+            // Nested member: emit parent with ::, then this member with ::
+            genExpr(e.object);
+            emit("::" + e.member);
+            return;
+          }
+          
           if (auto *ident = std::get_if<IdentExpr>(&e.object->data)) {
             // Check if it's a class name (static access)
             if (isClassName(ident->name)) {
@@ -505,14 +506,24 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // Regular member access
+          // Regular member access - use -> for pointers
           genExpr(e.object);
-          emit("." + e.member);
+          
+          // Check if object is 'this' - use -> instead of .
+          if (std::holds_alternative<ThisExpr>(e.object->data)) {
+            emit("->" + e.member);
+          } else {
+            emit("." + e.member);
+          }
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
           genExpr(e.object);
           emit("[");
           genExpr(e.index);
           emit("]");
+        } else if constexpr (std::is_same_v<T, AssignExpr>) {
+          genExpr(e.target);
+          emit(" = ");
+          genExpr(e.value);
         } else if constexpr (std::is_same_v<T, LambdaExpr>) {
           emit("[=](");
           for (size_t i = 0; i < e.params.size(); i++) {
@@ -545,9 +556,15 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("(*this)");
+          emit("this");  // Changed from (*this)
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
-          emit("{");
+          // Determine element type
+          std::string elemType = "int";
+          if (!e.elements.empty() && e.elements[0]->type) {
+            elemType = typeToString(e.elements[0]->type);
+          }
+          
+          emit("std::vector<" + elemType + ">{");
           for (size_t i = 0; i < e.elements.size(); i++) {
             if (i > 0)
               emit(", ");
