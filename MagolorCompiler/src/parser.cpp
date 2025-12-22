@@ -12,7 +12,10 @@ Token Parser::peek(int offset) {
 Token Parser::advance() { return tokens[pos++]; }
 bool Parser::check(TokenType t) { return peek().type == t; }
 bool Parser::match(TokenType t) {
-    if (check(t)) { advance(); return true; }
+    if (check(t)) { 
+        advance(); 
+        return true; 
+    }
     return false;
 }
 
@@ -37,20 +40,50 @@ void Parser::errorWithHint(const std::string& msg, const Token& tok, const std::
     reporter.error(msg, tok.loc(filename), hint);
 }
 
+void Parser::synchronize() {
+    advance();  // Skip the error token
+    
+    // Skip until we find a statement/declaration boundary
+    while (!check(TokenType::EOF_TOK)) {
+        // Stop at statement boundaries
+        if (check(TokenType::SEMICOLON)) {
+            advance();
+            return;
+        }
+        
+        // Stop at declaration keywords
+        if (check(TokenType::FN) || check(TokenType::CLASS) || 
+            check(TokenType::USING) || check(TokenType::CIMPORT)) {
+            return;
+        }
+        
+        // Stop at block boundaries
+        if (check(TokenType::RBRACE)) {
+            return;
+        }
+        
+        advance();
+    }
+}
 Program Parser::parse() {
     Program prog;
     while (!check(TokenType::EOF_TOK)) {
-        if (check(TokenType::USING)) {
-            prog.usings.push_back(parseUsing());
-        } else if (check(TokenType::CIMPORT)) {
-            prog.cimports.push_back(parseCImport());
-        } else if (check(TokenType::CLASS)) {
-            prog.classes.push_back(parseClass());
-        } else if (check(TokenType::FN)) {
-            prog.functions.push_back(parseFunction());
-        } else {
-            error("Unexpected token: " + peek().value, peek());
-            advance(); // skip the bad token
+        try {
+            if (check(TokenType::USING)) {
+                prog.usings.push_back(parseUsing());
+            } else if (check(TokenType::CIMPORT)) {
+                prog.cimports.push_back(parseCImport());
+            } else if (check(TokenType::CLASS)) {
+                prog.classes.push_back(parseClass());
+            } else if (check(TokenType::FN)) {
+                prog.functions.push_back(parseFunction());
+            } else {
+                error("Unexpected token: " + peek().value, peek());
+                synchronize();  // NEW: Recover and continue parsing
+            }
+        } catch (const std::exception& e) {
+            // If parsing throws, synchronize and continue
+            synchronize();
         }
     }
     return prog;
@@ -177,8 +210,11 @@ Field Parser::parseField() {
         advance();
     }
     
-    field.name = match(TokenType::IDENT).value;
-    match(TokenType::COLON);
+    // Get field name - FIXED: don't call match().value, call expect()
+    Token nameToken = expect(TokenType::IDENT, "Expected field name");
+    field.name = nameToken.value;
+    
+    expect(TokenType::COLON, "Expected ':' after field name");
     field.type = parseType();
     
     // Check for initialization (for static const)
@@ -187,14 +223,14 @@ Field Parser::parseField() {
         field.initValue = parseExpr();
     }
     
-    match(TokenType::SEMICOLON);
+    expect(TokenType::SEMICOLON, "Expected ';' after field declaration");
     return field;
 }
 
 FnDecl Parser::parseFunction() {
-    expect(TokenType::FN, "Expected 'fn'");
     FnDecl fn;
-
+    
+    // Check for 'pub' modifier
     fn.isPublic = false;
     if (check(TokenType::PUB)) {
         fn.isPublic = true;
@@ -207,6 +243,8 @@ FnDecl Parser::parseFunction() {
         fn.isStatic = true;
         advance();
     }
+    
+    expect(TokenType::FN, "Expected 'fn'");
     Token nameToken = expect(TokenType::IDENT, "Expected function name");
     fn.name = nameToken.value;
     expect(TokenType::LPAREN, "Expected '(' after function name");
@@ -286,7 +324,7 @@ StmtPtr Parser::parseStmt() {
     if (check(TokenType::WHILE)) return parseWhile();
     if (check(TokenType::FOR)) return parseFor();
     if (check(TokenType::MATCH)) return parseMatch();
-       if (check(TokenType::CPP_BLOCK)) {
+    if (check(TokenType::CPP_BLOCK)) {
         auto stmt = std::make_shared<Stmt>();
         CppStmt cpp;
         cpp.code = advance().value;  // Get the C++ code

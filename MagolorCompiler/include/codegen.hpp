@@ -16,6 +16,7 @@ private:
     std::unordered_set<std::string> usedModules;
     std::unordered_set<std::string> capturedVars;
     std::unordered_set<std::string> importedNamespaces;
+    std::unordered_set<std::string> knownClassNames; // NEW: Track known class names
     
     // Track variables for @cpp block sharing
     struct VarInfo {
@@ -37,6 +38,9 @@ private:
     std::string typeToString(const TypePtr& type);
     void genStdLib();
     void collectCaptures(const std::vector<StmtPtr>& body, const std::vector<Param>& params);
+    
+    // NEW: Helper to check if a name is a class
+    bool isClassName(const std::string& name) const;
     
     void enterScope();
     void exitScope();

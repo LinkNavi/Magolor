@@ -24,7 +24,10 @@ private:
     void error(const std::string& msg);
     void error(const std::string& msg, const Token& tok);
     void errorWithHint(const std::string& msg, const Token& tok, const std::string& hint);
+    void synchronize();  // NEW: Error recovery
+    
     Field parseField();
+    
     // Declarations
     UsingDecl parseUsing();
     CImportDecl parseCImport();

@@ -1,6 +1,7 @@
 #include "codegen.hpp"
 #include "stdlib.hpp"
 #include <variant>
+#include <unordered_set>
 
 void CodeGen::emit(const std::string &s) { out << s; }
 void CodeGen::emitLine(const std::string &s) {
@@ -101,10 +102,22 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   out << "\n";
 }
 
+// Helper method to check if a name is a class name
+bool CodeGen::isClassName(const std::string& name) const {
+    // Check if it's in our known class names set
+    return knownClassNames.count(name) > 0;
+}
+
 std::string CodeGen::generate(const Program &prog) {
   out.str("");
   out.clear();
   importedNamespaces.clear();
+  knownClassNames.clear();
+
+  // Collect all class names first
+  for (const auto &cls : prog.classes) {
+    knownClassNames.insert(cls.name);
+  }
 
   // Generate C/C++ imports first
   genCImports(prog.cimports);
@@ -544,4 +557,16 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         }
       },
       expr->data);
+}
+
+void CodeGen::enterScope() {
+    // Placeholder for future scope management
+}
+
+void CodeGen::exitScope() {
+    // Placeholder for future scope management
+}
+
+void CodeGen::registerVar(const std::string& name, const std::string& type, bool isMut) {
+    scopeVars[name] = {type, isMut};
 }
