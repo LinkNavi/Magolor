@@ -3,7 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
-
+#include "position.hpp"
 // Forward declarations
 struct Symbol;
 struct Scope;
@@ -19,20 +19,7 @@ enum class SymbolKind {
     Module = 2
 };
 
-struct Position {
-    int line = 0;
-    int character = 0;
-};
 
-struct Range {
-    Position start;
-    Position end;
-};
-
-struct Location {
-    std::string uri;
-    Range range;
-};
 
 struct Symbol {
     std::string name;

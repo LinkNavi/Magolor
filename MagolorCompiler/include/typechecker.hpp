@@ -67,6 +67,10 @@ private:
 
   // Error reporting
   void error(const std::string &msg);
+  void errorAt(const std::string &msg, const SourceLoc &loc);  // NEW: Error with location
   void typeError(const std::string &expected, const std::string &actual);
+  
+  // Helper to check if expression is a module path
+  bool isModulePath(ExprPtr expr);
 
 };

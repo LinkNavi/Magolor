@@ -27,16 +27,22 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
     if (line.find("using ") != std::string::npos) {
       parseImport(line, currentScope);
     }
+    // Parse cimports - handle both <header> and "header" syntax
+    else if (line.find("cimport ") != std::string::npos) {
+      // Just skip cimport lines - they're handled by the compiler
+      // Don't try to extract symbols from them in the LSP
+      lineNum++;
+      continue;
+    }
     // Class detection
     else if (line.find("class ") != std::string::npos) {
       auto sym = parseClass(line, lineNum, uri);
       if (sym) {
-        sym->isCallable = false; // Classes themselves aren't callable
+        sym->isCallable = false;
         symbols.push_back(sym);
         currentScope->define(sym);
         currentClass = sym->name;
 
-        // Enter class scope
         auto classScope = std::make_shared<Scope>();
         classScope->parent = currentScope;
         currentScope = classScope.get();
@@ -58,7 +64,6 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
           std::string params =
               line.substr(parenStart + 1, parenEnd - parenStart - 1);
 
-          // Parse parameters
           std::istringstream paramStream(params);
           std::string param;
           while (std::getline(paramStream, param, ',')) {
@@ -71,7 +76,6 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
             }
           }
 
-          // Extract return type
           size_t arrowPos = line.find("->", parenEnd);
           if (arrowPos != std::string::npos) {
             size_t bracePos = line.find('{', arrowPos);
@@ -84,7 +88,6 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
             sym->returnType = "void";
           }
 
-          // Build detail string
           sym->detail = "(";
           for (size_t i = 0; i < sym->paramTypes.size(); i++) {
             if (i > 0)
@@ -104,14 +107,40 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
       if (sym) {
         sym->containerName = currentClass;
         sym->isCallable = false;
+        
+        // Check if the variable is assigned from a function call that creates an object
+        // For example: let server = Std.Network.HttpServer(8080);
+        size_t equalPos = line.find('=');
+        if (equalPos != std::string::npos) {
+          std::string rhs = line.substr(equalPos + 1);
+          rhs.erase(0, rhs.find_first_not_of(" \t"));
+          
+          // Check if it's a constructor call (contains '(' and looks like a function call)
+          if (rhs.find('(') != std::string::npos) {
+            // Extract the type name before the '('
+            size_t parenPos = rhs.find('(');
+            std::string typeName = rhs.substr(0, parenPos);
+            typeName.erase(typeName.find_last_not_of(" \t") + 1);
+            
+            // If it contains dots, take the last part as the type name
+            size_t lastDot = typeName.rfind('.');
+            if (lastDot != std::string::npos) {
+              typeName = typeName.substr(lastDot + 1);
+            }
+            
+            // Set the variable's type
+            if (!typeName.empty()) {
+              sym->type = typeName;
+            }
+          }
+        }
+        
         symbols.push_back(sym);
         currentScope->define(sym);
       }
     }
 
-    // Track scope exits
     if (line.find('}') != std::string::npos && !currentClass.empty()) {
-      // Check if this closes the class
       bool inString = false;
       int braceCount = 0;
       for (char c : line) {
@@ -165,7 +194,6 @@ SymbolPtr SemanticAnalyzer::parseFunction(const std::string &line, int lineNum,
   sym->definition.range.start = {lineNum, (int)nameStart};
   sym->definition.range.end = {lineNum, (int)nameEnd};
 
-  // Check for public/static
   sym->isPublic = line.find("pub ") != std::string::npos;
   sym->isStatic = line.find("static ") != std::string::npos;
 
@@ -222,7 +250,6 @@ SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
   sym->definition.range.start = {lineNum, (int)nameStart};
   sym->definition.range.end = {lineNum, (int)nameEnd};
 
-  // Extract type if present
   size_t colonPos = line.find(':', nameEnd);
   if (colonPos != std::string::npos) {
     size_t typeEnd = line.find('=', colonPos);
@@ -261,7 +288,6 @@ SemanticAnalyzer::getVariablesInScope(const std::string &uri, Position pos) {
     for (const auto &sym : it->second) {
       if (sym->kind == SymbolKind::Variable ||
           sym->kind == SymbolKind::Parameter) {
-        // Check if variable is declared before current position
         if (sym->definition.range.start.line <= pos.line) {
           result.push_back(sym);
         }
@@ -312,7 +338,6 @@ SemanticAnalyzer::getAllSymbolsInFile(const std::string &uri) {
 }
 
 void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
-  // Parse "using Std.IO;" or "using Math;"
   size_t usingPos = line.find("using ");
   if (usingPos == std::string::npos)
     return;
@@ -323,11 +348,9 @@ void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
     return;
 
   std::string importPath = line.substr(start, end - start);
-  // Trim whitespace
   importPath.erase(0, importPath.find_first_not_of(" \t"));
   importPath.erase(importPath.find_last_not_of(" \t") + 1);
 
-  // Normalize path (handle both Std.IO and Std::IO)
   size_t doubleColonPos = importPath.find("::");
   if (doubleColonPos != std::string::npos) {
     importPath.replace(doubleColonPos, 2, ".");

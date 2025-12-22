@@ -19,7 +19,13 @@ bool Parser::match(TokenType t) {
   }
   return false;
 }
-
+SourceLoc Parser::tokenToLoc(const Token &tok) {
+  SourceLoc loc;
+  loc.line = tok.line;
+  loc.col = tok.col;
+  loc.length = tok.length;
+  return loc;
+}
 Token Parser::expect(TokenType t, const std::string &msg) {
   if (!check(t)) {
     error(msg, peek());
@@ -105,30 +111,49 @@ CImportDecl Parser::parseCImport() {
   CImportDecl decl;
 
   if (match(TokenType::LT)) {
+    // System header like <stdio.h>
     decl.isSystemHeader = true;
-    Token headerName = expect(TokenType::IDENT, "Expected header name");
-    decl.header = headerName.value;
 
-    if (match(TokenType::DOT)) {
-      decl.header += ".";
-      Token ext = expect(TokenType::IDENT, "Expected header extension");
-      decl.header += ext.value;
+    // Read header name - could be multiple tokens
+    std::string headerName;
+
+    // Read identifier(s) and dots until we hit >
+    while (!check(TokenType::GT) && !check(TokenType::EOF_TOK)) {
+      if (check(TokenType::IDENT)) {
+        Token part = advance();
+        headerName += part.value;
+      } else if (check(TokenType::DOT)) {
+        advance();
+        headerName += ".";
+      } else if (check(TokenType::MINUS)) {
+        // For headers like <sys-types.h>
+        advance();
+        headerName += "-";
+      } else {
+        error("Unexpected token in header name", peek());
+        break;
+      }
     }
 
+    decl.header = headerName;
     expect(TokenType::GT, "Expected '>' after system header");
-  } else {
-    Token headerToken =
-        expect(TokenType::STRING_LIT, "Expected header name in quotes or <>");
+  } else if (check(TokenType::STRING_LIT)) {
+    // Local header like "myheader.h"
+    Token headerToken = advance();
     decl.header = headerToken.value;
     decl.isSystemHeader = false;
+  } else {
+    error("Expected header name in <brackets> or \"quotes\"", peek());
   }
 
+  // Check for namespace alias (as Name)
   if (check(TokenType::IDENT) && peek().value == "as") {
-    advance();
+    advance(); // consume 'as'
     Token ns = expect(TokenType::IDENT, "Expected namespace name after 'as'");
     decl.asNamespace = ns.value;
   }
 
+  // Check for specific symbol imports (symbol1, symbol2)
   if (check(TokenType::LPAREN)) {
     advance();
     if (!check(TokenType::RPAREN)) {
@@ -146,7 +171,6 @@ CImportDecl Parser::parseCImport() {
   expect(TokenType::SEMICOLON, "Expected ';' after cimport");
   return decl;
 }
-
 TypePtr Parser::parseType() {
   auto type = std::make_shared<Type>();
   if (check(TokenType::FN))
@@ -618,6 +642,7 @@ ExprPtr Parser::parseCall() {
 
   while (true) {
     if (match(TokenType::LPAREN)) {
+      Token tok = tokens[pos - 1];
       auto callExpr = std::make_shared<Expr>();
       CallExpr ce;
       ce.callee = expr;
@@ -629,14 +654,16 @@ ExprPtr Parser::parseCall() {
       }
       expect(TokenType::RPAREN, "Expected ')' after arguments");
       callExpr->data = ce;
+      callExpr->loc = expr->loc; // Use callee's location
       expr = callExpr;
     } else if (match(TokenType::DOT)) {
+      Token memberTok = expect(TokenType::IDENT, "Expected member name");
       auto memberExpr = std::make_shared<Expr>();
       MemberExpr me;
       me.object = expr;
-      Token member = expect(TokenType::IDENT, "Expected member name");
-      me.member = member.value;
+      me.member = memberTok.value;
       memberExpr->data = me;
+      memberExpr->loc = expr->loc; // Use object's location
       expr = memberExpr;
     } else if (match(TokenType::LBRACKET)) {
       auto indexExpr = std::make_shared<Expr>();
@@ -645,15 +672,17 @@ ExprPtr Parser::parseCall() {
       ie.index = parseExpr();
       expect(TokenType::RBRACKET, "Expected ']' after index");
       indexExpr->data = ie;
+      indexExpr->loc = expr->loc; // Use object's location
       expr = indexExpr;
     } else if (match(TokenType::DOUBLE_COLON)) {
+      Token memberTok =
+          expect(TokenType::IDENT, "Expected function/member name after '::'");
       auto memberExpr = std::make_shared<Expr>();
       MemberExpr me;
       me.object = expr;
-      Token member =
-          expect(TokenType::IDENT, "Expected function/member name after '::'");
-      me.member = member.value;
+      me.member = memberTok.value;
       memberExpr->data = me;
+      memberExpr->loc = expr->loc; // Use object's location
       expr = memberExpr;
     } else {
       break;
@@ -723,46 +752,59 @@ ExprPtr Parser::parseInterpolatedString(const std::string &str) {
 ExprPtr Parser::parsePrimary() {
   if (match(TokenType::DOLLAR)) {
     Token strTok = expect(TokenType::STRING_LIT, "Expected string after $");
-    return parseInterpolatedString(strTok.value);
+    auto expr = parseInterpolatedString(strTok.value);
+    expr->loc = tokenToLoc(strTok);
+    return expr;
   }
 
   if (check(TokenType::FN))
     return parseLambda();
 
   if (match(TokenType::TRUE)) {
+    Token tok = tokens[pos - 1];
     auto e = std::make_shared<Expr>();
     e->data = BoolLitExpr{true};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::FALSE)) {
+    Token tok = tokens[pos - 1];
     auto e = std::make_shared<Expr>();
     e->data = BoolLitExpr{false};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::NONE)) {
+    Token tok = tokens[pos - 1];
     auto e = std::make_shared<Expr>();
     e->data = NoneExpr{};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::SOME)) {
+    Token tok = tokens[pos - 1];
     expect(TokenType::LPAREN, "Expected '(' after 'Some'");
     auto val = parseExpr();
     expect(TokenType::RPAREN, "Expected ')' after Some value");
     auto e = std::make_shared<Expr>();
     e->data = SomeExpr{val};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::THIS)) {
+    Token tok = tokens[pos - 1];
     auto e = std::make_shared<Expr>();
     e->data = ThisExpr{};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::NEW)) {
+    Token tok = tokens[pos - 1];
     Token className =
         expect(TokenType::IDENT, "Expected class name after 'new'");
     expect(TokenType::LPAREN, "Expected '(' after class name");
@@ -776,6 +818,7 @@ ExprPtr Parser::parsePrimary() {
     expect(TokenType::RPAREN, "Expected ')' after constructor arguments");
     auto e = std::make_shared<Expr>();
     e->data = NewExpr{className.value, args};
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
@@ -783,6 +826,7 @@ ExprPtr Parser::parsePrimary() {
     Token t = advance();
     auto e = std::make_shared<Expr>();
     e->data = IntLitExpr{std::stoi(t.value)};
+    e->loc = tokenToLoc(t);
     return e;
   }
 
@@ -790,6 +834,7 @@ ExprPtr Parser::parsePrimary() {
     Token t = advance();
     auto e = std::make_shared<Expr>();
     e->data = FloatLitExpr{std::stod(t.value)};
+    e->loc = tokenToLoc(t);
     return e;
   }
 
@@ -797,6 +842,7 @@ ExprPtr Parser::parsePrimary() {
     Token t = advance();
     auto e = std::make_shared<Expr>();
     e->data = StringLitExpr{t.value, false};
+    e->loc = tokenToLoc(t);
     return e;
   }
 
@@ -804,16 +850,20 @@ ExprPtr Parser::parsePrimary() {
     Token t = advance();
     auto e = std::make_shared<Expr>();
     e->data = IdentExpr{t.value};
+    e->loc = tokenToLoc(t);
     return e;
   }
 
   if (match(TokenType::LPAREN)) {
+    Token tok = tokens[pos - 1];
     auto e = parseExpr();
     expect(TokenType::RPAREN, "Expected ')' after expression");
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
   if (match(TokenType::LBRACKET)) {
+    Token tok = tokens[pos - 1];
     auto e = std::make_shared<Expr>();
     ArrayExpr ae;
     if (!check(TokenType::RBRACKET)) {
@@ -824,6 +874,7 @@ ExprPtr Parser::parsePrimary() {
     }
     expect(TokenType::RBRACKET, "Expected ']' after array elements");
     e->data = ae;
+    e->loc = tokenToLoc(tok);
     return e;
   }
 
@@ -833,6 +884,7 @@ ExprPtr Parser::parsePrimary() {
 
   auto e = std::make_shared<Expr>();
   e->data = IntLitExpr{0};
+  e->loc = tokenToLoc(bad);
   advance();
   return e;
 }

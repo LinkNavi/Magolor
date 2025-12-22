@@ -4,6 +4,13 @@
 #include <memory>
 #include <variant>
 
+// Source location for error reporting
+struct SourceLoc {
+    int line = 0;
+    int col = 0;
+    int length = 0;
+};
+
 struct Type;
 struct Expr;
 struct Stmt;
@@ -24,6 +31,7 @@ struct Type {
 struct Param {
     std::string name;
     TypePtr type;
+    SourceLoc loc;
 };
 
 // Expression nodes
@@ -54,6 +62,7 @@ using ExprVariant = std::variant<
 struct Expr {
     ExprVariant data;
     TypePtr type; // filled in by type checker
+    SourceLoc loc;
 };
 
 // Statement nodes
@@ -74,6 +83,7 @@ using StmtVariant = std::variant<
 
 struct Stmt {
     StmtVariant data;
+    SourceLoc loc;
 };
 
 // Top-level declarations
@@ -84,6 +94,7 @@ struct FnDecl {
     std::vector<StmtPtr> body;
     bool isPublic;  // true if marked with 'pub'
     bool isStatic;  // true if marked with 'static'
+    SourceLoc loc;
 };
 
 struct Field {
@@ -92,6 +103,7 @@ struct Field {
     bool isPublic;  // true if marked with 'pub'
     bool isStatic;  // true if marked with 'static'
     ExprPtr initValue;  // for static const initialization
+    SourceLoc loc;
 };
 
 struct ClassDecl {
@@ -100,6 +112,7 @@ struct ClassDecl {
     std::vector<FnDecl> methods;
     std::string parent;
     bool isPublic;  // classes can be pub (for exporting from modules)
+    SourceLoc loc;
 };
 
 struct UsingDecl {
