@@ -160,9 +160,53 @@ TypePtr Parser::parseFunctionType() {
     return type;
 }
 
+Field Parser::parseField() {
+    Field field;
+    
+    // Check for 'pub' modifier
+    field.isPublic = false;
+    if (check(TokenType::PUB)) {
+        field.isPublic = true;
+        advance();
+    }
+    
+    // Check for 'static' modifier
+    field.isStatic = false;
+    if (check(TokenType::STATIC)) {
+        field.isStatic = true;
+        advance();
+    }
+    
+    field.name = match(TokenType::IDENT).value;
+    match(TokenType::COLON);
+    field.type = parseType();
+    
+    // Check for initialization (for static const)
+    if (check(TokenType::ASSIGN)) {
+        advance();
+        field.initValue = parseExpr();
+    }
+    
+    match(TokenType::SEMICOLON);
+    return field;
+}
+
 FnDecl Parser::parseFunction() {
     expect(TokenType::FN, "Expected 'fn'");
     FnDecl fn;
+
+    fn.isPublic = false;
+    if (check(TokenType::PUB)) {
+        fn.isPublic = true;
+        advance();
+    }
+    
+    // Check for 'static' modifier
+    fn.isStatic = false;
+    if (check(TokenType::STATIC)) {
+        fn.isStatic = true;
+        advance();
+    }
     Token nameToken = expect(TokenType::IDENT, "Expected function name");
     fn.name = nameToken.value;
     expect(TokenType::LPAREN, "Expected '(' after function name");

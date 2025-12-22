@@ -24,7 +24,7 @@ private:
     void error(const std::string& msg);
     void error(const std::string& msg, const Token& tok);
     void errorWithHint(const std::string& msg, const Token& tok, const std::string& hint);
-    
+    Field parseField();
     // Declarations
     UsingDecl parseUsing();
     CImportDecl parseCImport();
