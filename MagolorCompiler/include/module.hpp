@@ -1,6 +1,7 @@
 #pragma once
 #include "ast.hpp"
 #include <string>
+#include <algorithm>
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -11,6 +12,7 @@ namespace fs = std::filesystem;
 struct Module {
     std::string name;
     std::string filepath;
+    std::string packageName;  // NEW: Track which package this module belongs to
     Program ast;
     std::vector<std::string> importedModules;
 };
@@ -22,6 +24,10 @@ public:
     static ModuleRegistry& instance() {
         static ModuleRegistry inst;
         return inst;
+    }
+    
+    void registerModule(ModulePtr module) {
+        modules[module->name] = module;
     }
     
     void registerModule(const std::string& name, ModulePtr module) {
@@ -50,8 +56,18 @@ class ModuleResolver {
 public:
     // Convert file path to module name
     // Example: src/api/handlers.mg -> "api.handlers"
-    static std::string filePathToModuleName(const std::string& filepath) {
+    static std::string filePathToModuleName(const std::string& filepath, 
+                                            const std::string& packageName = "") {
         std::string path = filepath;
+        
+        // Remove package-specific paths
+        if (!packageName.empty()) {
+            // Remove .magolor/packages/<package>/src/ prefix if present
+            std::string packagePrefix = ".magolor/packages/" + packageName + "/src/";
+            if (path.find(packagePrefix) == 0) {
+                path = path.substr(packagePrefix.length());
+            }
+        }
         
         // Remove src/ prefix if present
         if (path.find("src/") == 0) {
@@ -65,6 +81,10 @@ public:
         
         // Replace path separators with dots
         std::string result;
+        if (!packageName.empty()) {
+            result = packageName + ".";
+        }
+        
         for (char c : path) {
             if (c == '/' || c == '\\') {
                 result += '.';
@@ -79,20 +99,24 @@ public:
     // Resolve import path relative to current module
     static std::string resolveImportPath(const std::string& importPath,
                                         const std::string& currentModulePath) {
+        // Convert path (e.g., ["api", "handlers"]) to string
+        std::string pathStr = importPath;
+        
         // Try absolute path first
-        if (fs::exists("src/" + importPath + ".mg")) {
-            return importPath;
+        std::string srcPath = "src/" + pathStr;
+        std::replace(srcPath.begin(), srcPath.end(), '.', '/');
+        srcPath += ".mg";
+        
+        if (fs::exists(srcPath)) {
+            return pathStr;
         }
         
         // Try relative to current module's directory
-        // For example, if we're in "api.handlers" and import "types",
-        // try "api.types"
         size_t lastDot = currentModulePath.rfind('.');
         if (lastDot != std::string::npos) {
             std::string parentPackage = currentModulePath.substr(0, lastDot);
-            std::string candidatePath = parentPackage + "." + importPath;
+            std::string candidatePath = parentPackage + "." + pathStr;
             
-            // Convert back to file path to check
             std::string filePath = "src/" + candidatePath;
             std::replace(filePath.begin(), filePath.end(), '.', '/');
             filePath += ".mg";
@@ -102,8 +126,20 @@ public:
             }
         }
         
-        // Default to the import path as-is
-        return importPath;
+        // Check in .magolor/packages
+        for (const auto& entry : fs::directory_iterator(".magolor/packages")) {
+            if (entry.is_directory()) {
+                std::string packagePath = entry.path().string() + "/src/" + pathStr;
+                std::replace(packagePath.begin(), packagePath.end(), '.', '/');
+                packagePath += ".mg";
+                
+                if (fs::exists(packagePath)) {
+                    return entry.path().filename().string() + "." + pathStr;
+                }
+            }
+        }
+        
+        return pathStr;
     }
     
     // Check if a symbol is publicly accessible
@@ -118,7 +154,6 @@ public:
                 return cls.isPublic;
             }
             
-            // If looking for a member of this class
             if (isClassName) {
                 for (const auto& field : cls.fields) {
                     if (field.name == symbolName) {
@@ -143,46 +178,17 @@ public:
         return false;
     }
     
-    // Check if a member of a class is publicly accessible
-    static bool isMemberPublic(ModulePtr module,
-                              const std::string& className,
-                              const std::string& memberName) {
-        if (!module) return false;
-        
-        for (const auto& cls : module->ast.classes) {
-            if (cls.name == className) {
-                // Check fields
-                for (const auto& field : cls.fields) {
-                    if (field.name == memberName) {
-                        return field.isPublic;
-                    }
-                }
-                
-                // Check methods
-                for (const auto& method : cls.methods) {
-                    if (method.name == memberName) {
-                        return method.isPublic;
-                    }
-                }
-            }
-        }
-        
-        return false;
-    }
-    
     // Get all public symbols from a module
     static std::vector<std::string> getPublicSymbols(ModulePtr module) {
         std::vector<std::string> symbols;
         if (!module) return symbols;
         
-        // Public classes
         for (const auto& cls : module->ast.classes) {
             if (cls.isPublic) {
                 symbols.push_back(cls.name);
             }
         }
         
-        // Public functions
         for (const auto& fn : module->ast.functions) {
             if (fn.isPublic) {
                 symbols.push_back(fn.name);
@@ -193,7 +199,7 @@ public:
     }
 };
 
-// Import resolver - checks that all imports can be satisfied
+// Import resolver
 struct ImportResult {
     bool success = true;
     std::string error;
@@ -205,7 +211,12 @@ public:
         ImportResult result;
         
         for (const auto& usingDecl : module->ast.usings) {
-            std::string importPath = usingDecl.modulePath;
+            // Convert path vector to string
+            std::string importPath;
+            for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                if (i > 0) importPath += ".";
+                importPath += usingDecl.path[i];
+            }
             
             // Resolve relative imports
             importPath = ModuleResolver::resolveImportPath(importPath, module->name);
@@ -214,32 +225,18 @@ public:
             ModulePtr importedModule = ModuleRegistry::instance().getModule(importPath);
             if (!importedModule) {
                 result.success = false;
-                result.error = "Cannot find module: " + usingDecl.modulePath + 
-                              " (resolved to: " + importPath + ")";
+                result.error = "Cannot find module: " + importPath;
                 return result;
             }
             
-            // Record the import
             module->importedModules.push_back(importPath);
-            
-            // If importing specific symbols, check visibility
-            if (!usingDecl.symbols.empty()) {
-                for (const auto& symbol : usingDecl.symbols) {
-                    if (!ModuleResolver::isPublic(importedModule, symbol)) {
-                        result.success = false;
-                        result.error = "Cannot import private symbol: " + symbol + 
-                                      " from module: " + importPath;
-                        return result;
-                    }
-                }
-            }
         }
         
         return result;
     }
 };
 
-// Name resolver - resolves all identifiers to their definitions
+// Name resolver
 struct NameResolutionResult {
     bool success = true;
     std::vector<std::string> errors;
@@ -260,9 +257,6 @@ public:
                 }
             }
         }
-        
-        // TODO: Walk the AST and verify all identifiers are defined
-        // This is a simplified implementation
         
         return result;
     }
