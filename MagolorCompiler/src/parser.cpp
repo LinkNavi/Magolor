@@ -9,9 +9,7 @@ Token Parser::peek(int offset) {
 }
 
 Token Parser::advance() { return tokens[pos++]; }
-
 bool Parser::check(TokenType t) { return peek().type == t; }
-
 bool Parser::match(TokenType t) {
     if (check(t)) { advance(); return true; }
     return false;
@@ -25,15 +23,10 @@ Token Parser::expect(TokenType t, const std::string& msg) {
 Program Parser::parse() {
     Program prog;
     while (!check(TokenType::EOF_TOK)) {
-        if (check(TokenType::USING)) {
-            prog.usings.push_back(parseUsing());
-        } else if (check(TokenType::CLASS)) {
-            prog.classes.push_back(parseClass());
-        } else if (check(TokenType::FN)) {
-            prog.functions.push_back(parseFunction());
-        } else {
-            throw std::runtime_error("Unexpected token: " + peek().value);
-        }
+        if (check(TokenType::USING)) prog.usings.push_back(parseUsing());
+        else if (check(TokenType::CLASS)) prog.classes.push_back(parseClass());
+        else if (check(TokenType::FN)) prog.functions.push_back(parseFunction());
+        else throw std::runtime_error("Unexpected token: " + peek().value);
     }
     return prog;
 }
@@ -51,10 +44,7 @@ UsingDecl Parser::parseUsing() {
 
 TypePtr Parser::parseType() {
     auto type = std::make_shared<Type>();
-    
-    if (check(TokenType::FN)) {
-        return parseFunctionType();
-    }
+    if (check(TokenType::FN)) return parseFunctionType();
     
     Token t = advance();
     switch (t.type) {
@@ -67,8 +57,7 @@ TypePtr Parser::parseType() {
             type->kind = Type::CLASS;
             type->className = t.value;
             break;
-        default:
-            throw std::runtime_error("Expected type");
+        default: throw std::runtime_error("Expected type");
     }
     return type;
 }
@@ -82,9 +71,7 @@ TypePtr Parser::parseFunctionType() {
     
     if (!check(TokenType::RPAREN)) {
         type->paramTypes.push_back(parseType());
-        while (match(TokenType::COMMA)) {
-            type->paramTypes.push_back(parseType());
-        }
+        while (match(TokenType::COMMA)) type->paramTypes.push_back(parseType());
     }
     expect(TokenType::RPAREN, "Expected ')'");
     expect(TokenType::ARROW, "Expected '->'");
@@ -115,9 +102,8 @@ FnDecl Parser::parseFunction() {
     }
     expect(TokenType::RPAREN, "Expected ')'");
     
-    if (match(TokenType::ARROW)) {
-        fn.returnType = parseType();
-    } else {
+    if (match(TokenType::ARROW)) fn.returnType = parseType();
+    else {
         fn.returnType = std::make_shared<Type>();
         fn.returnType->kind = Type::VOID;
     }
@@ -155,9 +141,7 @@ ClassDecl Parser::parseClass() {
 std::vector<StmtPtr> Parser::parseBlock() {
     expect(TokenType::LBRACE, "Expected '{'");
     std::vector<StmtPtr> stmts;
-    while (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOK)) {
-        stmts.push_back(parseStmt());
-    }
+    while (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOK)) stmts.push_back(parseStmt());
     expect(TokenType::RBRACE, "Expected '}'");
     return stmts;
 }
@@ -184,11 +168,7 @@ StmtPtr Parser::parseLet() {
     LetStmt ls;
     ls.isMut = match(TokenType::MUT);
     ls.name = expect(TokenType::IDENT, "Expected variable name").value;
-    
-    if (match(TokenType::COLON)) {
-        ls.type = parseType();
-    }
-    
+    if (match(TokenType::COLON)) ls.type = parseType();
     expect(TokenType::ASSIGN, "Expected '='");
     ls.init = parseExpr();
     expect(TokenType::SEMICOLON, "Expected ';'");
@@ -200,9 +180,7 @@ StmtPtr Parser::parseReturn() {
     expect(TokenType::RETURN, "Expected 'return'");
     auto stmt = std::make_shared<Stmt>();
     ReturnStmt rs;
-    if (!check(TokenType::SEMICOLON)) {
-        rs.value = parseExpr();
-    }
+    if (!check(TokenType::SEMICOLON)) rs.value = parseExpr();
     expect(TokenType::SEMICOLON, "Expected ';'");
     stmt->data = rs;
     return stmt;
@@ -217,11 +195,8 @@ StmtPtr Parser::parseIf() {
     expect(TokenType::RPAREN, "Expected ')'");
     is.thenBody = parseBlock();
     if (match(TokenType::ELSE)) {
-        if (check(TokenType::IF)) {
-            is.elseBody.push_back(parseIf());
-        } else {
-            is.elseBody = parseBlock();
-        }
+        if (check(TokenType::IF)) is.elseBody.push_back(parseIf());
+        else is.elseBody = parseBlock();
     }
     stmt->data = is;
     return stmt;
@@ -245,7 +220,7 @@ StmtPtr Parser::parseFor() {
     ForStmt fs;
     expect(TokenType::LPAREN, "Expected '('");
     fs.var = expect(TokenType::IDENT, "Expected variable").value;
-    expect(TokenType::IDENT, "Expected 'in'"); // "in" keyword
+    expect(TokenType::IDENT, "Expected 'in'");
     fs.iterable = parseExpr();
     expect(TokenType::RPAREN, "Expected ')'");
     fs.body = parseBlock();
@@ -262,7 +237,9 @@ StmtPtr Parser::parseMatch() {
     
     while (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOK)) {
         MatchArm arm;
-        arm.pattern = expect(TokenType::IDENT, "Expected pattern").value;
+        if (check(TokenType::SOME)) { advance(); arm.pattern = "Some"; }
+        else if (check(TokenType::NONE)) { advance(); arm.pattern = "None"; }
+        else arm.pattern = expect(TokenType::IDENT, "Expected pattern").value;
         if (match(TokenType::LPAREN)) {
             arm.bindVar = expect(TokenType::IDENT, "Expected binding var").value;
             expect(TokenType::RPAREN, "Expected ')'");
@@ -271,10 +248,20 @@ StmtPtr Parser::parseMatch() {
         
         if (check(TokenType::LBRACE)) {
             arm.body = parseBlock();
+        } else if (check(TokenType::RETURN)) {
+            // Handle inline return in match arm (no semicolon needed before comma)
+            advance(); // consume 'return'
+            auto retStmt = std::make_shared<Stmt>();
+            ReturnStmt rs;
+            if (!check(TokenType::COMMA) && !check(TokenType::RBRACE)) {
+                rs.value = parseExpr();
+            }
+            retStmt->data = rs;
+            arm.body.push_back(retStmt);
         } else {
             arm.body.push_back(parseStmt());
         }
-        if (match(TokenType::COMMA)) {} // optional trailing comma
+        match(TokenType::COMMA);
         ms.arms.push_back(arm);
     }
     expect(TokenType::RBRACE, "Expected '}'");
@@ -282,17 +269,13 @@ StmtPtr Parser::parseMatch() {
     return stmt;
 }
 
-// Expression parsing (precedence climbing)
 ExprPtr Parser::parseExpr() { return parseOr(); }
 
 ExprPtr Parser::parseOr() {
     auto left = parseAnd();
     while (match(TokenType::OR)) {
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = "||";
-        be.left = left;
-        be.right = parseAnd();
+        BinaryExpr be; be.op = "||"; be.left = left; be.right = parseAnd();
         expr->data = be;
         left = expr;
     }
@@ -303,10 +286,7 @@ ExprPtr Parser::parseAnd() {
     auto left = parseEquality();
     while (match(TokenType::AND)) {
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = "&&";
-        be.left = left;
-        be.right = parseEquality();
+        BinaryExpr be; be.op = "&&"; be.left = left; be.right = parseEquality();
         expr->data = be;
         left = expr;
     }
@@ -318,10 +298,7 @@ ExprPtr Parser::parseEquality() {
     while (check(TokenType::EQ) || check(TokenType::NE)) {
         std::string op = advance().value;
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = op;
-        be.left = left;
-        be.right = parseComparison();
+        BinaryExpr be; be.op = op; be.left = left; be.right = parseComparison();
         expr->data = be;
         left = expr;
     }
@@ -333,10 +310,7 @@ ExprPtr Parser::parseComparison() {
     while (check(TokenType::LT) || check(TokenType::GT) || check(TokenType::LE) || check(TokenType::GE)) {
         std::string op = advance().value;
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = op;
-        be.left = left;
-        be.right = parseTerm();
+        BinaryExpr be; be.op = op; be.left = left; be.right = parseTerm();
         expr->data = be;
         left = expr;
     }
@@ -348,10 +322,7 @@ ExprPtr Parser::parseTerm() {
     while (check(TokenType::PLUS) || check(TokenType::MINUS)) {
         std::string op = advance().value;
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = op;
-        be.left = left;
-        be.right = parseFactor();
+        BinaryExpr be; be.op = op; be.left = left; be.right = parseFactor();
         expr->data = be;
         left = expr;
     }
@@ -363,10 +334,7 @@ ExprPtr Parser::parseFactor() {
     while (check(TokenType::STAR) || check(TokenType::SLASH) || check(TokenType::PERCENT)) {
         std::string op = advance().value;
         auto expr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = op;
-        be.left = left;
-        be.right = parseUnary();
+        BinaryExpr be; be.op = op; be.left = left; be.right = parseUnary();
         expr->data = be;
         left = expr;
     }
@@ -377,9 +345,7 @@ ExprPtr Parser::parseUnary() {
     if (check(TokenType::NOT) || check(TokenType::MINUS)) {
         std::string op = advance().value;
         auto expr = std::make_shared<Expr>();
-        UnaryExpr ue;
-        ue.op = op;
-        ue.operand = parseUnary();
+        UnaryExpr ue; ue.op = op; ue.operand = parseUnary();
         expr->data = ue;
         return expr;
     }
@@ -392,35 +358,27 @@ ExprPtr Parser::parseCall() {
     while (true) {
         if (match(TokenType::LPAREN)) {
             auto callExpr = std::make_shared<Expr>();
-            CallExpr ce;
-            ce.callee = expr;
+            CallExpr ce; ce.callee = expr;
             if (!check(TokenType::RPAREN)) {
                 ce.args.push_back(parseExpr());
-                while (match(TokenType::COMMA)) {
-                    ce.args.push_back(parseExpr());
-                }
+                while (match(TokenType::COMMA)) ce.args.push_back(parseExpr());
             }
             expect(TokenType::RPAREN, "Expected ')'");
             callExpr->data = ce;
             expr = callExpr;
         } else if (match(TokenType::DOT)) {
             auto memberExpr = std::make_shared<Expr>();
-            MemberExpr me;
-            me.object = expr;
+            MemberExpr me; me.object = expr;
             me.member = expect(TokenType::IDENT, "Expected member name").value;
             memberExpr->data = me;
             expr = memberExpr;
         } else if (match(TokenType::LBRACKET)) {
             auto indexExpr = std::make_shared<Expr>();
-            IndexExpr ie;
-            ie.object = expr;
-            ie.index = parseExpr();
+            IndexExpr ie; ie.object = expr; ie.index = parseExpr();
             expect(TokenType::RBRACKET, "Expected ']'");
             indexExpr->data = ie;
             expr = indexExpr;
-        } else {
-            break;
-        }
+        } else break;
     }
     return expr;
 }
@@ -448,68 +406,13 @@ ExprPtr Parser::parseLambda() {
         }
     }
     expect(TokenType::RPAREN, "Expected ')'");
-    
-    if (match(TokenType::ARROW)) {
-        le.returnType = parseType();
-    }
-    
+    if (match(TokenType::ARROW)) le.returnType = parseType();
     le.body = parseBlock();
     expr->data = le;
     return expr;
 }
 
 ExprPtr Parser::parseInterpolatedString(const std::string& str) {
-    // Parse $"..." strings with {expr} interpolation
-    // For simplicity, generate concatenation of parts
-    std::vector<ExprPtr> parts;
-    std::string current;
-    size_t i = 0;
-    
-    while (i < str.size()) {
-        if (str[i] == '{') {
-            if (!current.empty()) {
-                auto strExpr = std::make_shared<Expr>();
-                strExpr->data = StringLitExpr{current, false};
-                parts.push_back(strExpr);
-                current.clear();
-            }
-            i++;
-            std::string varName;
-            while (i < str.size() && str[i] != '}') {
-                varName += str[i++];
-            }
-            i++; // skip }
-            auto varExpr = std::make_shared<Expr>();
-            varExpr->data = IdentExpr{varName};
-            parts.push_back(varExpr);
-        } else {
-            current += str[i++];
-        }
-    }
-    
-    if (!current.empty()) {
-        auto strExpr = std::make_shared<Expr>();
-        strExpr->data = StringLitExpr{current, false};
-        parts.push_back(strExpr);
-    }
-    
-    if (parts.empty()) {
-        auto strExpr = std::make_shared<Expr>();
-        strExpr->data = StringLitExpr{"", true};
-        return strExpr;
-    }
-    
-    auto result = parts[0];
-    for (size_t j = 1; j < parts.size(); j++) {
-        auto binExpr = std::make_shared<Expr>();
-        BinaryExpr be;
-        be.op = "+";
-        be.left = result;
-        be.right = parts[j];
-        binExpr->data = be;
-        result = binExpr;
-    }
-    
     auto wrapper = std::make_shared<Expr>();
     StringLitExpr sle;
     sle.value = str;
@@ -522,111 +425,62 @@ ExprPtr Parser::parseInterpolatedString(const std::string& str) {
 
 ExprPtr Parser::parsePrimary() {
     if (match(TokenType::DOLLAR)) {
-        // Interpolated string
         Token strTok = expect(TokenType::STRING_LIT, "Expected string after $");
         return parseInterpolatedString(strTok.value);
     }
-    
-    if (check(TokenType::FN)) {
-        return parseLambda();
-    }
-    
-    if (match(TokenType::TRUE)) {
-        auto expr = std::make_shared<Expr>();
-        expr->data = BoolLitExpr{true};
-        return expr;
-    }
-    
-    if (match(TokenType::FALSE)) {
-        auto expr = std::make_shared<Expr>();
-        expr->data = BoolLitExpr{false};
-        return expr;
-    }
-    
-    if (match(TokenType::NONE)) {
-        auto expr = std::make_shared<Expr>();
-        expr->data = NoneExpr{};
-        return expr;
-    }
-    
+    if (check(TokenType::FN)) return parseLambda();
+    if (match(TokenType::TRUE)) { auto e = std::make_shared<Expr>(); e->data = BoolLitExpr{true}; return e; }
+    if (match(TokenType::FALSE)) { auto e = std::make_shared<Expr>(); e->data = BoolLitExpr{false}; return e; }
+    if (match(TokenType::NONE)) { auto e = std::make_shared<Expr>(); e->data = NoneExpr{}; return e; }
     if (match(TokenType::SOME)) {
         expect(TokenType::LPAREN, "Expected '('");
         auto val = parseExpr();
         expect(TokenType::RPAREN, "Expected ')'");
-        auto expr = std::make_shared<Expr>();
-        expr->data = SomeExpr{val};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = SomeExpr{val}; return e;
     }
-    
-    if (match(TokenType::THIS)) {
-        auto expr = std::make_shared<Expr>();
-        expr->data = ThisExpr{};
-        return expr;
-    }
-    
+    if (match(TokenType::THIS)) { auto e = std::make_shared<Expr>(); e->data = ThisExpr{}; return e; }
     if (match(TokenType::NEW)) {
         std::string className = expect(TokenType::IDENT, "Expected class name").value;
         expect(TokenType::LPAREN, "Expected '('");
         std::vector<ExprPtr> args;
         if (!check(TokenType::RPAREN)) {
             args.push_back(parseExpr());
-            while (match(TokenType::COMMA)) {
-                args.push_back(parseExpr());
-            }
+            while (match(TokenType::COMMA)) args.push_back(parseExpr());
         }
         expect(TokenType::RPAREN, "Expected ')'");
-        auto expr = std::make_shared<Expr>();
-        expr->data = NewExpr{className, args};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = NewExpr{className, args}; return e;
     }
-    
     if (check(TokenType::INT_LIT)) {
         Token t = advance();
-        auto expr = std::make_shared<Expr>();
-        expr->data = IntLitExpr{std::stoi(t.value)};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = IntLitExpr{std::stoi(t.value)}; return e;
     }
-    
     if (check(TokenType::FLOAT_LIT)) {
         Token t = advance();
-        auto expr = std::make_shared<Expr>();
-        expr->data = FloatLitExpr{std::stod(t.value)};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = FloatLitExpr{std::stod(t.value)}; return e;
     }
-    
     if (check(TokenType::STRING_LIT)) {
         Token t = advance();
-        auto expr = std::make_shared<Expr>();
-        expr->data = StringLitExpr{t.value, false};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = StringLitExpr{t.value, false}; return e;
     }
-    
     if (check(TokenType::IDENT)) {
         Token t = advance();
-        auto expr = std::make_shared<Expr>();
-        expr->data = IdentExpr{t.value};
-        return expr;
+        auto e = std::make_shared<Expr>(); e->data = IdentExpr{t.value}; return e;
     }
-    
     if (match(TokenType::LPAREN)) {
-        auto expr = parseExpr();
+        auto e = parseExpr();
         expect(TokenType::RPAREN, "Expected ')'");
-        return expr;
+        return e;
     }
-    
     if (match(TokenType::LBRACKET)) {
-        auto expr = std::make_shared<Expr>();
+        auto e = std::make_shared<Expr>();
         ArrayExpr ae;
         if (!check(TokenType::RBRACKET)) {
             ae.elements.push_back(parseExpr());
-            while (match(TokenType::COMMA)) {
-                ae.elements.push_back(parseExpr());
-            }
+            while (match(TokenType::COMMA)) ae.elements.push_back(parseExpr());
         }
         expect(TokenType::RBRACKET, "Expected ']'");
-        expr->data = ae;
-        return expr;
+        e->data = ae;
+        return e;
     }
-    
     throw std::runtime_error("Unexpected token in expression: " + peek().value);
 }
