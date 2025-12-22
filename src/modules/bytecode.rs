@@ -503,17 +503,16 @@ impl Compiler {
                 }
                 self.emit(Op::NewArray(len as u16));
             }
-            Expr::Object(props) => {
+         Expr::Object(props) => {
                 // Create empty object
                 self.emit(Op::NewObject);
 
                 // Set each property
                 for (key, value) in props {
                     self.emit(Op::Dup); // Duplicate object reference
-                    let key_const = self.add_const(Val::Str(Rc::new(key)));
-                    self.emit(Op::Const(key_const));
                     self.compile_expr(value)?;
-                    self.emit(Op::SetField(0)); // Use 0 as sentinel for dynamic field access
+                    let key_const = self.add_const(Val::Str(Rc::new(key)));
+                    self.emit(Op::SetField(key_const));
                 }
             }
             Expr::Index { array, index } => {
