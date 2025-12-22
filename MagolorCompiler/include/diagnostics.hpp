@@ -10,7 +10,7 @@ enum class DiagnosticSeverity {
     Hint = 4
 };
 
-struct Diagnostic {
+struct LspDiagnostic {
     Range range;
     DiagnosticSeverity severity;
     std::string code;
@@ -20,5 +20,5 @@ struct Diagnostic {
 
 struct PublishDiagnosticsParams {
     std::string uri;
-    std::vector<Diagnostic> diagnostics;
+    std::vector<LspDiagnostic> diagnostics;
 };

@@ -1,4 +1,6 @@
 #include "codegen.hpp"
+
+#include "server.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
 #include "module.hpp"
@@ -316,7 +318,11 @@ int main(int argc, char *argv[]) {
     printUsage();
     return 0;
   }
-
+  if (cmd == "lsp") {
+    MagolorLanguageServer server;
+    server.run();
+    return 0;
+  }
   if (cmd == "install-deps") {
     try {
       if (!fs::exists("project.toml")) {

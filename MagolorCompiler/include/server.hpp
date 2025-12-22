@@ -29,6 +29,173 @@ private:
     bool initialized = false;
     std::string rootUri;
     
+    // Completion item kinds (LSP standard)
+    enum CompletionItemKind {
+        Text = 1,
+        Method = 2,
+        Function = 3,
+        Constructor = 4,
+        Field = 5,
+        Variable = 6,
+        Class = 7,
+        Interface = 8,
+        Module = 9,
+        Property = 10,
+        Unit = 11,
+        Value = 12,
+        Enum = 13,
+        Keyword = 14,
+        Snippet = 15,
+        Color = 16,
+        File = 17,
+        Reference = 18,
+        Folder = 19,
+        EnumMember = 20,
+        Constant = 21,
+        Struct = 22,
+        Event = 23,
+        Operator = 24,
+        TypeParameter = 25
+    };
+    
+    struct CompletionSnippet {
+        std::string label;
+        std::string insertText;
+        std::string detail;
+        std::string documentation;
+    };
+    
+    std::vector<CompletionSnippet> getBuiltinSnippets() {
+        return {
+            {
+                "fn",
+                "fn ${1:name}(${2:params}) -> ${3:void} {\n\t${0}\n}",
+                "Function declaration",
+                "Create a new function with parameters and return type"
+            },
+            {
+                "fnr",
+                "fn ${1:name}(${2:params}) -> ${3:int} {\n\treturn ${0:0};\n}",
+                "Function with return",
+                "Create a function that returns a value"
+            },
+            {
+                "main",
+                "fn main() {\n\t${0}\n}",
+                "Main function",
+                "Entry point of the program"
+            },
+            {
+                "class",
+                "class ${1:Name} {\n\tpub ${2:field}: ${3:int};\n\t\n\tpub fn ${4:method}() {\n\t\t${0}\n\t}\n}",
+                "Class definition",
+                "Create a class with fields and methods"
+            },
+            {
+                "if",
+                "if (${1:condition}) {\n\t${0}\n}",
+                "If statement",
+                "Conditional execution"
+            },
+            {
+                "ife",
+                "if (${1:condition}) {\n\t${2}\n} else {\n\t${0}\n}",
+                "If-else statement",
+                "Conditional with alternative"
+            },
+            {
+                "while",
+                "while (${1:condition}) {\n\t${0}\n}",
+                "While loop",
+                "Loop while condition is true"
+            },
+            {
+                "for",
+                "for (${1:item} in ${2:array}) {\n\t${0}\n}",
+                "For loop",
+                "Iterate over collection"
+            },
+            {
+                "match",
+                "match ${1:value} {\n\tSome(${2:v}) => {\n\t\t${3}\n\t},\n\tNone => {\n\t\t${0}\n\t}\n}",
+                "Match expression",
+                "Pattern matching for Option types"
+            },
+            {
+                "let",
+                "let ${1:mut }${2:name} = ${0:value};",
+                "Variable declaration",
+                "Declare a variable (optionally mutable)"
+            },
+            {
+                "lett",
+                "let ${1:mut }${2:name}: ${3:type} = ${0:value};",
+                "Variable with type",
+                "Declare a typed variable"
+            },
+            {
+                "print",
+                "Std.print(${1:\"message\"});",
+                "Print statement",
+                "Print text to stdout"
+            },
+            {
+                "printf",
+                "Std.print($\"${1:text}{${2:var}}${0}\");",
+                "Print with interpolation",
+                "Print with string interpolation"
+            },
+            {
+                "using",
+                "using ${1:Std.IO};",
+                "Import statement",
+                "Import a module"
+            },
+            {
+                "cimport",
+                "cimport <${1:header.h}>${2: as ${3:Name}};",
+                "C/C++ import",
+                "Import C/C++ header"
+            },
+            {
+                "cpp",
+                "@cpp {\n\t${0}\n}",
+                "C++ block",
+                "Inline C++ code"
+            },
+            {
+                "pubfn",
+                "pub fn ${1:name}(${2:params}) -> ${3:void} {\n\t${0}\n}",
+                "Public function",
+                "Public function declaration"
+            },
+            {
+                "staticfn",
+                "pub static fn ${1:name}(${2:params}) -> ${3:void} {\n\t${0}\n}",
+                "Static function",
+                "Static function declaration"
+            },
+            {
+                "lambda",
+                "fn(${1:x}: ${2:int}) -> ${3:int} {\n\treturn ${0:x};\n}",
+                "Lambda function",
+                "Anonymous function/closure"
+            },
+            {
+                "ret",
+                "return ${0:value};",
+                "Return statement",
+                "Return from function"
+            },
+            {
+                "new",
+                "let ${1:var} = new ${2:Class}();",
+                "New instance",
+                "Create class instance"
+            },
+        };
+    }
+    
     void handleMessage(const Message& msg) {
         if (msg.method == "initialize") handleInitialize(msg);
         else if (msg.method == "initialized") handleInitialized(msg);
@@ -45,6 +212,7 @@ private:
         else if (msg.method == "textDocument/documentSymbol") handleDocumentSymbol(msg);
         else if (msg.method == "textDocument/formatting") handleFormatting(msg);
         else if (msg.method == "textDocument/rename") handleRename(msg);
+        else if (msg.method == "completionItem/resolve") handleCompletionResolve(msg);
         else if (msg.isRequest()) {
             transport.respondError(msg.id.value(), -32601, "Method not found");
         }
@@ -64,11 +232,13 @@ private:
         caps["textDocumentSync"]["save"] = JsonValue::object();
         caps["textDocumentSync"]["save"]["includeText"] = true;
         
-        // Completion
+        // Completion with snippet support
         caps["completionProvider"] = JsonValue::object();
         caps["completionProvider"]["triggerCharacters"] = JsonValue::array();
         caps["completionProvider"]["triggerCharacters"].push(".");
         caps["completionProvider"]["triggerCharacters"].push(":");
+        caps["completionProvider"]["triggerCharacters"].push("(");
+        caps["completionProvider"]["resolveProvider"] = true;
         
         // Hover
         caps["hoverProvider"] = true;
@@ -87,6 +257,12 @@ private:
         
         // Rename
         caps["renameProvider"] = true;
+        
+        // Signature help
+        caps["signatureHelpProvider"] = JsonValue::object();
+        caps["signatureHelpProvider"]["triggerCharacters"] = JsonValue::array();
+        caps["signatureHelpProvider"]["triggerCharacters"].push("(");
+        caps["signatureHelpProvider"]["triggerCharacters"].push(",");
         
         JsonValue result = JsonValue::object();
         result["capabilities"] = caps;
@@ -156,8 +332,24 @@ private:
         auto* doc = documents.get(uri);
         if (doc) {
             std::string word = doc->getWordAt(pos);
-            auto matches = symbols.findByPrefix(word);
             
+            // Add snippets first (they're often what user wants)
+            for (const auto& snippet : getBuiltinSnippets()) {
+                if (word.empty() || snippet.label.find(word) == 0) {
+                    JsonValue item = JsonValue::object();
+                    item["label"] = snippet.label;
+                    item["kind"] = Snippet;
+                    item["insertText"] = snippet.insertText;
+                    item["insertTextFormat"] = 2; // Snippet format
+                    item["detail"] = snippet.detail;
+                    item["documentation"] = snippet.documentation;
+                    item["sortText"] = "0_" + snippet.label; // Sort snippets first
+                    items.push(item);
+                }
+            }
+            
+            // Add symbols from workspace
+            auto matches = symbols.findByPrefix(word);
             for (auto& sym : matches) {
                 JsonValue item = JsonValue::object();
                 item["label"] = sym->name;
@@ -166,6 +358,7 @@ private:
                 if (!sym->documentation.empty()) {
                     item["documentation"] = sym->documentation;
                 }
+                item["sortText"] = "1_" + sym->name; // Sort after snippets
                 items.push(item);
             }
         }
@@ -174,17 +367,87 @@ private:
         static const char* keywords[] = {
             "fn", "let", "mut", "return", "if", "else", "while", "for",
             "match", "class", "new", "this", "true", "false", "None", "Some",
-            "using", "pub", "priv", "static", "cimport"
+            "using", "pub", "priv", "static", "cimport", "int", "float",
+            "string", "bool", "void"
         };
         
         for (auto kw : keywords) {
             JsonValue item = JsonValue::object();
             item["label"] = kw;
-            item["kind"] = 14; // Keyword
+            item["kind"] = Keyword;
+            item["sortText"] = "2_" + std::string(kw); // Sort after symbols
             items.push(item);
         }
         
+        // Add standard library completions
+        if (doc) {
+            std::string line = doc->getLine(pos.line);
+            
+            // After "Std."
+            if (line.find("Std.") != std::string::npos) {
+                std::vector<std::string> stdModules = {
+                    "IO", "Parse", "Option", "Math", "String", 
+                    "Array", "Map", "Set", "File", "Time", "Random", "System"
+                };
+                for (const auto& mod : stdModules) {
+                    JsonValue item = JsonValue::object();
+                    item["label"] = mod;
+                    item["kind"] = Module;
+                    item["detail"] = "Std." + mod;
+                    item["sortText"] = "1_" + mod;
+                    items.push(item);
+                }
+            }
+            
+            // After "Std.IO."
+            if (line.find("Std.IO.") != std::string::npos) {
+                std::vector<std::pair<std::string, std::string>> ioFuncs = {
+                    {"print", "print(s: string)"},
+                    {"println", "println(s: string)"},
+                    {"eprint", "eprint(s: string)"},
+                    {"eprintln", "eprintln(s: string)"},
+                    {"readLine", "readLine() -> string"},
+                    {"read", "read() -> string"},
+                };
+                for (const auto& [name, sig] : ioFuncs) {
+                    JsonValue item = JsonValue::object();
+                    item["label"] = name;
+                    item["kind"] = Function;
+                    item["detail"] = sig;
+                    item["sortText"] = "1_" + name;
+                    items.push(item);
+                }
+            }
+            
+            // After "Std.Math."
+            if (line.find("Std.Math.") != std::string::npos) {
+                std::vector<std::pair<std::string, std::string>> mathFuncs = {
+                    {"sqrt", "sqrt(x: float) -> float"},
+                    {"sin", "sin(x: float) -> float"},
+                    {"cos", "cos(x: float) -> float"},
+                    {"tan", "tan(x: float) -> float"},
+                    {"abs", "abs(x: float) -> float"},
+                    {"pow", "pow(base: float, exp: float) -> float"},
+                    {"PI", "PI: float = 3.14159..."},
+                    {"E", "E: float = 2.71828..."},
+                };
+                for (const auto& [name, sig] : mathFuncs) {
+                    JsonValue item = JsonValue::object();
+                    item["label"] = name;
+                    item["kind"] = (name == "PI" || name == "E") ? Constant : Function;
+                    item["detail"] = sig;
+                    item["sortText"] = "1_" + name;
+                    items.push(item);
+                }
+            }
+        }
+        
         transport.respond(msg.id.value(), items);
+    }
+    
+    void handleCompletionResolve(const Message& msg) {
+        // Return the item with additional documentation if needed
+        transport.respond(msg.id.value(), msg.params);
     }
     
     void handleHover(const Message& msg) {
@@ -421,14 +684,13 @@ private:
         auto* doc = documents.get(uri);
         if (!doc) return;
         
-        std::vector<Diagnostic> diagnostics;
+        std::vector<LspDiagnostic> diagnostics;
         extractSymbols(uri, doc->content, diagnostics);
         publishDiagnostics(uri, diagnostics);
     }
     
     void extractSymbols(const std::string& uri, const std::string& content,
-                       std::vector<Diagnostic>& diagnostics) {
-        // Simple symbol extraction - integrate with full parser for production
+                       std::vector<LspDiagnostic>&) {
         std::istringstream stream(content);
         std::string line;
         int lineNum = 0;
@@ -442,7 +704,6 @@ private:
                 size_t nameEnd = line.find('(', nameStart);
                 if (nameEnd != std::string::npos) {
                     std::string name = line.substr(nameStart, nameEnd - nameStart);
-                    // Trim whitespace
                     while (!name.empty() && name.back() == ' ') name.pop_back();
                     while (!name.empty() && name.front() == ' ') name = name.substr(1);
                     
@@ -455,7 +716,6 @@ private:
                         sym->definition.range.start = {lineNum, (int)nameStart};
                         sym->definition.range.end = {lineNum, (int)nameEnd};
                         
-                        // Extract signature
                         size_t sigEnd = line.find('{');
                         if (sigEnd == std::string::npos) sigEnd = line.size();
                         sym->detail = line.substr(nameEnd, sigEnd - nameEnd);
@@ -505,7 +765,6 @@ private:
                     sym->definition.range.start = {lineNum, (int)nameStart};
                     sym->definition.range.end = {lineNum, (int)nameEnd};
                     
-                    // Extract type if present
                     size_t colonPos = line.find(':', nameEnd);
                     if (colonPos != std::string::npos) {
                         size_t typeEnd = line.find('=', colonPos);
@@ -521,7 +780,6 @@ private:
                 }
             }
             
-            // Reset class context on closing brace
             if (line.find('}') != std::string::npos && !currentClass.empty()) {
                 currentClass = "";
             }
@@ -531,7 +789,7 @@ private:
     }
     
     void publishDiagnostics(const std::string& uri, 
-                           const std::vector<Diagnostic>& diagnostics) {
+                           const std::vector<LspDiagnostic>& diagnostics) {
         JsonValue params = JsonValue::object();
         params["uri"] = uri;
         params["diagnostics"] = JsonValue::array();
@@ -552,14 +810,12 @@ private:
     }
     
     std::string formatCode(const std::string& code) {
-        // Basic formatting - indent based on braces
         std::istringstream stream(code);
         std::ostringstream result;
         std::string line;
         int indent = 0;
         
         while (std::getline(stream, line)) {
-            // Trim leading whitespace
             size_t start = line.find_first_not_of(" \t");
             if (start != std::string::npos) {
                 line = line.substr(start);
@@ -567,12 +823,10 @@ private:
                 line = "";
             }
             
-            // Decrease indent for closing braces
             if (!line.empty() && line[0] == '}') {
                 indent = std::max(0, indent - 1);
             }
             
-            // Write indented line
             if (!line.empty()) {
                 for (int i = 0; i < indent; i++) {
                     result << "    ";
@@ -582,7 +836,6 @@ private:
                 result << "\n";
             }
             
-            // Increase indent for opening braces
             for (char c : line) {
                 if (c == '{') indent++;
                 else if (c == '}') indent = std::max(0, indent - 1);

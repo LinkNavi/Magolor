@@ -7,15 +7,16 @@ using Std.Option;
 fn readInt(prompt: string) -> int {
     while (true) {
         Std.print(prompt);
+	Std.
         let line = Std.readLine();
 
         match Std.parseInt(line) {
             Some(v) => return v,
             None => Std.print("That wasn't a number. Try again.\n")
         }
-    }
 }
-
+}
+ 
 // --- Example: returns a closure (multi-line form) -----------
 fn makeAdder(x: int) -> fn(int) -> int {
     // multi-line closure syntax (captures `x`)
