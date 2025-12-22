@@ -65,9 +65,10 @@ struct ForStmt { std::string var; ExprPtr iterable; std::vector<StmtPtr> body; }
 struct MatchArm { std::string pattern; std::string bindVar; std::vector<StmtPtr> body; };
 struct MatchStmt { ExprPtr expr; std::vector<MatchArm> arms; };
 struct BlockStmt { std::vector<StmtPtr> stmts; };
+struct CppStmt { std::string code; };  // Inline C++ code block
 
 using StmtVariant = std::variant<
-    LetStmt, ReturnStmt, ExprStmt, IfStmt, WhileStmt, ForStmt, MatchStmt, BlockStmt
+    LetStmt, ReturnStmt, ExprStmt, IfStmt, WhileStmt, ForStmt, MatchStmt, BlockStmt, CppStmt
 >;
 
 struct Stmt {
@@ -100,8 +101,17 @@ struct UsingDecl {
     std::vector<std::string> path; // e.g., ["Std", "IO"]
 };
 
+// C/C++ import declaration
+struct CImportDecl {
+    std::string header;          // e.g., "stdio.h", "vector"
+    bool isSystemHeader;         // <header> vs "header"
+    std::string asNamespace;     // optional namespace alias
+    std::vector<std::string> symbols; // specific symbols to import (empty = all)
+};
+
 struct Program {
     std::vector<UsingDecl> usings;
+    std::vector<CImportDecl> cimports;  // C/C++ imports
     std::vector<ClassDecl> classes;
     std::vector<FnDecl> functions;
 };

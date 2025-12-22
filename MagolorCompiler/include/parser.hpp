@@ -27,6 +27,7 @@ private:
     
     // Declarations
     UsingDecl parseUsing();
+    CImportDecl parseCImport();
     FnDecl parseFunction();
     ClassDecl parseClass();
     

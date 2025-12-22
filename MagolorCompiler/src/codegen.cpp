@@ -1,5 +1,5 @@
 #include "codegen.hpp"
-#include "stdlib.h"
+#include "stdlib.hpp"
 #include <variant>
 
 void CodeGen::emit(const std::string& s) { out << s; }
@@ -34,8 +34,57 @@ void CodeGen::genStdLib() {
     out << StdLibGenerator::generateAll();
 }
 
+void CodeGen::genCImports(const std::vector<CImportDecl>& cimports) {
+    if (cimports.empty()) return;
+    
+    out << "// ============================================================================\n";
+    out << "// C/C++ Imports\n";
+    out << "// ============================================================================\n";
+    
+    for (const auto& imp : cimports) {
+        // Generate include directive
+        if (imp.isSystemHeader) {
+            out << "#include <" << imp.header << ">\n";
+        } else {
+            out << "#include \"" << imp.header << "\"\n";
+        }
+        
+        // If namespace alias is provided, create it
+        if (!imp.asNamespace.empty()) {
+            out << "namespace " << imp.asNamespace << " {\n";
+            
+            // If specific symbols are requested, import them
+            if (!imp.symbols.empty()) {
+                for (const auto& sym : imp.symbols) {
+                    out << "    using ::" << sym << ";\n";
+                }
+            } else {
+                // Import everything from global namespace (this is a bit tricky in C++)
+                out << "    // Note: Import all symbols from global namespace\n";
+                out << "    // You may need to explicitly use :: prefix for some symbols\n";
+            }
+            
+            out << "}\n";
+            
+            // Track namespace for code generation
+            importedNamespaces.insert(imp.asNamespace);
+        } else if (!imp.symbols.empty()) {
+            // Import specific symbols into global namespace
+            for (const auto& sym : imp.symbols) {
+                out << "using ::" << sym << ";\n";
+            }
+        }
+    }
+    
+    out << "\n";
+}
+
 std::string CodeGen::generate(const Program& prog) {
     out.str(""); out.clear();
+    importedNamespaces.clear();
+    
+    // Generate C/C++ imports first
+    genCImports(prog.cimports);
     
     // Generate standard library
     genStdLib();
@@ -183,6 +232,13 @@ void CodeGen::genStmt(const StmtPtr& stmt) {
             emitLine("{"); indent++;
             for (const auto& st : s.stmts) genStmt(st);
             indent--; emitLine("}");
+        }   else if constexpr (std::is_same_v<T, CppStmt>) {
+            // NEW: Output inline C++ code directly
+            emitLine("// Inline C++ code:");
+            out << s.code;  // Raw C++ code
+            if (!s.code.empty() && s.code.back() != '\n') {
+                out << "\n";
+            }
         }
     }, stmt->data);
 }
@@ -199,7 +255,10 @@ void CodeGen::genExpr(const ExprPtr& expr) {
                 while (i < s.size()) {
                     if (s[i] == '{') {
                         if (!current.empty()) {
-                            if (!first) emit(" + "); first = false;
+                            if (!first) {
+                                emit(" + ");
+                            }
+                            first = false;
                             emit("std::string(\"");
                             for (char c : current) {
                                 if (c == '\n') emit("\\n"); else if (c == '\\') emit("\\\\");
@@ -210,7 +269,10 @@ void CodeGen::genExpr(const ExprPtr& expr) {
                         i++; std::string varName;
                         while (i < s.size() && s[i] != '}') varName += s[i++];
                         i++;
-                        if (!first) emit(" + "); first = false;
+                        if (!first) {
+                            emit(" + ");
+                        }
+                        first = false;
                         emit("mg_to_string(" + varName + ")");
                     } else current += s[i++];
                 }
@@ -246,12 +308,16 @@ void CodeGen::genExpr(const ExprPtr& expr) {
             emit(")");
         }
         else if constexpr (std::is_same_v<T, MemberExpr>) {
+            // Check if object is an identifier that's a namespace
             if (auto* ident = std::get_if<IdentExpr>(&e.object->data)) {
-                if (ident->name == "Std") {
-                    emit("Std::" + e.member);
+                // Check if it's Std or an imported namespace
+                if (ident->name == "Std" || ident->name == "std" || 
+                    importedNamespaces.count(ident->name) > 0) {
+                    emit(ident->name + "::" + e.member);
                     return;
                 }
             }
+            // Otherwise it's regular member access
             genExpr(e.object); emit("." + e.member);
         }
         else if constexpr (std::is_same_v<T, IndexExpr>) { genExpr(e.object); emit("["); genExpr(e.index); emit("]"); }

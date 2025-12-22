@@ -8,7 +8,7 @@ std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"new", TokenType::NEW}, {"this", TokenType::THIS}, {"true", TokenType::TRUE},
     {"false", TokenType::FALSE}, {"None", TokenType::NONE}, {"Some", TokenType::SOME},
     {"using", TokenType::USING}, {"pub", TokenType::PUB}, {"priv", TokenType::PRIV},
-    {"static", TokenType::STATIC}, {"mut", TokenType::MUT},
+    {"static", TokenType::STATIC}, {"mut", TokenType::MUT}, {"cimport", TokenType::CIMPORT},
     {"int", TokenType::INT}, {"float", TokenType::FLOAT}, {"string", TokenType::STRING},
     {"bool", TokenType::BOOL}, {"void", TokenType::VOID}
 };
@@ -86,6 +86,86 @@ Token Lexer::string() {
     return {TokenType::STRING_LIT, val, startLine, startCol, (int)(pos - startPos)};
 }
 
+Token Lexer::cppBlock() {
+    int startLine = line, startCol = col;
+    int startPos = pos;
+    
+    // Skip '@cpp'
+    advance(); // @
+    advance(); // c
+    advance(); // p
+    advance(); // p
+    
+    // Skip whitespace before {
+    while (pos < src.size() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r')) {
+        advance();
+    }
+    
+    // Expect {
+    if (pos >= src.size() || peek() != '{') {
+        error("Expected '{' after @cpp", line, col, 1);
+        return makeToken(TokenType::CPP_BLOCK, "");
+    }
+    advance(); // consume {
+    
+    int braceDepth = 1;
+    std::string code;
+    
+    // Collect everything until matching }
+    while (pos < src.size() && braceDepth > 0) {
+        char c = peek();
+        
+        if (c == '"') {
+            // Handle string literals in C++ code
+            code += advance(); // opening quote
+            while (pos < src.size() && peek() != '"') {
+                if (peek() == '\\') {
+                    code += advance(); // backslash
+                    if (pos < src.size()) code += advance(); // escaped char
+                } else {
+                    code += advance();
+                }
+            }
+            if (pos < src.size()) code += advance(); // closing quote
+        } else if (c == '/' && peek(1) == '/') {
+            // C++ line comment
+            while (pos < src.size() && peek() != '\n') {
+                code += advance();
+            }
+        } else if (c == '/' && peek(1) == '*') {
+            // C++ block comment
+            code += advance(); // /
+            code += advance(); // *
+            while (pos < src.size()) {
+                if (peek() == '*' && peek(1) == '/') {
+                    code += advance(); // *
+                    code += advance(); // /
+                    break;
+                }
+                code += advance();
+            }
+        } else if (c == '{') {
+            braceDepth++;
+            code += advance();
+        } else if (c == '}') {
+            braceDepth--;
+            if (braceDepth == 0) {
+                advance(); // consume final }
+                break;
+            }
+            code += advance();
+        } else {
+            code += advance();
+        }
+    }
+    
+    if (braceDepth > 0) {
+        error("Unterminated @cpp block", startLine, startCol, pos - startPos);
+    }
+    
+    return {TokenType::CPP_BLOCK, code, startLine, startCol, (int)(pos - startPos)};
+}
+
 Token Lexer::number() {
     int startLine = line, startCol = col;
     std::string val;
@@ -94,7 +174,6 @@ Token Lexer::number() {
     
     while (pos < src.size() && (std::isdigit(peek()) || peek() == '.')) {
         if (peek() == '.') {
-            // Check if it's a range operator (..) or member access
             if (peek(1) == '.' || !std::isdigit(peek(1))) break;
             if (isFloat) {
                 error("Invalid number: multiple decimal points", 
@@ -106,7 +185,6 @@ Token Lexer::number() {
         val += advance();
     }
     
-    // Check for invalid suffix
     if (pos < src.size() && (std::isalpha(peek()) || peek() == '_')) {
         std::string suffix;
         while (pos < src.size() && (std::isalnum(peek()) || peek() == '_')) {
@@ -143,6 +221,14 @@ std::vector<Token> Lexer::tokenize() {
         }
         
         char c = peek();
+        
+        // Check for @cpp (MUST check all 4 characters)
+        if (c == '@' && peek(1) == 'c' && peek(2) == 'p' && peek(3) == 'p' &&
+            (pos + 4 >= src.size() || !std::isalnum(peek(4)))) {
+            tokens.push_back(cppBlock());
+            continue;
+        }
+        
         if (c == '"') { tokens.push_back(string()); continue; }
         if (std::isdigit(c)) { tokens.push_back(number()); continue; }
         if (std::isalpha(c) || c == '_') { tokens.push_back(identifier()); continue; }
@@ -162,6 +248,7 @@ std::vector<Token> Lexer::tokenize() {
             case ',': advance(); tokens.push_back(makeToken(TokenType::COMMA, ",")); break;
             case ';': advance(); tokens.push_back(makeToken(TokenType::SEMICOLON, ";")); break;
             case '$': advance(); tokens.push_back(makeToken(TokenType::DOLLAR, "$")); break;
+            case '@': advance(); tokens.push_back(makeToken(TokenType::AT, "@")); break;
             case '.': advance(); tokens.push_back(makeToken(TokenType::DOT, ".")); break;
             case ':':
                 advance();

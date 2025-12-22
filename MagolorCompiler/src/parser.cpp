@@ -40,10 +40,15 @@ void Parser::errorWithHint(const std::string& msg, const Token& tok, const std::
 Program Parser::parse() {
     Program prog;
     while (!check(TokenType::EOF_TOK)) {
-        if (check(TokenType::USING)) prog.usings.push_back(parseUsing());
-        else if (check(TokenType::CLASS)) prog.classes.push_back(parseClass());
-        else if (check(TokenType::FN)) prog.functions.push_back(parseFunction());
-        else {
+        if (check(TokenType::USING)) {
+            prog.usings.push_back(parseUsing());
+        } else if (check(TokenType::CIMPORT)) {
+            prog.cimports.push_back(parseCImport());
+        } else if (check(TokenType::CLASS)) {
+            prog.classes.push_back(parseClass());
+        } else if (check(TokenType::FN)) {
+            prog.functions.push_back(parseFunction());
+        } else {
             error("Unexpected token: " + peek().value, peek());
             advance(); // skip the bad token
         }
@@ -61,6 +66,58 @@ UsingDecl Parser::parseUsing() {
         decl.path.push_back(ident.value);
     }
     expect(TokenType::SEMICOLON, "Expected ';' after using declaration");
+    return decl;
+}
+
+CImportDecl Parser::parseCImport() {
+    expect(TokenType::CIMPORT, "Expected 'cimport'");
+    CImportDecl decl;
+    
+    // Check for < or " to determine system vs local header
+    if (match(TokenType::LT)) {
+        // System header: cimport <stdio.h>
+        decl.isSystemHeader = true;
+        Token headerName = expect(TokenType::IDENT, "Expected header name");
+        decl.header = headerName.value;
+        
+        // Handle extension (e.g., .h)
+        if (match(TokenType::DOT)) {
+            decl.header += ".";
+            Token ext = expect(TokenType::IDENT, "Expected header extension");
+            decl.header += ext.value;
+        }
+        
+        expect(TokenType::GT, "Expected '>' after system header");
+    } else {
+        // String literal: cimport "myheader.h"
+        Token headerToken = expect(TokenType::STRING_LIT, "Expected header name in quotes or <>");
+        decl.header = headerToken.value;
+        decl.isSystemHeader = false;
+    }
+    
+    // Optional: as namespace
+    if (check(TokenType::IDENT) && peek().value == "as") {
+        advance(); // consume 'as'
+        Token ns = expect(TokenType::IDENT, "Expected namespace name after 'as'");
+        decl.asNamespace = ns.value;
+    }
+    
+    // Optional: only import specific symbols
+    if (check(TokenType::LPAREN)) {
+        advance();
+        if (!check(TokenType::RPAREN)) {
+            Token sym = expect(TokenType::IDENT, "Expected symbol name");
+            decl.symbols.push_back(sym.value);
+            
+            while (match(TokenType::COMMA)) {
+                Token nextSym = expect(TokenType::IDENT, "Expected symbol name");
+                decl.symbols.push_back(nextSym.value);
+            }
+        }
+        expect(TokenType::RPAREN, "Expected ')' after symbol list");
+    }
+    
+    expect(TokenType::SEMICOLON, "Expected ';' after cimport");
     return decl;
 }
 
@@ -185,7 +242,13 @@ StmtPtr Parser::parseStmt() {
     if (check(TokenType::WHILE)) return parseWhile();
     if (check(TokenType::FOR)) return parseFor();
     if (check(TokenType::MATCH)) return parseMatch();
-    
+       if (check(TokenType::CPP_BLOCK)) {
+        auto stmt = std::make_shared<Stmt>();
+        CppStmt cpp;
+        cpp.code = advance().value;  // Get the C++ code
+        stmt->data = cpp;
+        return stmt;
+    }
     auto stmt = std::make_shared<Stmt>();
     ExprStmt es;
     es.expr = parseExpr();
@@ -316,8 +379,6 @@ StmtPtr Parser::parseMatch() {
     stmt->data = ms;
     return stmt;
 }
-
-
 
 ExprPtr Parser::parseExpr() { return parseOr(); }
 
@@ -456,6 +517,15 @@ ExprPtr Parser::parseCall() {
             expect(TokenType::RBRACKET, "Expected ']' after index");
             indexExpr->data = ie;
             expr = indexExpr;
+        } else if (match(TokenType::DOUBLE_COLON)) {
+            // Handle :: for namespaced access (e.g., Math::sqrt)
+            auto memberExpr = std::make_shared<Expr>();
+            MemberExpr me;
+            me.object = expr;
+            Token member = expect(TokenType::IDENT, "Expected function/member name after '::'");
+            me.member = member.value;
+            memberExpr->data = me;
+            expr = memberExpr;
         } else {
             break;
         }

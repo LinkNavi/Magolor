@@ -7,7 +7,7 @@
 enum class TokenType {
     // Keywords
     FN, LET, RETURN, IF, ELSE, WHILE, FOR, MATCH, CLASS, NEW, THIS,
-    TRUE, FALSE, NONE, SOME, USING, PUB, PRIV, STATIC, MUT,
+    TRUE, FALSE, NONE, SOME, USING, PUB, PRIV, STATIC, MUT, CIMPORT,
     // Types
     INT, FLOAT, STRING, BOOL, VOID,
     // Literals
@@ -17,8 +17,9 @@ enum class TokenType {
     AND, OR, NOT, ASSIGN, ARROW, FAT_ARROW, DOT, DOUBLE_COLON,
     // Delimiters
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-    COMMA, COLON, SEMICOLON, DOLLAR,
+    COMMA, COLON, SEMICOLON, DOLLAR, AT,
     // Special
+    CPP_BLOCK,  // @cpp { ... }
     EOF_TOK, NEWLINE
 };
 
@@ -53,6 +54,7 @@ private:
     Token string();
     Token number();
     Token identifier();
+    Token cppBlock();  // Parse @cpp { ... }
     Token makeToken(TokenType t, const std::string& v = "", int len = 1);
     
     void error(const std::string& msg, int line, int col, int len = 1);
