@@ -514,40 +514,19 @@ impl Compiler {
                 self.emit(Op::NewArray(len as u16));
             }
 Expr::Object(props) => {
-    // Allocate a temporary local to hold the object while we build it
-    let obj_slot = self.local_count;
-    self.local_count += 1;
-    
-    // Create the object and store it in the temporary local
+    // Create empty object on stack
     self.emit(Op::NewObject);
-    self.emit(Op::StoreLocal(obj_slot));
     
-    // Set each field
+    // For each property, duplicate the object, set field, pop the returned copy
+    // Stack has: [obj]
     for (key, value) in props {
-        self.compile_expr(value)?;             // Compile value first: [value]
-        self.emit(Op::LoadLocal(obj_slot));    // Load object: [value, obj]
-        
-        // Swap them using temporary slots
-        let swap_slot = self.local_count;
-        self.local_count += 1;
-        self.emit(Op::StoreLocal(swap_slot));  // Store obj: [value]
-        
-        let value_slot = self.local_count;
-        self.local_count += 1;
-        self.emit(Op::StoreLocal(value_slot)); // Store value: []
-        
-        self.emit(Op::LoadLocal(swap_slot));   // Load obj: [obj]
-        self.emit(Op::LoadLocal(value_slot));  // Load value: [obj, value]
-        
+        self.emit(Op::Dup);                    // [obj, obj]
+        self.compile_expr(value)?;             // [obj, obj, value]
         let key_const = self.add_const(Val::Str(Rc::new(key)));
-        self.emit(Op::SetField(key_const));    // Set field: [obj]
-        self.emit(Op::Pop);                    // Pop: []
-        
-        // Don't decrement! local_count is a high-water mark
+        self.emit(Op::SetField(key_const));    // [obj, obj] (SetField pops obj+value, pushes obj)
+        self.emit(Op::Pop);                    // [obj]
     }
-    
-    // Load the completed object back onto the stack
-    self.emit(Op::LoadLocal(obj_slot));
+    // Final object remains on stack
 }
             Expr::Index { array, index } => {
                 self.compile_expr(*array)?;
