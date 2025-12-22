@@ -6,6 +6,7 @@
 #include "module.hpp"
 #include "package.hpp"
 #include "parser.hpp"
+#include "stdlib_manager.hpp"
 #include "typechecker.hpp"
 #include <cstdlib>
 #include <filesystem>
@@ -298,6 +299,101 @@ int buildProject(bool verbose = false) {
     return 1;
   }
 }
+
+void handleStdLibCommand(int argc, char *argv[]) {
+  if (argc < 3) {
+    std::cout << "\033[1mMagolor StdLib Manager\033[0m\n\n";
+    std::cout << "\033[1mUSAGE:\033[0m\n";
+    std::cout << "    magolor stdlib [SUBCOMMAND] [OPTIONS]\n\n";
+    std::cout << "\033[1mSUBCOMMANDS:\033[0m\n";
+    std::cout
+        << "    list                    List all available stdlib modules\n";
+    std::cout
+        << "    extract <module> <file> Extract a module to an editable file\n";
+    std::cout << "    import <file>           Import edited module back to "
+                 "stdlib format\n";
+    std::cout << "    new <name> <file>       Create a new custom module "
+                 "template\n\n";
+    std::cout << "\033[1mEXAMPLES:\033[0m\n";
+    std::cout << "    # Extract IO module for editing\n";
+    std::cout << "    magolor stdlib extract IO my_io.txt\n\n";
+    std::cout << "    # Edit my_io.txt, then import it back\n";
+    std::cout << "    magolor stdlib import my_io.txt > io_module.cpp\n\n";
+    std::cout << "    # Create a new custom module\n";
+    std::cout << "    magolor stdlib new Network network.txt\n";
+    return;
+  }
+
+  std::string subcommand = argv[2];
+
+  if (subcommand == "list") {
+    std::cout << "\033[1;32mAvailable StdLib Modules:\033[0m\n\n";
+    auto modules = StdLibManager::getAvailableModules();
+    for (const auto &mod : modules) {
+      std::cout << "  • Std." << mod << "\n";
+    }
+    std::cout
+        << "\nUse 'magolor stdlib extract <module> <file>' to edit a module\n";
+  } else if (subcommand == "extract") {
+    if (argc < 5) {
+      std::cerr << "\033[1;31merror\033[0m: missing arguments\n";
+      std::cerr << "  \033[1;34m= usage:\033[0m magolor stdlib extract "
+                   "<module> <output_file>\n";
+      std::cerr << "\n  Example: magolor stdlib extract IO my_io.txt\n";
+      return;
+    }
+
+    std::string moduleName = argv[3];
+    std::string outputFile = argv[4];
+
+    if (StdLibManager::extractModule(moduleName, outputFile)) {
+      std::cout << "\n\033[1;32mSuccess!\033[0m Module extracted.\n";
+    } else {
+      std::cerr << "\033[1;31merror\033[0m: extraction failed\n";
+    }
+  } else if (subcommand == "import") {
+    if (argc < 4) {
+      std::cerr << "\033[1;31merror\033[0m: missing input file\n";
+      std::cerr
+          << "  \033[1;34m= usage:\033[0m magolor stdlib import <input_file>\n";
+      std::cerr
+          << "\n  Example: magolor stdlib import my_io.txt > io_module.cpp\n";
+      return;
+    }
+
+    std::string inputFile = argv[3];
+    std::string output = StdLibManager::importModule(inputFile);
+
+    if (!output.empty()) {
+      std::cout << output;
+    } else {
+      std::cerr << "\033[1;31merror\033[0m: import failed\n";
+    }
+  } else if (subcommand == "new") {
+    if (argc < 5) {
+      std::cerr << "\033[1;31merror\033[0m: missing arguments\n";
+      std::cerr << "  \033[1;34m= usage:\033[0m magolor stdlib new "
+                   "<module_name> <output_file>\n";
+      std::cerr << "\n  Example: magolor stdlib new Network network.txt\n";
+      return;
+    }
+
+    std::string moduleName = argv[3];
+    std::string outputFile = argv[4];
+
+    if (StdLibManager::createModuleTemplate(moduleName, outputFile)) {
+      std::cout << "\n\033[1;32mSuccess!\033[0m Module template created.\n";
+    } else {
+      std::cerr << "\033[1;31merror\033[0m: template creation failed\n";
+    }
+  } else {
+    std::cerr << "\033[1;31merror\033[0m: unknown subcommand '" << subcommand
+              << "'\n";
+    std::cerr << "  \033[1;34m= help:\033[0m use 'magolor stdlib' for "
+                 "available commands\n";
+  }
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     printUsage();
@@ -318,6 +414,11 @@ int main(int argc, char *argv[]) {
     printUsage();
     return 0;
   }
+  if (cmd == "stdlib") {
+    handleStdLibCommand(argc, argv);
+    return 0;
+  }
+
   if (cmd == "lsp") {
 
     MagolorLanguageServer server;

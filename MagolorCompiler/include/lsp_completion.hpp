@@ -53,5 +53,6 @@ private:
     void addStdLibCompletions(JsonValue& items, const std::string& context);
     void addCallableSymbols(JsonValue& items, const std::string& uri, const std::string& filter);
     void addVariableSymbols(JsonValue& items, const std::string& uri, Position pos, const std::string& filter);
+    void addImportedFunctions(JsonValue& items, const std::string& uri, const std::string& filter); // NEW
     bool matchesFilter(const std::string& name, const std::string& filter);
 };

@@ -1,7 +1,7 @@
 #include "codegen.hpp"
 #include "stdlib.hpp"
-#include <variant>
 #include <unordered_set>
+#include <variant>
 
 void CodeGen::emit(const std::string &s) { out << s; }
 void CodeGen::emitLine(const std::string &s) {
@@ -46,17 +46,19 @@ std::string CodeGen::typeToString(const TypePtr &type) {
   return "auto";
 }
 
-void CodeGen::genStdLib() {
-  out << StdLibGenerator::generateAll();
-}
+void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
 
 void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   if (cimports.empty())
     return;
 
-  out << "// ===================================================================\n";
+  out << "// "
+         "==================================================================="
+         "\n";
   out << "// C/C++ Imports\n";
-  out << "// ===================================================================\n";
+  out << "// "
+         "==================================================================="
+         "\n";
 
   for (const auto &imp : cimports) {
     // Generate include directive
@@ -78,10 +80,14 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
       } else {
         // No specific symbols - import common std:: functions
         out << "    // Common C++ standard library functions\n";
-        out << "    using std::sqrt; using std::sin; using std::cos; using std::tan;\n";
-        out << "    using std::asin; using std::acos; using std::atan; using std::atan2;\n";
-        out << "    using std::pow; using std::exp; using std::log; using std::log10;\n";
-        out << "    using std::abs; using std::fabs; using std::floor; using std::ceil;\n";
+        out << "    using std::sqrt; using std::sin; using std::cos; using "
+               "std::tan;\n";
+        out << "    using std::asin; using std::acos; using std::atan; using "
+               "std::atan2;\n";
+        out << "    using std::pow; using std::exp; using std::log; using "
+               "std::log10;\n";
+        out << "    using std::abs; using std::fabs; using std::floor; using "
+               "std::ceil;\n";
         out << "    using std::round; using std::fmod; using std::cbrt;\n";
       }
 
@@ -98,8 +104,8 @@ void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   out << "\n";
 }
 
-bool CodeGen::isClassName(const std::string& name) const {
-    return knownClassNames.count(name) > 0;
+bool CodeGen::isClassName(const std::string &name) const {
+  return knownClassNames.count(name) > 0;
 }
 
 std::string CodeGen::generate(const Program &prog) {
@@ -490,7 +496,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             emit("::" + e.member);
             return;
           }
-          
+
           if (auto *ident = std::get_if<IdentExpr>(&e.object->data)) {
             // Check if it's a class name (static access)
             if (isClassName(ident->name)) {
@@ -508,7 +514,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
 
           // Regular member access - use -> for pointers
           genExpr(e.object);
-          
+
           // Check if object is 'this' - use -> instead of .
           if (std::holds_alternative<ThisExpr>(e.object->data)) {
             emit("->" + e.member);
@@ -529,7 +535,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           for (size_t i = 0; i < e.params.size(); i++) {
             if (i > 0)
               emit(", ");
-            emit(typeToString(e.params[i].type) + " " + e.params[i].name);
+            emit(paramTypeToString(e.params[i].type) + " " + e.params[i].name);
           }
           emit(")");
           if (e.returnType)
@@ -556,14 +562,14 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this");  // Changed from (*this)
+          emit("this"); // Changed from (*this)
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";
           if (!e.elements.empty() && e.elements[0]->type) {
             elemType = typeToString(e.elements[0]->type);
           }
-          
+
           emit("std::vector<" + elemType + ">{");
           for (size_t i = 0; i < e.elements.size(); i++) {
             if (i > 0)
@@ -575,15 +581,23 @@ void CodeGen::genExpr(const ExprPtr &expr) {
       },
       expr->data);
 }
-
+std::string CodeGen::paramTypeToString(const TypePtr &type) {
+  // For untyped lambda parameters (type is VOID from parser), use "auto"
+  if (!type || type->kind == Type::VOID) {
+    return "auto";
+  }
+  // For explicitly typed parameters, use normal type conversion
+  return typeToString(type);
+}
 void CodeGen::enterScope() {
-    // Placeholder for future scope management
+  // Placeholder for future scope management
 }
 
 void CodeGen::exitScope() {
-    // Placeholder for future scope management
+  // Placeholder for future scope management
 }
 
-void CodeGen::registerVar(const std::string& name, const std::string& type, bool isMut) {
-    scopeVars[name] = {type, isMut};
+void CodeGen::registerVar(const std::string &name, const std::string &type,
+                          bool isMut) {
+  scopeVars[name] = {type, isMut};
 }

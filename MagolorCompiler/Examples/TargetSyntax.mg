@@ -9,7 +9,7 @@ fn readInt(prompt: string) -> int {
         Std.print(prompt);
 	Std.IO.print("hai");  
         let line = Std.readLine();
-
+	Std.
         match Std.parseInt(line) {
             Some(v) => return v,
             None => Std.print("That wasn't a number. Try again.\n")

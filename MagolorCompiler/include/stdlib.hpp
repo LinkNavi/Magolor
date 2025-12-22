@@ -1,48 +1,49 @@
 #pragma once
-#include <string>
 #include <sstream>
+#include <string>
 
 class StdLibGenerator {
 public:
-    static std::string generateAll() {
-        std::stringstream ss;
-        
-        // Required includes
-        ss << generateIncludes();
-        ss << "\n";
-        
-        // Namespace opening
-        ss << "namespace Std {\n\n";
-        
-        // Generate each module
-        ss << generateIO();
-        ss << generateParse();
-        ss << generateOption();
-        ss << generateMath();
-        ss << generateString();
-        ss << generateArray();
-        ss << generateMap();       // NEW
-        ss << generateSet();       // NEW
-        ss << generateFile();
-        ss << generateTime();
-        ss << generateRandom();
-        ss << generateSystem();
-        
-        // Top-level convenience functions
-        ss << generateTopLevel();
-        
-        // Namespace closing
-        ss << "} // namespace Std\n\n";
-        
-        // Template helpers
-        ss << generateTemplateHelpers();
-        
-        return ss.str();
-    }
-    
+  static std::string generateAll() {
+    std::stringstream ss;
+
+    // Required includes
+    ss << generateIncludes();
+    ss << "\n";
+
+    // Namespace opening
+    ss << "namespace Std {\n\n";
+
+    // Generate each module
+    ss << generateIO();
+    ss << generateParse();
+    ss << generateOption();
+    ss << generateMath();
+    ss << generateString();
+    ss << generateArray();
+    ss << generateMap(); // NEW
+    ss << generateSet(); // NEW
+    ss << generateFile();
+    ss << generateNetwork();
+    ss << generateTime();
+    ss << generateRandom();
+    ss << generateSystem();
+
+    // Top-level convenience functions
+    ss << generateTopLevel();
+
+    // Namespace closing
+    ss << "} // namespace Std\n\n";
+
+    // Template helpers
+    ss << generateTemplateHelpers();
+
+    return ss.str();
+  }
+
 private:
-    static std::string generateIncludes() {
-        return R"(#include <iostream>
+  static std::string generateIncludes() {
+    return R"(#include <iostream>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -60,11 +61,15 @@ private:
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
+#include <sys/socket.h>    // ADD THIS LINE
+#include <netinet/in.h>    // ADD THIS LINE
+#include <arpa/inet.h>     // ADD THIS LINE
+#include <unistd.h>        // ADD THIS LINE (if not already present)
 )";
-    }
-    
-    static std::string generateIO() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateIO() {
+    return R"(// ============================================================================
 // Std.IO - Input/Output Operations
 // ============================================================================
 namespace IO {
@@ -111,10 +116,10 @@ namespace IO {
 }
 
 )";
-    }
-    
-    static std::string generateParse() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateParse() {
+    return R"(// ============================================================================
 // Std.Parse - Parsing Operations
 // ============================================================================
 namespace Parse {
@@ -144,10 +149,10 @@ namespace Parse {
 }
 
 )";
-    }
-    
-    static std::string generateOption() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateOption() {
+    return R"(// ============================================================================
 // Std.Option - Optional Value Operations
 // ============================================================================
 namespace Option {
@@ -172,10 +177,10 @@ namespace Option {
 }
 
 )";
-    }
-    
-    static std::string generateMath() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateMath() {
+    return R"(// ============================================================================
 // Std.Math - Mathematical Operations
 // ============================================================================
 namespace Math {
@@ -219,10 +224,10 @@ namespace Math {
 }
 
 )";
-    }
-    
-    static std::string generateString() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateString() {
+    return R"(// ============================================================================
 // Std.String - String Operations
 // ============================================================================
 namespace String {
@@ -302,10 +307,10 @@ namespace String {
 }
 
 )";
-    }
-    
-    static std::string generateArray() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateArray() {
+    return R"(// ============================================================================
 // Std.Array - Array Operations
 // ============================================================================
 namespace Array {
@@ -353,10 +358,10 @@ namespace Array {
 }
 
 )";
-    }
-    
-    static std::string generateMap() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateMap() {
+    return R"(// ============================================================================
 // Std.Map - HashMap/Dictionary Operations
 // ============================================================================
 namespace Map {
@@ -420,10 +425,10 @@ namespace Map {
 }
 
 )";
-    }
-    
-    static std::string generateSet() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateSet() {
+    return R"(// ============================================================================
 // Std.Set - HashSet Operations
 // ============================================================================
 namespace Set {
@@ -489,10 +494,10 @@ namespace Set {
 }
 
 )";
-    }
-    
-    static std::string generateFile() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateFile() {
+    return R"(// ============================================================================
 // Std.File - File System Operations
 // ============================================================================
 namespace File {
@@ -549,10 +554,10 @@ namespace File {
 }
 
 )";
-    }
-    
-    static std::string generateTime() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateTime() {
+    return R"(// ============================================================================
 // Std.Time - Time Operations
 // ============================================================================
 namespace Time {
@@ -574,10 +579,10 @@ namespace Time {
 }
 
 )";
-    }
-    
-    static std::string generateRandom() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateRandom() {
+    return R"(// ============================================================================
 // Std.Random - Random Number Generation
 // ============================================================================
 namespace Random {
@@ -601,10 +606,10 @@ namespace Random {
 }
 
 )";
-    }
-    
-    static std::string generateSystem() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateSystem() {
+    return R"(// ============================================================================
 // Std.System - System Operations
 // ============================================================================
 namespace System {
@@ -624,10 +629,413 @@ namespace System {
 }
 
 )";
+  }
+  static std::string generateNetwork() {
+    return R"(// ============================================================================
+// Std.Network - Network and HTTP Server Operations
+// ============================================================================
+namespace Network {
+    // HTTP Status Codes
+    namespace Status {
+        constexpr int OK = 200;
+        constexpr int CREATED = 201;
+        constexpr int NO_CONTENT = 204;
+        constexpr int BAD_REQUEST = 400;
+        constexpr int UNAUTHORIZED = 401;
+        constexpr int FORBIDDEN = 403;
+        constexpr int NOT_FOUND = 404;
+        constexpr int METHOD_NOT_ALLOWED = 405;
+        constexpr int INTERNAL_SERVER_ERROR = 500;
+        constexpr int NOT_IMPLEMENTED = 501;
+        constexpr int SERVICE_UNAVAILABLE = 503;
+        
+        inline std::string toString(int code) {
+            switch (code) {
+                case 200: return "OK";
+                case 201: return "Created";
+                case 204: return "No Content";
+                case 400: return "Bad Request";
+                case 401: return "Unauthorized";
+                case 403: return "Forbidden";
+                case 404: return "Not Found";
+                case 405: return "Method Not Allowed";
+                case 500: return "Internal Server Error";
+                case 501: return "Not Implemented";
+                case 503: return "Service Unavailable";
+                default: return "Unknown";
+            }
+        }
     }
     
-    static std::string generateTopLevel() {
-        return R"(// ============================================================================
+    // HTTP Request Structure
+    struct HttpRequest {
+        std::string method;
+        std::string path;
+        std::string version;
+        std::unordered_map<std::string, std::string> headers;
+        std::unordered_map<std::string, std::string> query;
+        std::string body;
+        
+        std::string getHeader(const std::string& name) const {
+            auto it = headers.find(name);
+            return it != headers.end() ? it->second : "";
+        }
+        
+        std::string getQuery(const std::string& name) const {
+            auto it = query.find(name);
+            return it != query.end() ? it->second : "";
+        }
+    };
+    
+    // HTTP Response Structure
+    struct HttpResponse {
+        int statusCode;
+        std::unordered_map<std::string, std::string> headers;
+        std::string body;
+        
+        HttpResponse() : statusCode(200) {
+            headers["Content-Type"] = "text/html; charset=utf-8";
+            headers["Server"] = "Magolor/1.0";
+        }
+        
+        void setHeader(const std::string& name, const std::string& value) {
+            headers[name] = value;
+        }
+        
+        void setJson() {
+            headers["Content-Type"] = "application/json";
+        }
+        
+        void setText() {
+            headers["Content-Type"] = "text/plain";
+        }
+        
+        void setHtml() {
+            headers["Content-Type"] = "text/html; charset=utf-8";
+        }
+        
+        std::string serialize() const {
+            std::ostringstream oss;
+            oss << "HTTP/1.1 " << statusCode << " " << Status::toString(statusCode) << "\r\n";
+            oss << "Content-Length: " << body.size() << "\r\n";
+            
+            for (const auto& [name, value] : headers) {
+                oss << name << ": " << value << "\r\n";
+            }
+            
+            oss << "\r\n" << body;
+            return oss.str();
+        }
+    };
+    
+    // URL Utilities
+    inline std::string urlDecode(const std::string& str) {
+        std::string result;
+        for (size_t i = 0; i < str.size(); i++) {
+            if (str[i] == '%' && i + 2 < str.size()) {
+                int value;
+                std::istringstream is(str.substr(i + 1, 2));
+                if (is >> std::hex >> value) {
+                    result += static_cast<char>(value);
+                    i += 2;
+                } else {
+                    result += str[i];
+                }
+            } else if (str[i] == '+') {
+                result += ' ';
+            } else {
+                result += str[i];
+            }
+        }
+        return result;
+    }
+    
+    inline std::string urlEncode(const std::string& str) {
+        std::ostringstream escaped;
+        escaped.fill('0');
+        escaped << std::hex;
+        
+        for (char c : str) {
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                escaped << c;
+            } else {
+                escaped << std::uppercase;
+                escaped << '%' << std::setw(2) << int((unsigned char)c);
+                escaped << std::nouppercase;
+            }
+        }
+        
+        return escaped.str();
+    }
+    
+    inline std::unordered_map<std::string, std::string> parseQuery(const std::string& query) {
+        std::unordered_map<std::string, std::string> result;
+        std::istringstream iss(query);
+        std::string pair;
+        
+        while (std::getline(iss, pair, '&')) {
+            size_t eq = pair.find('=');
+            if (eq != std::string::npos) {
+                std::string key = urlDecode(pair.substr(0, eq));
+                std::string value = urlDecode(pair.substr(eq + 1));
+                result[key] = value;
+            }
+        }
+        
+        return result;
+    }
+    
+    // Request Parser
+    inline HttpRequest parseRequest(const std::string& raw) {
+        HttpRequest req;
+        std::istringstream stream(raw);
+        std::string line;
+        
+        if (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            
+            std::istringstream lineStream(line);
+            lineStream >> req.method >> req.path >> req.version;
+            
+            size_t qPos = req.path.find('?');
+            if (qPos != std::string::npos) {
+                req.query = parseQuery(req.path.substr(qPos + 1));
+                req.path = req.path.substr(0, qPos);
+            }
+        }
+        
+        while (std::getline(stream, line) && line != "\r" && !line.empty()) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string name = line.substr(0, colon);
+                std::string value = line.substr(colon + 1);
+                value.erase(0, value.find_first_not_of(" \t"));
+                value.erase(value.find_last_not_of(" \t") + 1);
+                req.headers[name] = value;
+            }
+        }
+        
+        std::ostringstream bodyStream;
+        bodyStream << stream.rdbuf();
+        req.body = bodyStream.str();
+        
+        return req;
+    }
+    
+    // Route Handler Type
+    using RouteHandler = std::function<HttpResponse(const HttpRequest&)>;
+    
+    // Simple HTTP Server
+    class HttpServer {
+    private:
+        int port;
+        int serverSocket;
+        bool running;
+        std::unordered_map<std::string, std::unordered_map<std::string, RouteHandler>> routes;
+        RouteHandler notFoundHandler;
+        
+        void setupSocket() {
+            serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+            if (serverSocket < 0) {
+                throw std::runtime_error("Failed to create socket");
+            }
+            
+            int opt = 1;
+            setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            
+            sockaddr_in serverAddr;
+            serverAddr.sin_family = AF_INET;
+            serverAddr.sin_addr.s_addr = INADDR_ANY;
+            serverAddr.sin_port = htons(port);
+            
+            if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+                close(serverSocket);
+                throw std::runtime_error("Failed to bind to port " + std::to_string(port));
+            }
+            
+            if (listen(serverSocket, 10) < 0) {
+                close(serverSocket);
+                throw std::runtime_error("Failed to listen on socket");
+            }
+        }
+        
+        void handleClient(int clientSocket) {
+            char buffer[4096];
+            int bytesRead = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+            
+            if (bytesRead > 0) {
+                buffer[bytesRead] = '\0';
+                std::string rawRequest(buffer);
+                
+                HttpRequest request = parseRequest(rawRequest);
+                HttpResponse response = routeRequest(request);
+                
+                std::string responseStr = response.serialize();
+                send(clientSocket, responseStr.c_str(), responseStr.size(), 0);
+            }
+            
+            close(clientSocket);
+        }
+        
+        HttpResponse routeRequest(const HttpRequest& req) {
+            auto methodIt = routes.find(req.method);
+            if (methodIt != routes.end()) {
+                auto pathIt = methodIt->second.find(req.path);
+                if (pathIt != methodIt->second.end()) {
+                    return pathIt->second(req);
+                }
+            }
+            
+            if (notFoundHandler) {
+                return notFoundHandler(req);
+            }
+            
+            HttpResponse response;
+            response.statusCode = Status::NOT_FOUND;
+            response.body = "<h1>404 Not Found</h1>";
+            return response;
+        }
+        
+    public:
+        HttpServer(int p) : port(p), serverSocket(-1), running(false) {
+            notFoundHandler = [](const HttpRequest& req) {
+                HttpResponse res;
+                res.statusCode = Status::NOT_FOUND;
+                res.body = "<h1>404 Not Found</h1><p>Path: " + req.path + "</p>";
+                return res;
+            };
+        }
+        
+        ~HttpServer() {
+            stop();
+        }
+        
+        void get(const std::string& path, RouteHandler handler) {
+            routes["GET"][path] = handler;
+        }
+        
+        void post(const std::string& path, RouteHandler handler) {
+            routes["POST"][path] = handler;
+        }
+        
+        void put(const std::string& path, RouteHandler handler) {
+            routes["PUT"][path] = handler;
+        }
+        
+        void delete_(const std::string& path, RouteHandler handler) {
+            routes["DELETE"][path] = handler;
+        }
+        
+        void setNotFound(RouteHandler handler) {
+            notFoundHandler = handler;
+        }
+        
+        void start() {
+            setupSocket();
+            running = true;
+            
+            std::cout << "Server listening on http://localhost:" << port << std::endl;
+            
+            while (running) {
+                sockaddr_in clientAddr;
+                socklen_t clientLen = sizeof(clientAddr);
+                
+                int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientLen);
+                if (clientSocket < 0) {
+                    if (running) {
+                        std::cerr << "Failed to accept connection" << std::endl;
+                    }
+                    continue;
+                }
+                
+                handleClient(clientSocket);
+            }
+        }
+        
+        void stop() {
+            running = false;
+            if (serverSocket >= 0) {
+                close(serverSocket);
+                serverSocket = -1;
+            }
+        }
+    };
+    
+    // Helper Functions
+    inline HttpResponse jsonResponse(const std::string& json, int status = Status::OK) {
+        HttpResponse res;
+        res.statusCode = status;
+        res.setJson();
+        res.body = json;
+        return res;
+    }
+    
+    inline HttpResponse htmlResponse(const std::string& html, int status = Status::OK) {
+        HttpResponse res;
+        res.statusCode = status;
+        res.setHtml();
+        res.body = html;
+        return res;
+    }
+    
+    inline HttpResponse textResponse(const std::string& text, int status = Status::OK) {
+        HttpResponse res;
+        res.statusCode = status;
+        res.setText();
+        res.body = text;
+        return res;
+    }
+    
+    inline HttpResponse redirectResponse(const std::string& url, int status = 302) {
+        HttpResponse res;
+        res.statusCode = status;
+        res.setHeader("Location", url);
+        res.body = "<html><body>Redirecting to <a href=\"" + url + "\">" + url + "</a></body></html>";
+        return res;
+    }
+    
+    inline bool ping(const std::string& host) {
+        std::string cmd = "ping -c 1 -W 1 " + host + " > /dev/null 2>&1";
+        return std::system(cmd.c_str()) == 0;
+    }
+    
+    inline std::string getLocalIP() {
+        FILE* pipe = popen("hostname -I | awk '{print $1}'", "r");
+        if (!pipe) return "";
+        
+        char buffer[128];
+        std::string result;
+        if (fgets(buffer, sizeof(buffer), pipe)) {
+            result = buffer;
+            if (!result.empty() && result.back() == '\n') {
+                result.pop_back();
+            }
+        }
+        pclose(pipe);
+        return result;
+    }
+    
+    inline std::string httpGet(const std::string& url) {
+        std::string cmd = "curl -s " + url;
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return "";
+        
+        std::string result;
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe)) {
+            result += buffer;
+        }
+        pclose(pipe);
+        return result;
+    }
+}
+
+)";
+  }
+  static std::string generateTopLevel() {
+    return R"(// ============================================================================
 // Top-level convenience functions
 // ============================================================================
 inline void print(const std::string& s) { IO::print(s); }
@@ -637,10 +1045,10 @@ inline std::optional<int> parseInt(const std::string& s) { return Parse::parseIn
 inline std::optional<double> parseFloat(const std::string& s) { return Parse::parseFloat(s); }
 
 )";
-    }
-    
-    static std::string generateTemplateHelpers() {
-        return R"(// ============================================================================
+  }
+
+  static std::string generateTemplateHelpers() {
+    return R"(// ============================================================================
 // Template Helpers for String Conversion
 // ============================================================================
 template<typename T>
@@ -661,5 +1069,5 @@ inline std::string mg_to_string(const std::string& val) {
 }
 
 )";
-    }
+  }
 };

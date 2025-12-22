@@ -17,7 +17,7 @@ private:
     std::unordered_set<std::string> capturedVars;
     std::unordered_set<std::string> importedNamespaces;
     std::unordered_set<std::string> knownClassNames; // NEW: Track known class names
-    
+      std::string paramTypeToString(const TypePtr &type);
     // Track variables for @cpp block sharing
     struct VarInfo {
         std::string type;
