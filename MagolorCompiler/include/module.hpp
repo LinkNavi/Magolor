@@ -1,4 +1,6 @@
 #pragma once
+
+#include <unordered_set>
 #include "ast.hpp"
 #include <string>
 #include <algorithm>
@@ -264,3 +266,54 @@ public:
 private:
     std::unordered_map<std::string, std::string> importedSymbols;
 };
+
+
+
+
+struct Callable {
+    std::string name;      // function or method name
+    std::string module;    // which module it comes from
+    std::string className; // empty if top-level function
+};
+
+class CallableCollector {
+public:
+    static std::vector<Callable> getAllCallablesRecursive(ModulePtr module) {
+        std::vector<Callable> callables;
+        std::unordered_set<std::string> visitedModules;
+        collect(module, callables, visitedModules);
+        return callables;
+    }
+
+private:
+    static void collect(ModulePtr module, std::vector<Callable>& callables,
+                        std::unordered_set<std::string>& visitedModules) {
+        if (!module || visitedModules.count(module->name)) return;
+
+        visitedModules.insert(module->name);
+
+        // 1. Top-level functions
+        for (const auto& fn : module->ast.functions) {
+            if (fn.isPublic) {
+                callables.push_back({fn.name, module->name, ""});
+            }
+        }
+
+        // 2. Methods in public classes
+        for (const auto& cls : module->ast.classes) {
+            if (!cls.isPublic) continue;
+            for (const auto& method : cls.methods) {
+                if (method.isPublic) {
+                    callables.push_back({method.name, module->name, cls.name});
+                }
+            }
+        }
+
+        // 3. Recursively process imported modules
+        for (const auto& importedName : module->importedModules) {
+            ModulePtr imported = ModuleRegistry::instance().getModule(importedName);
+            collect(imported, callables, visitedModules);
+        }
+    }
+};
+

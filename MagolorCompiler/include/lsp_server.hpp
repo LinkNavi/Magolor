@@ -1,17 +1,17 @@
 #pragma once
-#include "position.hpp"
-#include <string>
+#include "jsonrpc.hpp"
+#include "lsp_semantic.hpp"
+#include "lsp_completion.hpp"
 #include <unordered_map>
-#include <vector>
-#include <sstream>
-#include "module.hpp"
+#include <string>
+
 struct TextDocument {
     std::string uri;
     std::string languageId;
     int version = 0;
     std::string content;
     std::vector<size_t> lineOffsets;
-    ModulePtr module;
+    
     void updateLineOffsets() {
         lineOffsets.clear();
         lineOffsets.push_back(0);
@@ -20,23 +20,6 @@ struct TextDocument {
                 lineOffsets.push_back(i + 1);
             }
         }
-    }
-    
-    Position offsetToPosition(size_t offset) const {
-        Position pos;
-        for (size_t i = 0; i < lineOffsets.size(); i++) {
-            if (i + 1 >= lineOffsets.size() || lineOffsets[i + 1] > offset) {
-                pos.line = i;
-                pos.character = offset - lineOffsets[i];
-                break;
-            }
-        }
-        return pos;
-    }
-    
-    size_t positionToOffset(const Position& pos) const {
-        if (pos.line >= (int)lineOffsets.size()) return content.size();
-        return lineOffsets[pos.line] + pos.character;
     }
     
     std::string getLine(int line) const {
@@ -96,15 +79,44 @@ public:
         auto it = documents.find(uri);
         return it != documents.end() ? &it->second : nullptr;
     }
-    
-    std::vector<std::string> getOpenUris() const {
-        std::vector<std::string> uris;
-        for (auto& [uri, _] : documents) {
-            uris.push_back(uri);
-        }
-        return uris;
-    }
 
 private:
     std::unordered_map<std::string, TextDocument> documents;
+};
+
+class MagolorLanguageServer {
+public:
+    void run() {
+        running = true;
+        while (running) {
+            auto msg = transport.receive();
+            if (!msg) break;
+            handleMessage(*msg);
+        }
+    }
+
+private:
+    Transport transport;
+    DocumentManager documents;
+    SemanticAnalyzer analyzer;
+    CompletionProvider completion{analyzer};
+    bool running = false;
+    bool initialized = false;
+    
+    void handleMessage(const Message& msg);
+    void handleInitialize(const Message& msg);
+    void handleInitialized(const Message& msg);
+    void handleShutdown(const Message& msg);
+    void handleExit(const Message& msg);
+    void handleDidOpen(const Message& msg);
+    void handleDidChange(const Message& msg);
+    void handleDidClose(const Message& msg);
+    void handleDidSave(const Message& msg);
+    void handleCompletion(const Message& msg);
+    void handleHover(const Message& msg);
+    void handleDefinition(const Message& msg);
+    void handleReferences(const Message& msg);
+    void handleDocumentSymbol(const Message& msg);
+    
+    JsonValue rangeToJson(const Range& r);
 };

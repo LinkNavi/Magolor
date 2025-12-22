@@ -21,6 +21,49 @@ void TypeChecker::exitScope() {
     delete old;
 }
 
+std::vector<FnDecl*> TypeChecker::getVisibleFunctions() {
+    std::vector<FnDecl*> result;
+    std::unordered_set<std::string> seen;
+
+    Scope* scope = currentScope;
+    while (scope) {
+        for (auto& [name, fn] : scope->functions) {
+            // shadowing rules: inner scopes win
+            if (!seen.count(name)) {
+                result.push_back(fn);
+                seen.insert(name);
+            }
+        }
+        scope = scope->parent;
+    }
+
+    return result;
+}
+std::vector<FnDecl*> TypeChecker::getVisibleCallables() {
+    std::vector<FnDecl*> result;
+
+    // 1. Free functions
+    auto funcs = getVisibleFunctions();
+    result.insert(result.end(), funcs.begin(), funcs.end());
+
+    // 2. Methods from current class
+    if (currentClass) {
+        for (auto& m : currentClass->methods) {
+            result.push_back(&m);
+        }
+    }
+
+    // 3. Static methods from other classes (optional)
+    for (auto& [_, cls] : currentScope->classes) {
+        for (auto& m : cls->methods) {
+            if (m.isStatic && m.isPublic) {
+                result.push_back(&m);
+            }
+        }
+    }
+
+    return result;
+}
 void TypeChecker::defineVar(const std::string& name, TypePtr type) {
     if (currentScope) {
         currentScope->variables[name] = type;

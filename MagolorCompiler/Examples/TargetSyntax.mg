@@ -7,7 +7,7 @@ using Std.Option;
 fn readInt(prompt: string) -> int {
     while (true) {
         Std.print(prompt);
-	Std.
+	Std.IO.print("hai");  
         let line = Std.readLine();
 
         match Std.parseInt(line) {

@@ -1,8 +1,8 @@
 #include "codegen.hpp"
 
-#include "server.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
+#include "lsp_server.hpp"
 #include "module.hpp"
 #include "package.hpp"
 #include "parser.hpp"
@@ -319,6 +319,7 @@ int main(int argc, char *argv[]) {
     return 0;
   }
   if (cmd == "lsp") {
+
     MagolorLanguageServer server;
     server.run();
     return 0;
