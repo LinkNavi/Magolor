@@ -1,16 +1,18 @@
 #pragma once
 #include "lexer.hpp"
 #include "ast.hpp"
+#include "error.hpp"
 #include <vector>
-#include <stdexcept>
 
 class Parser {
 public:
-    explicit Parser(std::vector<Token> tokens);
+    Parser(std::vector<Token> tokens, const std::string& filename, ErrorReporter& reporter);
     Program parse();
     
 private:
     std::vector<Token> tokens;
+    std::string filename;
+    ErrorReporter& reporter;
     size_t pos = 0;
     
     Token peek(int offset = 0);
@@ -18,6 +20,10 @@ private:
     bool check(TokenType t);
     bool match(TokenType t);
     Token expect(TokenType t, const std::string& msg);
+    
+    void error(const std::string& msg);
+    void error(const std::string& msg, const Token& tok);
+    void errorWithHint(const std::string& msg, const Token& tok, const std::string& hint);
     
     // Declarations
     UsingDecl parseUsing();

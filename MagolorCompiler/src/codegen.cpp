@@ -1,4 +1,5 @@
 #include "codegen.hpp"
+#include "stdlib.h"
 #include <variant>
 
 void CodeGen::emit(const std::string& s) { out << s; }
@@ -29,66 +30,28 @@ std::string CodeGen::typeToString(const TypePtr& type) {
 }
 
 void CodeGen::genStdLib() {
-    emitLine("#include <iostream>");
-    emitLine("#include <string>");
-    emitLine("#include <functional>");
-    emitLine("#include <optional>");
-    emitLine("#include <vector>");
-    emitLine("#include <sstream>");
-    emitLine("#include <stdexcept>");
-    emitLine("");
-    emitLine("namespace Std {");
-    indent++;
-    emitLine("namespace IO {");
-    indent++;
-    emitLine("inline void print(const std::string& s) { std::cout << s; }");
-    emitLine("inline void println(const std::string& s) { std::cout << s << std::endl; }");
-    emitLine("inline std::string readLine() { std::string line; std::getline(std::cin, line); return line; }");
-    indent--;
-    emitLine("}");
-    emitLine("");
-    emitLine("namespace Parse {");
-    indent++;
-    emitLine("inline std::optional<int> parseInt(const std::string& s) {");
-    indent++;
-    emitLine("try { size_t pos; int val = std::stoi(s, &pos); if (pos == s.length()) return val; return std::nullopt; }");
-    emitLine("catch (...) { return std::nullopt; }");
-    indent--;
-    emitLine("}");
-    emitLine("inline std::optional<double> parseFloat(const std::string& s) {");
-    indent++;
-    emitLine("try { size_t pos; double val = std::stod(s, &pos); if (pos == s.length()) return val; return std::nullopt; }");
-    emitLine("catch (...) { return std::nullopt; }");
-    indent--;
-    emitLine("}");
-    indent--;
-    emitLine("}");
-    emitLine("");
-    emitLine("namespace Option {");
-    indent++;
-    emitLine("template<typename T> bool isSome(const std::optional<T>& opt) { return opt.has_value(); }");
-    emitLine("template<typename T> bool isNone(const std::optional<T>& opt) { return !opt.has_value(); }");
-    emitLine("template<typename T> T unwrap(const std::optional<T>& opt) { return opt.value(); }");
-    indent--;
-    emitLine("}");
-    emitLine("");
-    emitLine("inline void print(const std::string& s) { IO::print(s); }");
-    emitLine("inline void println(const std::string& s) { IO::println(s); }");
-    emitLine("inline std::string readLine() { return IO::readLine(); }");
-    emitLine("inline std::optional<int> parseInt(const std::string& s) { return Parse::parseInt(s); }");
-    emitLine("inline std::optional<double> parseFloat(const std::string& s) { return Parse::parseFloat(s); }");
-    indent--;
-    emitLine("}");
-    emitLine("");
-    emitLine("template<typename T> std::string mg_to_string(const T& val) { std::ostringstream oss; oss << val; return oss.str(); }");
-    emitLine("");
+    // Use the new stdlib generator
+    out << StdLibGenerator::generateAll();
 }
 
 std::string CodeGen::generate(const Program& prog) {
     out.str(""); out.clear();
-    for (const auto& u : prog.usings) if (!u.path.empty()) usedModules.insert(u.path[0]);
+    
+    // Generate standard library
     genStdLib();
-    for (const auto& cls : prog.classes) genClass(cls);
+    
+    // Forward declarations for classes
+    for (const auto& cls : prog.classes) {
+        emitLine("class " + cls.name + ";");
+    }
+    emitLine("");
+    
+    // Generate classes
+    for (const auto& cls : prog.classes) {
+        genClass(cls);
+    }
+    
+    // Forward declarations for functions
     for (const auto& fn : prog.functions) {
         if (fn.name != "main") {
             emit(typeToString(fn.returnType) + " " + fn.name + "(");
@@ -100,7 +63,13 @@ std::string CodeGen::generate(const Program& prog) {
         }
     }
     emitLine("");
-    for (const auto& fn : prog.functions) { genFunction(fn); emitLine(""); }
+    
+    // Generate function definitions
+    for (const auto& fn : prog.functions) {
+        genFunction(fn);
+        emitLine("");
+    }
+    
     return out.str();
 }
 
@@ -277,7 +246,6 @@ void CodeGen::genExpr(const ExprPtr& expr) {
             emit(")");
         }
         else if constexpr (std::is_same_v<T, MemberExpr>) {
-            // Check if it's a namespace access (like Std.print)
             if (auto* ident = std::get_if<IdentExpr>(&e.object->data)) {
                 if (ident->name == "Std") {
                     emit("Std::" + e.member);

@@ -1,0 +1,11 @@
+[project]
+name = "module-test-app"
+version = "0.1.0"
+authors = ["Test User <test@example.com>"]
+description = "Testing module system"
+license = "MIT"
+
+[dependencies]
+
+[build]
+optimization = "2"

@@ -1,6 +1,5 @@
 #include "lexer.hpp"
 #include <cctype>
-#include <stdexcept>
 
 std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"fn", TokenType::FN}, {"let", TokenType::LET}, {"return", TokenType::RETURN},
@@ -14,7 +13,8 @@ std::unordered_map<std::string, TokenType> Lexer::keywords = {
     {"bool", TokenType::BOOL}, {"void", TokenType::VOID}
 };
 
-Lexer::Lexer(const std::string& src) : src(src) {}
+Lexer::Lexer(const std::string& src, const std::string& filename, ErrorReporter& reporter)
+    : src(src), filename(filename), reporter(reporter) {}
 
 char Lexer::peek(int offset) {
     size_t idx = pos + offset;
@@ -39,46 +39,85 @@ void Lexer::skipComment() {
     }
 }
 
-Token Lexer::makeToken(TokenType t, const std::string& v) {
-    return {t, v, line, col};
+Token Lexer::makeToken(TokenType t, const std::string& v, int len) {
+    return {t, v, line, col - (int)v.length(), len > 0 ? len : (int)v.length()};
+}
+
+void Lexer::error(const std::string& msg, int line, int col, int len) {
+    reporter.error(msg, {filename, line, col, len});
 }
 
 Token Lexer::string() {
     int startLine = line, startCol = col;
     advance(); // opening quote
     std::string val;
+    int startPos = pos;
+    
     while (pos < src.size() && peek() != '"') {
         if (peek() == '\\') {
             advance();
+            if (pos >= src.size()) {
+                error("Unterminated string literal", startLine, startCol, pos - startPos + 1);
+                return makeToken(TokenType::STRING_LIT, val);
+            }
             char c = advance();
             switch (c) {
                 case 'n': val += '\n'; break;
                 case 't': val += '\t'; break;
                 case '\\': val += '\\'; break;
                 case '"': val += '"'; break;
-                default: val += c;
+                case 'r': val += '\r'; break;
+                default: 
+                    error("Unknown escape sequence: \\" + std::string(1, c), 
+                          line, col - 1, 2);
+                    val += c;
             }
         } else {
             val += advance();
         }
     }
-    if (pos >= src.size()) throw std::runtime_error("Unterminated string");
+    
+    if (pos >= src.size()) {
+        error("Unterminated string literal", startLine, startCol, pos - startPos);
+        return makeToken(TokenType::STRING_LIT, val);
+    }
+    
     advance(); // closing quote
-    return {TokenType::STRING_LIT, val, startLine, startCol};
+    return {TokenType::STRING_LIT, val, startLine, startCol, (int)(pos - startPos)};
 }
 
 Token Lexer::number() {
     int startLine = line, startCol = col;
     std::string val;
     bool isFloat = false;
+    int startPos = pos;
+    
     while (pos < src.size() && (std::isdigit(peek()) || peek() == '.')) {
         if (peek() == '.') {
-            if (isFloat) break;
+            // Check if it's a range operator (..) or member access
+            if (peek(1) == '.' || !std::isdigit(peek(1))) break;
+            if (isFloat) {
+                error("Invalid number: multiple decimal points", 
+                      startLine, startCol, pos - startPos + 1);
+                break;
+            }
             isFloat = true;
         }
         val += advance();
     }
-    return {isFloat ? TokenType::FLOAT_LIT : TokenType::INT_LIT, val, startLine, startCol};
+    
+    // Check for invalid suffix
+    if (pos < src.size() && (std::isalpha(peek()) || peek() == '_')) {
+        std::string suffix;
+        while (pos < src.size() && (std::isalnum(peek()) || peek() == '_')) {
+            suffix += advance();
+        }
+        error("Invalid numeric suffix: " + suffix, startLine, startCol, 
+              pos - startPos);
+    }
+    
+    return {isFloat ? TokenType::FLOAT_LIT : TokenType::INT_LIT, val, 
+            startLine, startCol, (int)val.length()};
 }
 
 Token Lexer::identifier() {
@@ -88,11 +127,12 @@ Token Lexer::identifier() {
         val += advance();
     auto it = keywords.find(val);
     TokenType type = (it != keywords.end()) ? it->second : TokenType::IDENT;
-    return {type, val, startLine, startCol};
+    return {type, val, startLine, startCol, (int)val.length()};
 }
 
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
+    
     while (pos < src.size()) {
         skipWhitespace();
         if (pos >= src.size()) break;
@@ -109,63 +149,104 @@ std::vector<Token> Lexer::tokenize() {
         
         int startLine = line, startCol = col;
         switch (c) {
-            case '+': advance(); tokens.push_back({TokenType::PLUS, "+", startLine, startCol}); break;
-            case '*': advance(); tokens.push_back({TokenType::STAR, "*", startLine, startCol}); break;
-            case '/': advance(); tokens.push_back({TokenType::SLASH, "/", startLine, startCol}); break;
-            case '%': advance(); tokens.push_back({TokenType::PERCENT, "%", startLine, startCol}); break;
-            case '(': advance(); tokens.push_back({TokenType::LPAREN, "(", startLine, startCol}); break;
-            case ')': advance(); tokens.push_back({TokenType::RPAREN, ")", startLine, startCol}); break;
-            case '{': advance(); tokens.push_back({TokenType::LBRACE, "{", startLine, startCol}); break;
-            case '}': advance(); tokens.push_back({TokenType::RBRACE, "}", startLine, startCol}); break;
-            case '[': advance(); tokens.push_back({TokenType::LBRACKET, "[", startLine, startCol}); break;
-            case ']': advance(); tokens.push_back({TokenType::RBRACKET, "]", startLine, startCol}); break;
-            case ',': advance(); tokens.push_back({TokenType::COMMA, ",", startLine, startCol}); break;
-            case ';': advance(); tokens.push_back({TokenType::SEMICOLON, ";", startLine, startCol}); break;
-            case '$': advance(); tokens.push_back({TokenType::DOLLAR, "$", startLine, startCol}); break;
-            case '.': advance(); tokens.push_back({TokenType::DOT, ".", startLine, startCol}); break;
+            case '+': advance(); tokens.push_back(makeToken(TokenType::PLUS, "+")); break;
+            case '*': advance(); tokens.push_back(makeToken(TokenType::STAR, "*")); break;
+            case '/': advance(); tokens.push_back(makeToken(TokenType::SLASH, "/")); break;
+            case '%': advance(); tokens.push_back(makeToken(TokenType::PERCENT, "%")); break;
+            case '(': advance(); tokens.push_back(makeToken(TokenType::LPAREN, "(")); break;
+            case ')': advance(); tokens.push_back(makeToken(TokenType::RPAREN, ")")); break;
+            case '{': advance(); tokens.push_back(makeToken(TokenType::LBRACE, "{")); break;
+            case '}': advance(); tokens.push_back(makeToken(TokenType::RBRACE, "}")); break;
+            case '[': advance(); tokens.push_back(makeToken(TokenType::LBRACKET, "[")); break;
+            case ']': advance(); tokens.push_back(makeToken(TokenType::RBRACKET, "]")); break;
+            case ',': advance(); tokens.push_back(makeToken(TokenType::COMMA, ",")); break;
+            case ';': advance(); tokens.push_back(makeToken(TokenType::SEMICOLON, ";")); break;
+            case '$': advance(); tokens.push_back(makeToken(TokenType::DOLLAR, "$")); break;
+            case '.': advance(); tokens.push_back(makeToken(TokenType::DOT, ".")); break;
             case ':':
                 advance();
-                if (peek() == ':') { advance(); tokens.push_back({TokenType::DOUBLE_COLON, "::", startLine, startCol}); }
-                else tokens.push_back({TokenType::COLON, ":", startLine, startCol});
+                if (peek() == ':') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::DOUBLE_COLON, "::", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::COLON, ":"));
+                }
                 break;
             case '-':
                 advance();
-                if (peek() == '>') { advance(); tokens.push_back({TokenType::ARROW, "->", startLine, startCol}); }
-                else tokens.push_back({TokenType::MINUS, "-", startLine, startCol});
+                if (peek() == '>') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::ARROW, "->", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::MINUS, "-"));
+                }
                 break;
             case '=':
                 advance();
-                if (peek() == '=') { advance(); tokens.push_back({TokenType::EQ, "==", startLine, startCol}); }
-                else if (peek() == '>') { advance(); tokens.push_back({TokenType::FAT_ARROW, "=>", startLine, startCol}); }
-                else tokens.push_back({TokenType::ASSIGN, "=", startLine, startCol});
+                if (peek() == '=') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::EQ, "==", 2)); 
+                } else if (peek() == '>') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::FAT_ARROW, "=>", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::ASSIGN, "="));
+                }
                 break;
             case '!':
                 advance();
-                if (peek() == '=') { advance(); tokens.push_back({TokenType::NE, "!=", startLine, startCol}); }
-                else tokens.push_back({TokenType::NOT, "!", startLine, startCol});
+                if (peek() == '=') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::NE, "!=", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::NOT, "!"));
+                }
                 break;
             case '<':
                 advance();
-                if (peek() == '=') { advance(); tokens.push_back({TokenType::LE, "<=", startLine, startCol}); }
-                else tokens.push_back({TokenType::LT, "<", startLine, startCol});
+                if (peek() == '=') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::LE, "<=", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::LT, "<"));
+                }
                 break;
             case '>':
                 advance();
-                if (peek() == '=') { advance(); tokens.push_back({TokenType::GE, ">=", startLine, startCol}); }
-                else tokens.push_back({TokenType::GT, ">", startLine, startCol});
+                if (peek() == '=') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::GE, ">=", 2)); 
+                } else {
+                    tokens.push_back(makeToken(TokenType::GT, ">"));
+                }
                 break;
             case '&':
                 advance();
-                if (peek() == '&') { advance(); tokens.push_back({TokenType::AND, "&&", startLine, startCol}); }
+                if (peek() == '&') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::AND, "&&", 2)); 
+                } else {
+                    error("Unexpected character '&'", startLine, startCol, 1);
+                    reporter.addNote("Did you mean '&&'?", {filename, startLine, startCol, 1});
+                }
                 break;
             case '|':
                 advance();
-                if (peek() == '|') { advance(); tokens.push_back({TokenType::OR, "||", startLine, startCol}); }
+                if (peek() == '|') { 
+                    advance(); 
+                    tokens.push_back(makeToken(TokenType::OR, "||", 2)); 
+                } else {
+                    error("Unexpected character '|'", startLine, startCol, 1);
+                    reporter.addNote("Did you mean '||'?", {filename, startLine, startCol, 1});
+                }
                 break;
             default:
-                throw std::runtime_error("Unknown character: " + std::string(1, c) + " at line " + std::to_string(line));
+                error("Unknown character: '" + std::string(1, c) + "'", 
+                      startLine, startCol, 1);
+                advance();
         }
     }
-    tokens.push_back({TokenType::EOF_TOK, "", line, col});
+    
+    tokens.push_back({TokenType::EOF_TOK, "", line, col, 0});
     return tokens;
 }

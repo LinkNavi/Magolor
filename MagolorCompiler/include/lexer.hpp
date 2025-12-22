@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "error.hpp"
 
 enum class TokenType {
     // Keywords
@@ -25,14 +26,22 @@ struct Token {
     TokenType type;
     std::string value;
     int line, col;
+    int length;
+    
+    SourceLocation loc(const std::string& file) const {
+        return {file, line, col, length};
+    }
 };
 
 class Lexer {
 public:
-    explicit Lexer(const std::string& src);
+    Lexer(const std::string& src, const std::string& filename, ErrorReporter& reporter);
     std::vector<Token> tokenize();
+    
 private:
     std::string src;
+    std::string filename;
+    ErrorReporter& reporter;
     size_t pos = 0;
     int line = 1, col = 1;
     static std::unordered_map<std::string, TokenType> keywords;
@@ -44,5 +53,7 @@ private:
     Token string();
     Token number();
     Token identifier();
-    Token makeToken(TokenType t, const std::string& v = "");
+    Token makeToken(TokenType t, const std::string& v = "", int len = 1);
+    
+    void error(const std::string& msg, int line, int col, int len = 1);
 };

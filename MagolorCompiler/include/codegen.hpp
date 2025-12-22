@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 #include <unordered_set>
-
+#include "stdlib.h"
 class CodeGen {
 public:
     std::string generate(const Program& prog);

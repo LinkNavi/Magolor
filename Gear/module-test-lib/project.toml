@@ -1,0 +1,7 @@
+[project]
+name = "testlib"
+version = "1.0.0"
+description = "Test library for module system"
+license = "MIT"
+
+[dependencies]
