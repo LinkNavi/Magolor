@@ -1,3 +1,4 @@
+// src/modules/ast.rs
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     I8, I16, I32, I64,
@@ -5,6 +6,7 @@ pub enum Type {
     F32, F64,
     String, Bool, Char, Void,
     Array(Box<Type>),
+    Object,  // New: JS-like object type
     Custom(String),
     Inferred,
 }
@@ -36,6 +38,7 @@ pub enum Expr {
     Null,
     Var(String),
     Array(Vec<Expr>),
+    Object(Vec<(String, Expr)>),  // New: Object literal {key: value, ...}
     Index { array: Box<Expr>, index: Box<Expr> },
     Field { object: Box<Expr>, field: String },
     Call { name: String, args: Vec<Expr> },
