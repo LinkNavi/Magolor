@@ -362,38 +362,63 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
               return fnType;
             }
 
-            // NEW: Check imported modules more thoroughly
+            // Check imported modules
             if (currentModule) {
-              // Check all imported modules for functions
-              for (const auto &importedModuleName :
-                   currentModule->importedModules) {
-                if (ModuleResolver::isBuiltinModule(importedModuleName)) {
-                  continue;
+              for (const auto &usingDecl : currentModule->ast.usings) {
+                std::string modulePath;
+                for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                  if (i > 0)
+                    modulePath += ".";
+                  modulePath += usingDecl.path[i];
                 }
 
-                ModulePtr importedModule =
-                    registry.getModule(importedModuleName);
-                if (importedModule) {
-                  // Check functions
-                  for (const auto &importedFn : importedModule->ast.functions) {
-                    if (importedFn.name == e.name && importedFn.isPublic) {
-                      auto fnType = std::make_shared<Type>();
-                      fnType->kind = Type::FUNCTION;
-                      fnType->returnType = importedFn.returnType;
-                      for (const auto &param : importedFn.params) {
-                        fnType->paramTypes.push_back(param.type);
+                if (ModuleResolver::isBuiltinModule(modulePath))
+                  continue;
+
+                // Search all registered modules
+                for (const auto &[regName, regModule] : registry.getModules()) {
+                  bool matches = (regName == modulePath);
+
+                  if (!matches) {
+                    // Check if modulePath ends with regName
+                    if (modulePath.size() > regName.size()) {
+                      size_t offset = modulePath.size() - regName.size();
+                      if (modulePath[offset - 1] == '.' &&
+                          modulePath.substr(offset) == regName) {
+                        matches = true;
                       }
-                      return fnType;
+                    }
+                    // Check if regName ends with modulePath
+                    if (!matches && regName.size() > modulePath.size()) {
+                      size_t offset = regName.size() - modulePath.size();
+                      if (regName[offset - 1] == '.' &&
+                          regName.substr(offset) == modulePath) {
+                        matches = true;
+                      }
                     }
                   }
 
-                  // Check classes
-                  for (const auto &importedCls : importedModule->ast.classes) {
-                    if (importedCls.name == e.name && importedCls.isPublic) {
-                      auto clsType = std::make_shared<Type>();
-                      clsType->kind = Type::CLASS;
-                      clsType->className = e.name;
-                      return clsType;
+                  if (matches) {
+                    // Check functions
+                    for (const auto &importedFn : regModule->ast.functions) {
+                      if (importedFn.name == e.name && importedFn.isPublic) {
+                        auto fnType = std::make_shared<Type>();
+                        fnType->kind = Type::FUNCTION;
+                        fnType->returnType = importedFn.returnType;
+                        for (const auto &param : importedFn.params) {
+                          fnType->paramTypes.push_back(param.type);
+                        }
+                        return fnType;
+                      }
+                    }
+                    // Check classes
+                    for (const auto &importedCls : regModule->ast.classes) {
+                      if (importedCls.name == e.name) {
+                        auto clsType = std::make_shared<Type>();
+                        clsType->kind = Type::CLASS;
+                        clsType->className = e.name;
+                        return clsType;
+                      }
                     }
                   }
                 }
@@ -615,6 +640,51 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
           return fnType;
         } else if constexpr (std::is_same_v<T, NewExpr>) {
           ClassDecl *cls = lookupClass(e.className);
+
+          // If not found locally, check imported modules
+          if (!cls && currentModule) {
+            for (const auto &usingDecl : currentModule->ast.usings) {
+              std::string modulePath;
+              for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                if (i > 0)
+                  modulePath += ".";
+                modulePath += usingDecl.path[i];
+              }
+              if (ModuleResolver::isBuiltinModule(modulePath))
+                continue;
+
+              for (const auto &[regName, regModule] : registry.getModules()) {
+                bool matches = (regName == modulePath);
+                if (!matches && modulePath.size() > regName.size()) {
+                  size_t offset = modulePath.size() - regName.size();
+                  if (modulePath[offset - 1] == '.' &&
+                      modulePath.substr(offset) == regName)
+                    matches = true;
+                }
+                if (!matches && regName.size() > modulePath.size()) {
+                  size_t offset = regName.size() - modulePath.size();
+                  if (regName[offset - 1] == '.' &&
+                      regName.substr(offset) == modulePath)
+                    matches = true;
+                }
+
+                if (matches) {
+                  for (auto &importedCls : regModule->ast.classes) {
+                    if (importedCls.name == e.className) {
+                      // Register in current scope for future lookups
+                      currentScope->classes[e.className] = &importedCls;
+                      cls = &importedCls;
+                      break;
+                    }
+                  }
+                }
+                if (cls)
+                  break;
+              }
+              if (cls)
+                break;
+            }
+          }
           if (!cls) {
             errorAt("Unknown class: " + e.className, expr->loc);
             auto voidType = std::make_shared<Type>();
