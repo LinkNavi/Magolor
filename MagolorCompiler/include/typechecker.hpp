@@ -45,6 +45,10 @@ private:
   FnDecl *lookupFunction(const std::string &name);
   ClassDecl *lookupClass(const std::string &name);
 
+  // NEW: Stdlib function helpers
+  bool isStdLibFunction(const std::string &name);
+  TypePtr getStdLibReturnType(const std::string &name);
+
   // Type checking
   TypePtr checkExpr(ExprPtr expr);
   void checkStmt(StmtPtr stmt);
@@ -67,10 +71,9 @@ private:
 
   // Error reporting
   void error(const std::string &msg);
-  void errorAt(const std::string &msg, const SourceLoc &loc);  // NEW: Error with location
+  void errorAt(const std::string &msg, const SourceLoc &loc);
   void typeError(const std::string &expected, const std::string &actual);
   
   // Helper to check if expression is a module path
   bool isModulePath(ExprPtr expr);
-
 };

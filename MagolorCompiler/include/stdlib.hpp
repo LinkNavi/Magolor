@@ -7,36 +7,31 @@ public:
   static std::string generateAll() {
     std::stringstream ss;
 
-    // Required includes
     ss << generateIncludes();
     ss << "\n";
 
-    // Namespace opening
     ss << "namespace Std {\n\n";
 
-    // Generate each module
     ss << generateIO();
     ss << generateParse();
     ss << generateOption();
     ss << generateMath();
-    ss << generateString();
-    ss << generateArray();
-    ss << generateMap(); // NEW
-    ss << generateSet(); // NEW
+    ss << generateString(); // This now has indexOf and toString
+    ss << generateArray();  // This now has create()
+    ss << generateMap();
+    ss << generateSet();
     ss << generateFile();
     ss << generateNetwork();
     ss << generateTime();
     ss << generateRandom();
     ss << generateSystem();
 
-    // Top-level convenience functions
-    ss << generateTopLevel();
+    ss << generateTopLevel(); // This now has global toString
 
-    // Namespace closing
     ss << "} // namespace Std\n\n";
 
-    // Template helpers
     ss << generateTemplateHelpers();
+    ss << generateGlobalOptionHelpers(); // ADD THIS LINE
 
     return ss.str();
   }
@@ -293,7 +288,37 @@ namespace String {
         }
         return result;
     }
+     inline std::optional<int> indexOf(const std::string& s, const std::string& substr) {
+        size_t pos = s.find(substr);
+        if (pos != std::string::npos) {
+            return static_cast<int>(pos);
+        }
+        return std::nullopt;
+    }
+        // toString conversions
+    inline std::string toString(int value) {
+        return std::to_string(value);
+    }
     
+    inline std::string toString(double value) {
+        return std::to_string(value);
+    }
+    
+    inline std::string toString(bool value) {
+        return value ? "true" : "false";
+    }
+    // MISSING: toString conversion (for integers)
+    inline std::string toString(int value) {
+        return std::to_string(value);
+    }
+    
+    inline std::string toString(double value) {
+        return std::to_string(value);
+    }
+    
+    inline std::string toString(bool value) {
+        return value ? "true" : "false";
+    }
     inline std::string repeat(const std::string& s, int count) {
         std::string result;
         for (int i = 0; i < count; i++) result += s;
@@ -308,7 +333,35 @@ namespace String {
 
 )";
   }
+  static std::string generateGlobalOptionHelpers() {
+    return R"(// ============================================================================
+// Global Option Helper Functions (no namespace required)
+// ============================================================================
+template<typename T>
+inline bool isSome(const std::optional<T>& opt) {
+    return opt.has_value();
+}
 
+template<typename T>
+inline bool isNone(const std::optional<T>& opt) {
+    return !opt.has_value();
+}
+
+template<typename T>
+inline T unwrap(const std::optional<T>& opt) {
+    if (!opt.has_value()) {
+        throw std::runtime_error("Called unwrap on None value");
+    }
+    return opt.value();
+}
+
+template<typename T>
+inline T unwrapOr(const std::optional<T>& opt, const T& defaultValue) {
+    return opt.value_or(defaultValue);
+}
+
+)";
+  }
   static std::string generateArray() {
     return R"(// ============================================================================
 // Std.Array - Array Operations
@@ -316,7 +369,10 @@ namespace String {
 namespace Array {
     template<typename T>
     inline int length(const std::vector<T>& arr) { return arr.size(); }
-    
+       template<typename T>
+    inline std::vector<T> create() {
+        return std::vector<T>();
+    }
     template<typename T>
     inline bool isEmpty(const std::vector<T>& arr) { return arr.empty(); }
     
@@ -2242,7 +2298,21 @@ inline void print(const std::string& s) { IO::print(s); }
 inline void println(const std::string& s) { IO::println(s); }
 inline void print(const char* s) { IO::print(std::string(s)); }
 inline void println(const char* s) { IO::println(std::string(s)); }
+inline std::string toString(int value) {
+    return std::to_string(value);
+}
 
+inline std::string toString(double value) {
+    return std::to_string(value);
+}
+
+inline std::string toString(bool value) {
+    return value ? "true" : "false";
+}
+
+inline std::string toString(const std::string& value) {
+    return value;
+}
 inline std::string readLine() { return IO::readLine(); }
 inline std::optional<int> parseInt(const std::string& s) { return Parse::parseInt(s); }
 inline std::optional<double> parseFloat(const std::string& s) { return Parse::parseFloat(s); }
