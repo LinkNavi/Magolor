@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <vector>
 #include <set>
-
+#include <algorithm>
 namespace fs = std::filesystem;
 
 void showHelp() {
