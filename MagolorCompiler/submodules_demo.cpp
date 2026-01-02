@@ -493,7 +493,6 @@ namespace Network {
         #include <ws2tcpip.h>
         #pragma comment(lib, "ws2_32.lib")
         typedef SOCKET socket_t;
-        #define CLOSE_SOCKET closesocket
         #define INVALID_SOCKET INVALID_SOCKET
     #else
         #include <sys/socket.h>
@@ -502,7 +501,6 @@ namespace Network {
         #include <unistd.h>
         #include <fcntl.h>
         typedef int socket_t;
-        #define CLOSE_SOCKET close
         #define INVALID_SOCKET -1
     #endif
     
@@ -521,10 +519,224 @@ namespace Network {
     }
     
     // ========================================================================
-    // Forward declarations for cross-references
+    // HTTP Status Codes - Define early for use throughout
     // ========================================================================
-    class HttpRequest;
-    class HttpResponse;
+    namespace Status {
+        // 2xx Success
+        constexpr int OK = 200;
+        constexpr int CREATED = 201;
+        constexpr int ACCEPTED = 202;
+        constexpr int NO_CONTENT = 204;
+        
+        // 3xx Redirection
+        constexpr int MOVED_PERMANENTLY = 301;
+        constexpr int FOUND = 302;
+        constexpr int SEE_OTHER = 303;
+        constexpr int NOT_MODIFIED = 304;
+        constexpr int TEMPORARY_REDIRECT = 307;
+        constexpr int PERMANENT_REDIRECT = 308;
+        
+        // 4xx Client Errors
+        constexpr int BAD_REQUEST = 400;
+        constexpr int UNAUTHORIZED = 401;
+        constexpr int FORBIDDEN = 403;
+        constexpr int NOT_FOUND = 404;
+        constexpr int METHOD_NOT_ALLOWED = 405;
+        constexpr int CONFLICT = 409;
+        constexpr int GONE = 410;
+        constexpr int PAYLOAD_TOO_LARGE = 413;
+        constexpr int URI_TOO_LONG = 414;
+        constexpr int UNSUPPORTED_MEDIA_TYPE = 415;
+        constexpr int TOO_MANY_REQUESTS = 429;
+        
+        // 5xx Server Errors
+        constexpr int INTERNAL_SERVER_ERROR = 500;
+        constexpr int NOT_IMPLEMENTED = 501;
+        constexpr int BAD_GATEWAY = 502;
+        constexpr int SERVICE_UNAVAILABLE = 503;
+        constexpr int GATEWAY_TIMEOUT = 504;
+        
+        inline std::string toString(int code) {
+            switch (code) {
+                case 200: return "OK";
+                case 201: return "Created";
+                case 202: return "Accepted";
+                case 204: return "No Content";
+                case 301: return "Moved Permanently";
+                case 302: return "Found";
+                case 303: return "See Other";
+                case 304: return "Not Modified";
+                case 307: return "Temporary Redirect";
+                case 308: return "Permanent Redirect";
+                case 400: return "Bad Request";
+                case 401: return "Unauthorized";
+                case 403: return "Forbidden";
+                case 404: return "Not Found";
+                case 405: return "Method Not Allowed";
+                case 409: return "Conflict";
+                case 410: return "Gone";
+                case 413: return "Payload Too Large";
+                case 414: return "URI Too Long";
+                case 415: return "Unsupported Media Type";
+                case 429: return "Too Many Requests";
+                case 500: return "Internal Server Error";
+                case 501: return "Not Implemented";
+                case 502: return "Bad Gateway";
+                case 503: return "Service Unavailable";
+                case 504: return "Gateway Timeout";
+                default: return "Unknown";
+            }
+        }
+    }
+    
+    // ========================================================================
+    // Cookie Management - Define early
+    // ========================================================================
+    struct Cookie {
+        std::string name;
+        std::string value;
+        std::string path = "/";
+        std::string domain;
+        int maxAge = -1;
+        bool httpOnly = false;
+        bool secure = false;
+        std::string sameSite = "Lax";
+        
+        std::string serialize() const {
+            std::string result = name + "=" + value;
+            if (!path.empty()) result += "; Path=" + path;
+            if (!domain.empty()) result += "; Domain=" + domain;
+            if (maxAge >= 0) result += "; Max-Age=" + std::to_string(maxAge);
+            if (httpOnly) result += "; HttpOnly";
+            if (secure) result += "; Secure";
+            if (!sameSite.empty()) result += "; SameSite=" + sameSite;
+            return result;
+        }
+    };
+    
+    // ========================================================================
+    // HTTP Request/Response - Define BEFORE other classes use them
+    // ========================================================================
+    struct HttpRequest {
+        std::string method;
+        std::string path;
+        std::string version;
+        std::unordered_map<std::string, std::string> headers;
+        std::unordered_map<std::string, std::string> query;
+        std::unordered_map<std::string, std::string> cookies;
+        std::unordered_map<std::string, std::string> formData;
+        std::string body;
+        std::string remoteAddr;
+        
+        std::string getHeader(const std::string& name) const {
+            auto it = headers.find(name);
+            return it != headers.end() ? it->second : "";
+        }
+        
+        std::string getQuery(const std::string& name) const {
+            auto it = query.find(name);
+            return it != query.end() ? it->second : "";
+        }
+        
+        std::string getCookie(const std::string& name) const {
+            auto it = cookies.find(name);
+            return it != cookies.end() ? it->second : "";
+        }
+        
+        std::string getForm(const std::string& name) const {
+            auto it = formData.find(name);
+            return it != formData.end() ? it->second : "";
+        }
+        
+        bool isJson() const {
+            return getHeader("Content-Type").find("application/json") != std::string::npos;
+        }
+        
+        bool isForm() const {
+            auto ct = getHeader("Content-Type");
+            return ct.find("application/x-www-form-urlencoded") != std::string::npos ||
+                   ct.find("multipart/form-data") != std::string::npos;
+        }
+        
+        bool acceptsJson() const {
+            return getHeader("Accept").find("application/json") != std::string::npos;
+        }
+        
+        bool acceptsHtml() const {
+            return getHeader("Accept").find("text/html") != std::string::npos;
+        }
+    };
+    
+    struct HttpResponse {
+        int statusCode;
+        std::unordered_map<std::string, std::string> headers;
+        std::vector<Cookie> cookies;
+        std::string body;
+        
+        HttpResponse() : statusCode(200) {
+            headers["Content-Type"] = "text/html; charset=utf-8";
+            headers["Server"] = "Magolor/1.0";
+            headers["X-Powered-By"] = "Magolor";
+        }
+        
+        void setHeader(const std::string& name, const std::string& value) {
+            headers[name] = value;
+        }
+        
+        void setCookie(const Cookie& cookie) {
+            cookies.push_back(cookie);
+        }
+        
+        void setJson() {
+            headers["Content-Type"] = "application/json; charset=utf-8";
+        }
+        
+        void setText() {
+            headers["Content-Type"] = "text/plain; charset=utf-8";
+        }
+        
+        void setHtml() {
+            headers["Content-Type"] = "text/html; charset=utf-8";
+        }
+        
+        void setXml() {
+            headers["Content-Type"] = "application/xml; charset=utf-8";
+        }
+        
+        void setCors(const std::string& origin = "*") {
+            headers["Access-Control-Allow-Origin"] = origin;
+            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
+            headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+            headers["Access-Control-Allow-Credentials"] = "true";
+        }
+        
+        void setCache(int maxAge) {
+            headers["Cache-Control"] = "public, max-age=" + std::to_string(maxAge);
+        }
+        
+        void setNoCache() {
+            headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            headers["Pragma"] = "no-cache";
+            headers["Expires"] = "0";
+        }
+        
+        std::string serialize() const {
+            std::ostringstream oss;
+            oss << "HTTP/1.1 " << statusCode << " " << Status::toString(statusCode) << "\r\n";
+            oss << "Content-Length: " << body.size() << "\r\n";
+            
+            for (const auto& [name, value] : headers) {
+                oss << name << ": " << value << "\r\n";
+            }
+            
+            for (const auto& cookie : cookies) {
+                oss << "Set-Cookie: " << cookie.serialize() << "\r\n";
+            }
+            
+            oss << "\r\n" << body;
+            return oss.str();
+        }
+    };
     
     // ========================================================================
     // Submodule: Network.HTTP - HTTP-specific utilities
@@ -688,14 +900,14 @@ namespace Network {
                 return ::send(sock, (const char*)frame.data(), frame.size(), 0) > 0;
             }
             
-           void close() {
-    #ifdef PLATFORM_WINDOWS
-        closesocket(sock);
-    #else
-        ::close(sock);
-    #endif
-    connected = false;
-}
+            void closeSocket() {
+                #ifdef PLATFORM_WINDOWS
+                    closesocket(sock);
+                #else
+                    ::close(sock);
+                #endif
+                connected = false;
+            }
             
             bool isConnected() const { return connected; }
         };
@@ -735,7 +947,11 @@ namespace Network {
                 #endif
                 
                 if (::connect(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-                    CLOSE_SOCKET(sock);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(sock);
+                    #else
+                        ::close(sock);
+                    #endif
                     return false;
                 }
                 
@@ -761,7 +977,11 @@ namespace Network {
             
             void disconnect() {
                 if (connected) {
-                    CLOSE_SOCKET(sock);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(sock);
+                    #else
+                        ::close(sock);
+                    #endif
                     connected = false;
                 }
             }
@@ -798,12 +1018,20 @@ namespace Network {
                 serverAddr.sin_port = htons(port);
                 
                 if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-                    CLOSE_SOCKET(serverSocket);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(serverSocket);
+                    #else
+                        ::close(serverSocket);
+                    #endif
                     return false;
                 }
                 
                 if (listen(serverSocket, 10) < 0) {
-                    CLOSE_SOCKET(serverSocket);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(serverSocket);
+                    #else
+                        ::close(serverSocket);
+                    #endif
                     return false;
                 }
                 
@@ -821,7 +1049,11 @@ namespace Network {
             
             void stop() {
                 if (listening) {
-                    CLOSE_SOCKET(serverSocket);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(serverSocket);
+                    #else
+                        ::close(serverSocket);
+                    #endif
                     listening = false;
                 }
             }
@@ -843,7 +1075,7 @@ namespace Network {
             }
             
             ~Socket() {
-                close();
+                closeSocket();
                 cleanupNetwork();
             }
             
@@ -857,7 +1089,11 @@ namespace Network {
                 addr.sin_port = htons(port);
                 
                 if (::bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-                    CLOSE_SOCKET(sock);
+                    #ifdef PLATFORM_WINDOWS
+                        closesocket(sock);
+                    #else
+                        ::close(sock);
+                    #endif
                     return false;
                 }
                 
@@ -904,14 +1140,14 @@ namespace Network {
                 return "";
             }
             
-        void close() {
-    #ifdef PLATFORM_WINDOWS
-        closesocket(sock);
-    #else
-        ::close(sock);
-    #endif
-    connected = false;
-}
+            void closeSocket() {
+                #ifdef PLATFORM_WINDOWS
+                    closesocket(sock);
+                #else
+                    ::close(sock);
+                #endif
+                bound = false;
+            }
         };
     }
     
@@ -978,7 +1214,7 @@ namespace Network {
                     times.end()
                 );
                 
-                if (times.size() >= maxRequests) {
+                if (times.size() >= static_cast<size_t>(maxRequests)) {
                     return false;
                 }
                 
@@ -1179,105 +1415,6 @@ namespace Network {
     }
     
     // ========================================================================
-    // Main Network namespace continues...
-    // ========================================================================
-    // ========================================================================
-    // HTTP Status Codes - Complete List
-    // ========================================================================
-    namespace Status {
-        // 2xx Success
-        constexpr int OK = 200;
-        constexpr int CREATED = 201;
-        constexpr int ACCEPTED = 202;
-        constexpr int NO_CONTENT = 204;
-        
-        // 3xx Redirection
-        constexpr int MOVED_PERMANENTLY = 301;
-        constexpr int FOUND = 302;
-        constexpr int SEE_OTHER = 303;
-        constexpr int NOT_MODIFIED = 304;
-        constexpr int TEMPORARY_REDIRECT = 307;
-        constexpr int PERMANENT_REDIRECT = 308;
-        
-        // 4xx Client Errors
-        constexpr int BAD_REQUEST = 400;
-        constexpr int UNAUTHORIZED = 401;
-        constexpr int FORBIDDEN = 403;
-        constexpr int NOT_FOUND = 404;
-        constexpr int METHOD_NOT_ALLOWED = 405;
-        constexpr int CONFLICT = 409;
-        constexpr int GONE = 410;
-        constexpr int PAYLOAD_TOO_LARGE = 413;
-        constexpr int URI_TOO_LONG = 414;
-        constexpr int UNSUPPORTED_MEDIA_TYPE = 415;
-        constexpr int TOO_MANY_REQUESTS = 429;
-        
-        // 5xx Server Errors
-        constexpr int INTERNAL_SERVER_ERROR = 500;
-        constexpr int NOT_IMPLEMENTED = 501;
-        constexpr int BAD_GATEWAY = 502;
-        constexpr int SERVICE_UNAVAILABLE = 503;
-        constexpr int GATEWAY_TIMEOUT = 504;
-        
-        inline std::string toString(int code) {
-            switch (code) {
-                case 200: return "OK";
-                case 201: return "Created";
-                case 202: return "Accepted";
-                case 204: return "No Content";
-                case 301: return "Moved Permanently";
-                case 302: return "Found";
-                case 303: return "See Other";
-                case 304: return "Not Modified";
-                case 307: return "Temporary Redirect";
-                case 308: return "Permanent Redirect";
-                case 400: return "Bad Request";
-                case 401: return "Unauthorized";
-                case 403: return "Forbidden";
-                case 404: return "Not Found";
-                case 405: return "Method Not Allowed";
-                case 409: return "Conflict";
-                case 410: return "Gone";
-                case 413: return "Payload Too Large";
-                case 414: return "URI Too Long";
-                case 415: return "Unsupported Media Type";
-                case 429: return "Too Many Requests";
-                case 500: return "Internal Server Error";
-                case 501: return "Not Implemented";
-                case 502: return "Bad Gateway";
-                case 503: return "Service Unavailable";
-                case 504: return "Gateway Timeout";
-                default: return "Unknown";
-            }
-        }
-    }
-
-    // ========================================================================
-    // Cookie Management
-    // ========================================================================
-    struct Cookie {
-        std::string name;
-        std::string value;
-        std::string path = "/";
-        std::string domain;
-        int maxAge = -1;
-        bool httpOnly = false;
-        bool secure = false;
-        std::string sameSite = "Lax";
-        
-        std::string serialize() const {
-            std::string result = name + "=" + value;
-            if (!path.empty()) result += "; Path=" + path;
-            if (!domain.empty()) result += "; Domain=" + domain;
-            if (maxAge >= 0) result += "; Max-Age=" + std::to_string(maxAge);
-            if (httpOnly) result += "; HttpOnly";
-            if (secure) result += "; Secure";
-            if (!sameSite.empty()) result += "; SameSite=" + sameSite;
-            return result;
-        }
-    };
-
-    // ========================================================================
     // Session Management with Automatic Cleanup
     // ========================================================================
     class SessionStore {
@@ -1339,133 +1476,6 @@ namespace Network {
         
         void setTimeout(int seconds) {
             defaultTimeout = seconds;
-        }
-    };
-
-    // ========================================================================
-    // Enhanced HTTP Request Structure
-    // ========================================================================
-    struct HttpRequest {
-        std::string method;
-        std::string path;
-        std::string version;
-        std::unordered_map<std::string, std::string> headers;
-        std::unordered_map<std::string, std::string> query;
-        std::unordered_map<std::string, std::string> cookies;
-        std::unordered_map<std::string, std::string> formData;
-        std::string body;
-        std::string remoteAddr;
-        
-        std::string getHeader(const std::string& name) const {
-            auto it = headers.find(name);
-            return it != headers.end() ? it->second : "";
-        }
-        
-        std::string getQuery(const std::string& name) const {
-            auto it = query.find(name);
-            return it != query.end() ? it->second : "";
-        }
-        
-        std::string getCookie(const std::string& name) const {
-            auto it = cookies.find(name);
-            return it != cookies.end() ? it->second : "";
-        }
-        
-        std::string getForm(const std::string& name) const {
-            auto it = formData.find(name);
-            return it != formData.end() ? it->second : "";
-        }
-        
-        bool isJson() const {
-            return getHeader("Content-Type").find("application/json") != std::string::npos;
-        }
-        
-        bool isForm() const {
-            auto ct = getHeader("Content-Type");
-            return ct.find("application/x-www-form-urlencoded") != std::string::npos ||
-                   ct.find("multipart/form-data") != std::string::npos;
-        }
-        
-        bool acceptsJson() const {
-            return getHeader("Accept").find("application/json") != std::string::npos;
-        }
-        
-        bool acceptsHtml() const {
-            return getHeader("Accept").find("text/html") != std::string::npos;
-        }
-    };
-    
-    // ========================================================================
-    // Enhanced HTTP Response Structure
-    // ========================================================================
-    struct HttpResponse {
-        int statusCode;
-        std::unordered_map<std::string, std::string> headers;
-        std::vector<Cookie> cookies;
-        std::string body;
-        
-        HttpResponse() : statusCode(200) {
-            headers["Content-Type"] = "text/html; charset=utf-8";
-            headers["Server"] = "Magolor/1.0";
-            headers["X-Powered-By"] = "Magolor";
-        }
-        
-        void setHeader(const std::string& name, const std::string& value) {
-            headers[name] = value;
-        }
-        
-        void setCookie(const Cookie& cookie) {
-            cookies.push_back(cookie);
-        }
-        
-        void setJson() {
-            headers["Content-Type"] = "application/json; charset=utf-8";
-        }
-        
-        void setText() {
-            headers["Content-Type"] = "text/plain; charset=utf-8";
-        }
-        
-        void setHtml() {
-            headers["Content-Type"] = "text/html; charset=utf-8";
-        }
-        
-        void setXml() {
-            headers["Content-Type"] = "application/xml; charset=utf-8";
-        }
-        
-        void setCors(const std::string& origin = "*") {
-            headers["Access-Control-Allow-Origin"] = origin;
-            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
-            headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-            headers["Access-Control-Allow-Credentials"] = "true";
-        }
-        
-        void setCache(int maxAge) {
-            headers["Cache-Control"] = "public, max-age=" + std::to_string(maxAge);
-        }
-        
-        void setNoCache() {
-            headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-            headers["Pragma"] = "no-cache";
-            headers["Expires"] = "0";
-        }
-        
-        std::string serialize() const {
-            std::ostringstream oss;
-            oss << "HTTP/1.1 " << statusCode << " " << Status::toString(statusCode) << "\r\n";
-            oss << "Content-Length: " << body.size() << "\r\n";
-            
-            for (const auto& [name, value] : headers) {
-                oss << name << ": " << value << "\r\n";
-            }
-            
-            for (const auto& cookie : cookies) {
-                oss << "Set-Cookie: " << cookie.serialize() << "\r\n";
-            }
-            
-            oss << "\r\n" << body;
-            return oss.str();
         }
     };
     
@@ -1681,12 +1691,20 @@ namespace Network {
             serverAddr.sin_port = htons(port);
             
             if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-                CLOSE_SOCKET(serverSocket);
+                #ifdef PLATFORM_WINDOWS
+                    closesocket(serverSocket);
+                #else
+                    ::close(serverSocket);
+                #endif
                 throw std::runtime_error("Failed to bind to port " + std::to_string(port));
             }
             
             if (listen(serverSocket, 10) < 0) {
-                CLOSE_SOCKET(serverSocket);
+                #ifdef PLATFORM_WINDOWS
+                    closesocket(serverSocket);
+                #else
+                    ::close(serverSocket);
+                #endif
                 throw std::runtime_error("Failed to listen on socket");
             }
         }
@@ -1720,7 +1738,11 @@ namespace Network {
                 ::send(clientSocket, responseStr.c_str(), responseStr.size(), 0);
             }
             
-            CLOSE_SOCKET(clientSocket);
+            #ifdef PLATFORM_WINDOWS
+                closesocket(clientSocket);
+            #else
+                ::close(clientSocket);
+            #endif
         }
         
         HttpResponse routeRequest(const HttpRequest& req) {
@@ -1819,7 +1841,11 @@ namespace Network {
         void stop() {
             running = false;
             if (serverSocket != INVALID_SOCKET) {
-                CLOSE_SOCKET(serverSocket);
+                #ifdef PLATFORM_WINDOWS
+                    closesocket(serverSocket);
+                #else
+                    ::close(serverSocket);
+                #endif
                 serverSocket = INVALID_SOCKET;
             }
         }
