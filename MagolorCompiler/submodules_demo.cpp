@@ -688,14 +688,14 @@ namespace Network {
                 return ::send(sock, (const char*)frame.data(), frame.size(), 0) > 0;
             }
             
-            void close() {
-                if (connected) {
-                    auto frame = encodeFrame("", OpCode::CLOSE);
-                    ::send(sock, (const char*)frame.data(), frame.size(), 0);
-                    CLOSE_SOCKET(sock);
-                    connected = false;
-                }
-            }
+           void close() {
+    #ifdef PLATFORM_WINDOWS
+        closesocket(sock);
+    #else
+        ::close(sock);
+    #endif
+    connected = false;
+}
             
             bool isConnected() const { return connected; }
         };
@@ -904,13 +904,14 @@ namespace Network {
                 return "";
             }
             
-            void close() {
-                if (sock != INVALID_SOCKET) {
-                    CLOSE_SOCKET(sock);
-                    sock = INVALID_SOCKET;
-                    bound = false;
-                }
-            }
+        void close() {
+    #ifdef PLATFORM_WINDOWS
+        closesocket(sock);
+    #else
+        ::close(sock);
+    #endif
+    connected = false;
+}
         };
     }
     
@@ -2035,17 +2036,17 @@ void testHTTPMethods() {
     Std::print(std::string("\n╔═══════════════════════════════════════╗\n"));
     Std::print(std::string("║  Test 1: HTTP Methods & Headers      ║\n"));
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
-    auto methods = std::vector<int>{Std::Network::HTTP::Method::GET, Std::Network::HTTP::Method::POST, Std::Network::HTTP::Method::PUT, Std::Network::HTTP::Method::DELETE, Std::Network::HTTP::Method::PATCH};
+    auto methods = std::vector<int>{HTTP::Method.GET, HTTP::Method.POST, HTTP::Method.PUT, HTTP::Method.DELETE, HTTP::Method.PATCH};
     Std::print(std::string("\nHTTP Methods:\n"));
     for (auto& method : methods) {
-        auto methodStr = Std::Network::HTTP::methodToString(method);
+        auto methodStr = HTTP::methodToString(method);
         Std::print(((std::string("  ✓ ") + methodStr) + std::string("\n")));
     }
     Std::print(std::string("\nHTTP Headers:\n"));
-    auto headers = Std::Network::HTTP::Headers();
-    headers.set(std::string("Content-Type"), Std::Network::HTTP::ContentType::JSON);
+    auto headers = HTTP::Headers();
+    headers.set(std::string("Content-Type"), HTTP::ContentType.JSON);
     headers.set(std::string("Authorization"), std::string("Bearer secret_token_123"));
-    headers.set(std::string("Accept"), Std::Network::HTTP::ContentType::JSON);
+    headers.set(std::string("Accept"), HTTP::ContentType.JSON);
     headers.set(std::string("User-Agent"), std::string("Magolor/1.0"));
     Std::print(((std::string("  ✓ Set Content-Type: ") + headers.get(std::string("Content-Type"))) + std::string("\n")));
     Std::print(((std::string("  ✓ Set Authorization: ") + headers.get(std::string("Authorization"))) + std::string("\n")));
@@ -2053,10 +2054,10 @@ void testHTTPMethods() {
         Std::print(std::string("  ✓ Headers.has() working\n"));
     }
     Std::print(std::string("\nContent Types:\n"));
-    Std::print(((std::string("  ✓ JSON: ") + Std::Network::HTTP::ContentType::JSON) + std::string("\n")));
-    Std::print(((std::string("  ✓ HTML: ") + Std::Network::HTTP::ContentType::HTML) + std::string("\n")));
-    Std::print(((std::string("  ✓ TEXT: ") + Std::Network::HTTP::ContentType::TEXT) + std::string("\n")));
-    Std::print(((std::string("  ✓ XML: ") + Std::Network::HTTP::ContentType::XML) + std::string("\n")));
+    Std::print(((std::string("  ✓ JSON: ") + HTTP::ContentType.JSON) + std::string("\n")));
+    Std::print(((std::string("  ✓ HTML: ") + HTTP::ContentType.HTML) + std::string("\n")));
+    Std::print(((std::string("  ✓ TEXT: ") + HTTP::ContentType.TEXT) + std::string("\n")));
+    Std::print(((std::string("  ✓ XML: ") + HTTP::ContentType.XML) + std::string("\n")));
 }
 
 void testSecurity() {
@@ -2065,23 +2066,23 @@ void testSecurity() {
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\nXSS Protection:\n"));
     auto dangerousInput = std::string("<script>alert('XSS');</script>");
-    auto safe = Std::Network::Security::escapeHtml(dangerousInput);
+    auto safe = Security::escapeHtml(dangerousInput);
     Std::print(((std::string("  Input:  ") + dangerousInput) + std::string("\n")));
     Std::print(((std::string("  Output: ") + safe) + std::string("\n")));
     Std::print(std::string("  ✓ HTML escaped successfully\n"));
     Std::print(std::string("\nToken Generation:\n"));
-    auto token16 = Std::Network::Security::generateToken(16);
-    auto token32 = Std::Network::Security::generateToken(32);
-    auto token64 = Std::Network::Security::generateToken(64);
+    auto token16 = Security::generateToken(16);
+    auto token32 = Security::generateToken(32);
+    auto token64 = Security::generateToken(64);
     Std::print((std::string("  ✓ 16-char token: ") + mg_to_string(token16) + std::string(" (len: ") + mg_to_string(Std.String::length(token16)) + std::string(")\n")));
     Std::print((std::string("  ✓ 32-char token: ") + mg_to_string(token32) + std::string(" (len: ") + mg_to_string(Std.String::length(token32)) + std::string(")\n")));
     Std::print((std::string("  ✓ 64-char token: ") + mg_to_string(token64) + std::string(" (len: ") + mg_to_string(Std.String::length(token64)) + std::string(")\n")));
     Std::print(std::string("\nCSRF Protection:\n"));
-    auto csrf = Std::Network::Security::generateCsrfToken();
+    auto csrf = Security::generateCsrfToken();
     Std::print((std::string("  ✓ CSRF token: ") + mg_to_string(csrf) + std::string("\n")));
     Std::print((std::string("  ✓ Length: ") + mg_to_string(Std.String::length(csrf)) + std::string(" chars\n")));
     Std::print(std::string("\nRate Limiting:\n"));
-    auto limiter = Std::Network::Security::RateLimiter(5, 60);
+    auto limiter = Security::RateLimiter(5, 60);
     auto count = 0;
     while ((count < 7)) {
         auto allowed = limiter.allow(std::string("user123"));
@@ -2104,13 +2105,13 @@ void testJSON() {
     auto str2 = std::string("Path: C:\\Users\\Admin");
     auto str3 = std::string("New\nLine\tTab");
     Std::print(((std::string("  Original: ") + str1) + std::string("\n")));
-    Std::print(((std::string("  Escaped:  ") + Std::Network::JSON::Parser::escape(str1)) + std::string("\n")));
+    Std::print(((std::string("  Escaped:  ") + JSON::Parser.escape(str1)) + std::string("\n")));
     Std::print(std::string("  ✓ Quotes escaped\n"));
     Std::print(((std::string("  Original: ") + str2) + std::string("\n")));
-    Std::print(((std::string("  Escaped:  ") + Std::Network::JSON::Parser::escape(str2)) + std::string("\n")));
+    Std::print(((std::string("  Escaped:  ") + JSON::Parser.escape(str2)) + std::string("\n")));
     Std::print(std::string("  ✓ Backslashes escaped\n"));
     Std::print(std::string("\nJSON Array Builder:\n"));
-    auto arr = Std::Network::JSON::ArrayBuilder();
+    auto arr = JSON::ArrayBuilder();
     arr.add(std::string("first"));
     arr.add(std::string("second"));
     arr.add(42);
@@ -2129,7 +2130,7 @@ void testRouting() {
     Std::print(std::string("\nRoute Matching:\n"));
     auto pattern1 = std::string("/users/:id");
     auto path1 = std::string("/users/123");
-    auto match1 = Std::Network::Routing::matchRoute(pattern1, path1);
+    auto match1 = Routing::matchRoute(pattern1, path1);
     if (match1.matches) {
         Std::print(((std::string("  ✓ Pattern: ") + pattern1) + std::string("\n")));
         Std::print(((std::string("    Path:    ") + path1) + std::string("\n")));
@@ -2137,7 +2138,7 @@ void testRouting() {
     }
     auto pattern2 = std::string("/users/:userId/posts/:postId");
     auto path2 = std::string("/users/456/posts/789");
-    auto match2 = Std::Network::Routing::matchRoute(pattern2, path2);
+    auto match2 = Routing::matchRoute(pattern2, path2);
     if (match2.matches) {
         Std::print(((std::string("  ✓ Pattern: ") + pattern2) + std::string("\n")));
         Std::print(((std::string("    Path:    ") + path2) + std::string("\n")));
@@ -2146,7 +2147,7 @@ void testRouting() {
     }
     auto pattern3 = std::string("/api/:version/users");
     auto path3 = std::string("/api/v1");
-    auto match3 = Std::Network::Routing::matchRoute(pattern3, path3);
+    auto match3 = Routing::matchRoute(pattern3, path3);
     if ((!match3.matches)) {
         Std::print(std::string("  ✓ Non-matching route correctly rejected\n"));
         Std::print(((std::string("    Pattern: ") + pattern3) + std::string("\n")));
@@ -2160,22 +2161,22 @@ void testURLUtils() {
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\nURL Encoding:\n"));
     auto original1 = std::string("Hello World");
-    auto encoded1 = Std::Network::urlEncode(original1);
-    auto decoded1 = Std::Network::urlDecode(encoded1);
+    auto encoded1 = urlEncode(original1);
+    auto decoded1 = urlDecode(encoded1);
     Std::print(((std::string("  Original: ") + original1) + std::string("\n")));
     Std::print(((std::string("  Encoded:  ") + encoded1) + std::string("\n")));
     Std::print(((std::string("  Decoded:  ") + decoded1) + std::string("\n")));
     Std::print(std::string("  ✓ Space encoding works\n"));
     auto original2 = std::string("user@example.com");
-    auto encoded2 = Std::Network::urlEncode(original2);
-    auto decoded2 = Std::Network::urlDecode(encoded2);
+    auto encoded2 = urlEncode(original2);
+    auto decoded2 = urlDecode(encoded2);
     Std::print(((std::string("\n  Original: ") + original2) + std::string("\n")));
     Std::print(((std::string("  Encoded:  ") + encoded2) + std::string("\n")));
     Std::print(((std::string("  Decoded:  ") + decoded2) + std::string("\n")));
     Std::print(std::string("  ✓ Special character encoding works\n"));
     Std::print(std::string("\nQuery String Parsing:\n"));
     auto query = std::string("name=John&age=30&city=New+York&active=true");
-    auto params = Std::Network::parseQuery(query);
+    auto params = parseQuery(query);
     Std::print(((std::string("  Query: ") + query) + std::string("\n")));
     Std::print(std::string("  ✓ Parsed parameters:\n"));
     Std::print(((std::string("    name:   ") + params[std::string("name")]) + std::string("\n")));
@@ -2189,20 +2190,20 @@ void testStatusCodes() {
     Std::print(std::string("║  Test 6: HTTP Status Codes           ║\n"));
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\n2xx Success:\n"));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::OK) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::OK)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::CREATED) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::CREATED)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::NO_CONTENT) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::NO_CONTENT)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::OK) + std::string(" - ") + mg_to_string(:Status::toString(:Status::OK)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::CREATED) + std::string(" - ") + mg_to_string(:Status::toString(:Status::CREATED)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::NO_CONTENT) + std::string(" - ") + mg_to_string(:Status::toString(:Status::NO_CONTENT)) + std::string("\n")));
     Std::print(std::string("\n3xx Redirection:\n"));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::MOVED_PERMANENTLY) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::FOUND) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::FOUND)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::MOVED_PERMANENTLY) + std::string(" - ") + mg_to_string(:Status::toString(:Status::MOVED_PERMANENTLY)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::FOUND) + std::string(" - ") + mg_to_string(:Status::toString(:Status::FOUND)) + std::string("\n")));
     Std::print(std::string("\n4xx Client Errors:\n"));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::BAD_REQUEST) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::UNAUTHORIZED) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::FORBIDDEN) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::FORBIDDEN)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::NOT_FOUND) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::NOT_FOUND)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::BAD_REQUEST) + std::string(" - ") + mg_to_string(:Status::toString(:Status::BAD_REQUEST)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::UNAUTHORIZED) + std::string(" - ") + mg_to_string(:Status::toString(:Status::UNAUTHORIZED)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::FORBIDDEN) + std::string(" - ") + mg_to_string(:Status::toString(:Status::FORBIDDEN)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::NOT_FOUND) + std::string(" - ") + mg_to_string(:Status::toString(:Status::NOT_FOUND)) + std::string("\n")));
     Std::print(std::string("\n5xx Server Errors:\n"));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::INTERNAL_SERVER_ERROR) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR)) + std::string("\n")));
-    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::SERVICE_UNAVAILABLE) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::INTERNAL_SERVER_ERROR) + std::string(" - ") + mg_to_string(:Status::toString(:Status::INTERNAL_SERVER_ERROR)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(:Status::SERVICE_UNAVAILABLE) + std::string(" - ") + mg_to_string(:Status::toString(:Status::SERVICE_UNAVAILABLE)) + std::string("\n")));
 }
 
 void testResponseHelpers() {
@@ -2210,20 +2211,20 @@ void testResponseHelpers() {
     Std::print(std::string("║  Test 7: Response Helpers            ║\n"));
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\nJSON Response:\n"));
-    auto jsonResp = Std::Network::jsonResponse(std::string("{\"status\":\"success\"}"), Std::Network::Status::OK);
+    auto jsonResp = jsonResponse(std::string("{\"status\":\"success\"}"), Status::OK);
     Std::print((std::string("  ✓ Created JSON response with status ") + mg_to_string(jsonResp.statusCode) + std::string("\n")));
     Std::print(std::string("\nHTML Response:\n"));
-    auto htmlResp = Std::Network::htmlResponse(std::string("<h1>Hello World</h1>"), Std::Network::Status::OK);
+    auto htmlResp = htmlResponse(std::string("<h1>Hello World</h1>"), Status::OK);
     Std::print((std::string("  ✓ Created HTML response with status ") + mg_to_string(htmlResp.statusCode) + std::string("\n")));
     Std::print(std::string("\nText Response:\n"));
-    auto textResp = Std::Network::textResponse(std::string("Plain text message"), Std::Network::Status::OK);
+    auto textResp = textResponse(std::string("Plain text message"), Status::OK);
     Std::print((std::string("  ✓ Created text response with status ") + mg_to_string(textResp.statusCode) + std::string("\n")));
     Std::print(std::string("\nRedirect Response:\n"));
-    auto redirectResp = Std::Network::redirectResponse(std::string("/new-location"), 302);
+    auto redirectResp = redirectResponse(std::string("/new-location"), 302);
     Std::print(std::string("  ✓ Created redirect response to: /new-location\n"));
     Std::print((std::string("  ✓ Status: ") + mg_to_string(redirectResp.statusCode) + std::string("\n")));
     Std::print(std::string("\nError Response:\n"));
-    auto errorResp = Std::Network::errorResponse(Std::Network::Status::NOT_FOUND, std::string("Page not found"));
+    auto errorResp = errorResponse(Status::NOT_FOUND, std::string("Page not found"));
     Std::print(std::string("  ✓ Created error response\n"));
     Std::print((std::string("  ✓ Status: ") + mg_to_string(errorResp.statusCode) + std::string("\n")));
 }
@@ -2233,7 +2234,7 @@ void testCookies() {
     Std::print(std::string("║  Test 8: Cookie Management           ║\n"));
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\nCookie Creation:\n"));
-    auto sessionCookie = Std::Network::Cookie();
+    auto sessionCookie = Cookie();
     sessionCookie.name = std::string("session_id");
     sessionCookie.value = std::string("abc123xyz789");
     sessionCookie.path = std::string("/");
@@ -2243,7 +2244,7 @@ void testCookies() {
     Std::print(std::string("  Session Cookie:\n"));
     Std::print(((std::string("    ") + serialized) + std::string("\n")));
     Std::print(std::string("  ✓ HttpOnly and Secure flags set\n"));
-    auto persistentCookie = Std::Network::Cookie();
+    auto persistentCookie = Cookie();
     persistentCookie.name = std::string("user_pref");
     persistentCookie.value = std::string("dark_mode");
     persistentCookie.maxAge = 86400;

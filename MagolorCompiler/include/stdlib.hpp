@@ -844,14 +844,14 @@ namespace Network {
                 return ::send(sock, (const char*)frame.data(), frame.size(), 0) > 0;
             }
             
-            void close() {
-                if (connected) {
-                    auto frame = encodeFrame("", OpCode::CLOSE);
-                    ::send(sock, (const char*)frame.data(), frame.size(), 0);
-                    CLOSE_SOCKET(sock);
-                    connected = false;
-                }
-            }
+           void close() {
+    #ifdef PLATFORM_WINDOWS
+        closesocket(sock);
+    #else
+        ::close(sock);
+    #endif
+    connected = false;
+}
             
             bool isConnected() const { return connected; }
         };
@@ -1060,13 +1060,14 @@ namespace Network {
                 return "";
             }
             
-            void close() {
-                if (sock != INVALID_SOCKET) {
-                    CLOSE_SOCKET(sock);
-                    sock = INVALID_SOCKET;
-                    bound = false;
-                }
-            }
+        void close() {
+    #ifdef PLATFORM_WINDOWS
+        closesocket(sock);
+    #else
+        ::close(sock);
+    #endif
+    connected = false;
+}
         };
     }
     

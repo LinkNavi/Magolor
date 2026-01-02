@@ -491,8 +491,23 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
           // Check if target is also a MemberExpr (nested like Std.Math.sqrt or
           // Network.HTTP)
-          if (auto *memberObj = std::get_if<MemberExpr>(&e.object->data)) {
-            // Nested member: emit parent with ::, then this member with ::
+          bool isNamespacePath = false;
+
+          // Walk up the chain to see if root is a namespace
+          ExprPtr root = e.object;
+          while (auto *nested = std::get_if<MemberExpr>(&root->data)) {
+            root = nested->object;
+          }
+
+          if (auto *rootIdent = std::get_if<IdentExpr>(&root->data)) {
+            if (rootIdent->name == "Std" ||
+                importedNamespaces.count(rootIdent->name) > 0) {
+              isNamespacePath = true;
+            }
+          }
+
+          if (isNamespacePath) {
+            // Emit entire path with ::
             genExpr(e.object);
             emit("::" + e.member);
             return;
@@ -573,6 +588,16 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           std::string elemType = "int";
           if (!e.elements.empty() && e.elements[0]->type) {
             elemType = typeToString(e.elements[0]->type);
+          }
+
+          // NEW: Check if this looks like an enum type
+          bool isEnum = false;
+          if (!e.elements.empty()) {
+            // Check if first element is a member access with ::
+            if (auto *member = std::get_if<MemberExpr>(&e.elements[0]->data)) {
+              // This is likely an enum value
+              isEnum = true;
+            }
           }
 
           emit("std::vector<" + elemType + ">{");

@@ -67,15 +67,15 @@ fn testSecurity() {
     let token32 = Std.Network.Security::generateToken(32);
     let token64 = Std.Network.Security::generateToken(64);
     
-    Std.print($"  ✓ 16-char token: {token16} (len: {Std.String::length(token16)})\n");
-    Std.print($"  ✓ 32-char token: {token32} (len: {Std.String::length(token32)})\n");
-    Std.print($"  ✓ 64-char token: {token64} (len: {Std.String::length(token64)})\n");
+    Std.print("  ✓ 16-char token: " + token16 + " (len: " + Std.String::length(token16) + ")\n");
+    Std.print("  ✓ 32-char token: " + token32 + " (len: " + Std.String::length(token32) + ")\n");
+    Std.print("  ✓ 64-char token: " + token64 + " (len: " + Std.String::length(token64) + ")\n");
     
     // CSRF Token
     Std.print("\nCSRF Protection:\n");
     let csrf = Std.Network.Security::generateCsrfToken();
-    Std.print($"  ✓ CSRF token: {csrf}\n");
-    Std.print($"  ✓ Length: {Std.String::length(csrf)} chars\n");
+    Std.print("  ✓ CSRF token: " + csrf + "\n");
+    Std.print("  ✓ Length: " + Std.String::length(csrf) + " chars\n");
     
     // Rate Limiting
     Std.print("\nRate Limiting:\n");
@@ -85,9 +85,9 @@ fn testSecurity() {
     while (count < 7) {
         let allowed = limiter.allow("user123");
         if (allowed) {
-            Std.print($"  ✓ Request {count} allowed\n");
+            Std.print("  ✓ Request " + count + " allowed\n");
         } else {
-            Std.print($"  ✗ Request {count} blocked (rate limit reached)\n");
+            Std.print("  ✗ Request " + count + " blocked (rate limit reached)\n");
         }
         count = count + 1;
     }
@@ -213,23 +213,23 @@ fn testStatusCodes() {
     Std.print("╚═══════════════════════════════════════╝\n");
     
     Std.print("\n2xx Success:\n");
-    Std.print($"  {Std.Network.Status::OK} - {Std.Network.Status::toString(Std.Network.Status::OK)}\n");
-    Std.print($"  {Std.Network.Status::CREATED} - {Std.Network.Status::toString(Std.Network.Status::CREATED)}\n");
-    Std.print($"  {Std.Network.Status::NO_CONTENT} - {Std.Network.Status::toString(Std.Network.Status::NO_CONTENT)}\n");
+    Std.print("  " + Std.Network.Status::OK + " - " + Std.Network.Status::toString(Std.Network.Status::OK) + "\n");
+    Std.print("  " + Std.Network.Status::CREATED + " - " + Std.Network.Status::toString(Std.Network.Status::CREATED) + "\n");
+    Std.print("  " + Std.Network.Status::NO_CONTENT + " - " + Std.Network.Status::toString(Std.Network.Status::NO_CONTENT) + "\n");
     
     Std.print("\n3xx Redirection:\n");
-    Std.print($"  {Std.Network.Status::MOVED_PERMANENTLY} - {Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY)}\n");
-    Std.print($"  {Std.Network.Status::FOUND} - {Std.Network.Status::toString(Std.Network.Status::FOUND)}\n");
+    Std.print("  " + Std.Network.Status::MOVED_PERMANENTLY + " - " + Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY) + "\n");
+    Std.print("  " + Std.Network.Status::FOUND + " - " + Std.Network.Status::toString(Std.Network.Status::FOUND) + "\n");
     
     Std.print("\n4xx Client Errors:\n");
-    Std.print($"  {Std.Network.Status::BAD_REQUEST} - {Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST)}\n");
-    Std.print($"  {Std.Network.Status::UNAUTHORIZED} - {Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED)}\n");
-    Std.print($"  {Std.Network.Status::FORBIDDEN} - {Std.Network.Status::toString(Std.Network.Status::FORBIDDEN)}\n");
-    Std.print($"  {Std.Network.Status::NOT_FOUND} - {Std.Network.Status::toString(Std.Network.Status::NOT_FOUND)}\n");
+    Std.print("  " + Std.Network.Status::BAD_REQUEST + " - " + Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST) + "\n");
+    Std.print("  " + Std.Network.Status::UNAUTHORIZED + " - " + Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED) + "\n");
+    Std.print("  " + Std.Network.Status::FORBIDDEN + " - " + Std.Network.Status::toString(Std.Network.Status::FORBIDDEN) + "\n");
+    Std.print("  " + Std.Network.Status::NOT_FOUND + " - " + Std.Network.Status::toString(Std.Network.Status::NOT_FOUND) + "\n");
     
     Std.print("\n5xx Server Errors:\n");
-    Std.print($"  {Std.Network.Status::INTERNAL_SERVER_ERROR} - {Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR)}\n");
-    Std.print($"  {Std.Network.Status::SERVICE_UNAVAILABLE} - {Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE)}\n");
+    Std.print("  " + Std.Network.Status::INTERNAL_SERVER_ERROR + " - " + Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR) + "\n");
+    Std.print("  " + Std.Network.Status::SERVICE_UNAVAILABLE + " - " + Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE) + "\n");
 }
 
 fn testResponseHelpers() {
@@ -239,25 +239,25 @@ fn testResponseHelpers() {
     
     Std.print("\nJSON Response:\n");
     let jsonResp = Std.Network.jsonResponse("{\"status\":\"success\"}", Std.Network.Status::OK);
-    Std.print($"  ✓ Created JSON response with status {jsonResp.statusCode}\n");
+    Std.print("  ✓ Created JSON response with status " + jsonResp.statusCode + "\n");
     
     Std.print("\nHTML Response:\n");
     let htmlResp = Std.Network.htmlResponse("<h1>Hello World</h1>", Std.Network.Status::OK);
-    Std.print($"  ✓ Created HTML response with status {htmlResp.statusCode}\n");
+    Std.print("  ✓ Created HTML response with status " + htmlResp.statusCode + "\n");
     
     Std.print("\nText Response:\n");
     let textResp = Std.Network.textResponse("Plain text message", Std.Network.Status::OK);
-    Std.print($"  ✓ Created text response with status {textResp.statusCode}\n");
+    Std.print("  ✓ Created text response with status " + textResp.statusCode + "\n");
     
     Std.print("\nRedirect Response:\n");
     let redirectResp = Std.Network.redirectResponse("/new-location", 302);
     Std.print("  ✓ Created redirect response to: /new-location\n");
-    Std.print($"  ✓ Status: {redirectResp.statusCode}\n");
+    Std.print("  ✓ Status: " + redirectResp.statusCode + "\n");
     
     Std.print("\nError Response:\n");
     let errorResp = Std.Network.errorResponse(Std.Network.Status::NOT_FOUND, "Page not found");
     Std.print("  ✓ Created error response\n");
-    Std.print($"  ✓ Status: {errorResp.statusCode}\n");
+    Std.print("  ✓ Status: " + errorResp.statusCode + "\n");
 }
 
 fn testCookies() {
