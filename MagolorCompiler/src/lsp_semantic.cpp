@@ -646,18 +646,21 @@ if (importPath == "Std.IO") {
     import.importedSymbols = {"create", "insert", "contains", "remove",
                               "size", "isEmpty", "clear", "toArray",
                               "union_", "intersection", "difference"};
-} else if (importPath == "Std.File") {
+}  else if (importPath == "Std.File") {
     import.importedSymbols = {
         // Path / FS utilities
         "exists", "isFile", "isDirectory", "createDir",
         "remove", "removeAll", "copy", "rename", "size",
-
-        // File I/O (DB-ready)
+        
+        // File I/O functions
+        "readFile", "writeFile", "appendFile",
+        
+        // Low-level file operations
         "Handle", "Mode", "Seek", "open", "close", "read",
         "write", "read_bytes", "write_u32", "write_u64",
         "seek", "tell", "flush"
     };
-} else if (importPath == "Std.Time") {
+}else if (importPath == "Std.Time") {
     import.importedSymbols = {"now", "sleep", "timestamp"};
 } else if (importPath == "Std.Random") {
     import.importedSymbols = {"randInt", "randFloat", "randBool"};

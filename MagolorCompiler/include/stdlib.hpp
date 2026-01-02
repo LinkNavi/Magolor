@@ -295,18 +295,7 @@ namespace String {
         }
         return std::nullopt;
     }
-        // toString conversions
-    inline std::string toString(int value) {
-        return std::to_string(value);
-    }
-    
-    inline std::string toString(double value) {
-        return std::to_string(value);
-    }
-    
-    inline std::string toString(bool value) {
-        return value ? "true" : "false";
-    }
+     
     // MISSING: toString conversion (for integers)
     inline std::string toString(int value) {
         return std::to_string(value);
