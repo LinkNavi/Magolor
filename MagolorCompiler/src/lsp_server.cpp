@@ -570,7 +570,77 @@ void MagolorLanguageServer::handleHover(const Message &msg) {
     transport.respond(msg.id.value(), JsonValue());
   }
 }
+void MagolorLanguageServer::handleRangeFormatting(const Message& msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  Range range;
+  range.start.line = msg.params["range"]["start"]["line"].asInt();
+  range.start.character = msg.params["range"]["start"]["character"].asInt();
+  range.end.line = msg.params["range"]["end"]["line"].asInt();
+  range.end.character = msg.params["range"]["end"]["character"].asInt();
 
+  auto* doc = documents.get(uri);
+  if (!doc) {
+    transport.respond(msg.id.value(), JsonValue::array());
+    return;
+  }
+
+  std::string formatted = formatRange(doc->content, range);
+
+  JsonValue edit = JsonValue::object();
+  edit["range"] = rangeToJson(range);
+  edit["newText"] = formatted;
+
+  JsonValue edits = JsonValue::array();
+  edits.push(edit);
+
+  transport.respond(msg.id.value(), edits);
+}
+
+void MagolorLanguageServer::handleOnTypeFormatting(const Message& msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  Position pos;
+  pos.line = msg.params["position"]["line"].asInt();
+  pos.character = msg.params["position"]["character"].asInt();
+
+  auto* doc = documents.get(uri);
+  if (!doc) {
+    transport.respond(msg.id.value(), JsonValue::array());
+    return;
+  }
+
+  // Simple on-type formatting: just return empty for now
+  // Could add auto-indent logic here
+  transport.respond(msg.id.value(), JsonValue::array());
+}
+
+std::string MagolorLanguageServer::formatRange(const std::string& content, Range range) {
+  std::istringstream input(content);
+  std::stringstream result;
+  std::string line;
+  int currentLine = 0;
+  int indentLevel = 0;
+
+  while (std::getline(input, line)) {
+    if (currentLine >= range.start.line && currentLine <= range.end.line) {
+      size_t start = line.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        result << "\n";
+      } else {
+        std::string trimmed = line.substr(start);
+        
+        if (trimmed[0] == '}') indentLevel--;
+        
+        for (int i = 0; i < indentLevel; i++) result << "    ";
+        result << trimmed << "\n";
+        
+        if (trimmed.back() == '{') indentLevel++;
+      }
+    }
+    currentLine++;
+  }
+
+  return result.str();
+}
 void MagolorLanguageServer::handleDefinition(const Message &msg) {
   auto &td = msg.params["textDocument"];
   std::string uri = td["uri"].asString();

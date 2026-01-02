@@ -161,11 +161,11 @@ std::string CodeGen::generate(const Program &prog) {
 
 void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("class " + cls.name + " {");
-
+  
   // Separate public and private
   bool hasPublic = false;
   bool hasPrivate = false;
-
+  
   // Check what we have
   for (const auto &f : cls.fields) {
     if (f.isPublic)
@@ -179,12 +179,12 @@ void CodeGen::genClass(const ClassDecl &cls) {
     else
       hasPrivate = true;
   }
-
+  
   // Generate public section
   if (hasPublic) {
     emitLine("public:");
     indent++;
-
+    
     // Public static constants
     for (const auto &f : cls.fields) {
       if (f.isPublic && f.isStatic) {
@@ -196,14 +196,14 @@ void CodeGen::genClass(const ClassDecl &cls) {
         emit(";\n");
       }
     }
-
+    
     // Public instance fields
     for (const auto &f : cls.fields) {
       if (f.isPublic && !f.isStatic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
-
+    
     // Public methods
     for (const auto &m : cls.methods) {
       if (m.isPublic) {
@@ -213,36 +213,60 @@ void CodeGen::genClass(const ClassDecl &cls) {
         genFunction(m, cls.name);
       }
     }
-
+    
     indent--;
   }
-
+  
   // Generate private section
   if (hasPrivate) {
     emitLine("private:");
     indent++;
-
+    
     // Private fields
     for (const auto &f : cls.fields) {
       if (!f.isPublic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
-
+    
     // Private methods
     for (const auto &m : cls.methods) {
       if (!m.isPublic) {
         genFunction(m, cls.name);
       }
     }
-
+    
     indent--;
   }
-
-  emitLine("};");
+  
+  emitLine("};");  // Close the class definition
+  emitLine("");
+  
+  // NEW: Auto-generate operator<< for printing (OUTSIDE the class)
+  emitLine("// Auto-generated print support");
+  emitLine("inline std::ostream& operator<<(std::ostream& os, const " +
+           cls.name + "& obj) {");
+  indent++;
+  emitLine("os << \"" + cls.name + " { \";");
+  
+  // Print public fields
+  bool first = true;
+  for (const auto &f : cls.fields) {
+    if (f.isPublic && !f.isStatic) {
+      if (!first) {
+        emitLine("os << \", \";");
+      }
+      emitLine("os << \"" + f.name + ": \" << obj." + f.name + ";");
+      first = false;
+    }
+  }
+  
+ emitLine("os << \" }\\n\";"); 
+  emitLine("return os;");
+  indent--;
+  emitLine("}");
   emitLine("");
 }
-
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
   std::string retType = typeToString(fn.returnType);
   if (fn.name == "main" && className.empty())

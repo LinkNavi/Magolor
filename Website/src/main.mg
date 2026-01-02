@@ -20,5 +20,6 @@ fn main() {
     Std.print("Server is ready! Visit http://localhost:8080/\n");
     let p = createPackage("SlateDB");
 
+    Std.print(p);
     server.start();
 }

@@ -350,45 +350,7 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
         } else if constexpr (std::is_same_v<T, IdentExpr>) {
           TypePtr varType = lookupVar(e.name);
           if (!varType) {
-            // Check if it's a namespace/module from using or cimport
-            if (currentModule) {
-              // Check using declarations
-              for (const auto &usingDecl : currentModule->ast.usings) {
-                if (!usingDecl.path.empty() && usingDecl.path[0] == e.name) {
-                  // This is a module/namespace
-                  auto moduleType = std::make_shared<Type>();
-                  moduleType->kind = Type::CLASS;
-                  moduleType->className = e.name;
-                  return moduleType;
-                }
-              }
-
-              // Check cimports
-              for (const auto &importedModuleName :
-                   currentModule->importedModules) {
-                if (ModuleResolver::isBuiltinModule(importedModuleName)) {
-                  continue; // Skip built-in modules
-                }
-
-                ModulePtr importedModule =
-                    ModuleRegistry::instance().getModule(importedModuleName);
-                if (importedModule) {
-                  // Check functions in imported module
-                  for (const auto &fn : importedModule->ast.functions) {
-                    if (fn.name == e.name && fn.isPublic) {
-                      // Found it! Create function type
-                      auto fnType = std::make_shared<Type>();
-                      fnType->kind = Type::FUNCTION;
-                      fnType->returnType = fn.returnType;
-                      for (const auto &param : fn.params) {
-                        fnType->paramTypes.push_back(param.type);
-                      }
-                      return fnType;
-                    }
-                  }
-                }
-              }
-            } // Try functions
+            // Check functions in current module
             FnDecl *fn = lookupFunction(e.name);
             if (fn) {
               auto fnType = std::make_shared<Type>();
@@ -400,6 +362,55 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
               return fnType;
             }
 
+            // NEW: Check imported modules more thoroughly
+            if (currentModule) {
+              // Check all imported modules for functions
+              for (const auto &importedModuleName :
+                   currentModule->importedModules) {
+                if (ModuleResolver::isBuiltinModule(importedModuleName)) {
+                  continue;
+                }
+
+                ModulePtr importedModule =
+                    registry.getModule(importedModuleName);
+                if (importedModule) {
+                  // Check functions
+                  for (const auto &importedFn : importedModule->ast.functions) {
+                    if (importedFn.name == e.name && importedFn.isPublic) {
+                      auto fnType = std::make_shared<Type>();
+                      fnType->kind = Type::FUNCTION;
+                      fnType->returnType = importedFn.returnType;
+                      for (const auto &param : importedFn.params) {
+                        fnType->paramTypes.push_back(param.type);
+                      }
+                      return fnType;
+                    }
+                  }
+
+                  // Check classes
+                  for (const auto &importedCls : importedModule->ast.classes) {
+                    if (importedCls.name == e.name && importedCls.isPublic) {
+                      auto clsType = std::make_shared<Type>();
+                      clsType->kind = Type::CLASS;
+                      clsType->className = e.name;
+                      return clsType;
+                    }
+                  }
+                }
+              }
+
+              // Check for namespace/module references
+              for (const auto &usingDecl : currentModule->ast.usings) {
+                if (!usingDecl.path.empty() && usingDecl.path[0] == e.name) {
+                  auto moduleType = std::make_shared<Type>();
+                  moduleType->kind = Type::CLASS;
+                  moduleType->className = e.name;
+                  return moduleType;
+                }
+              }
+            }
+
+            // Only error if we really can't find it anywhere
             errorAt("Undefined variable: " + e.name, expr->loc);
             auto errorType = std::make_shared<Type>();
             errorType->kind = Type::VOID;

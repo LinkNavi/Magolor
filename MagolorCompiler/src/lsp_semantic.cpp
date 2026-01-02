@@ -7,7 +7,31 @@ void SemanticAnalyzer::analyze(const std::string &uri,
                                const std::string &content) {
   extractSymbols(uri, content);
 }
-
+// Helper function to convert TypePtr to string
+std::string typeToString(const TypePtr& type) {
+    if (!type) return "void";
+    
+    switch (type->kind) {
+        case Type::INT: return "int";
+        case Type::FLOAT: return "float";
+        case Type::STRING: return "string";
+        case Type::BOOL: return "bool";
+        case Type::VOID: return "void";
+        case Type::CLASS: return type->className;
+        case Type::OPTION: return "Option<" + typeToString(type->innerType) + ">";
+        case Type::ARRAY: return "Array<" + typeToString(type->innerType) + ">";
+        case Type::FUNCTION: {
+            std::string result = "fn(";
+            for (size_t i = 0; i < type->paramTypes.size(); i++) {
+                if (i > 0) result += ", ";
+                result += typeToString(type->paramTypes[i]);
+            }
+            result += ") -> " + typeToString(type->returnType);
+            return result;
+        }
+    }
+    return "unknown";
+}
 void SemanticAnalyzer::extractSymbols(const std::string &uri,
                                       const std::string &content) {
   std::vector<SymbolPtr> symbols;
@@ -205,13 +229,71 @@ std::vector<SymbolPtr> SemanticAnalyzer::resolveImportedSymbols(const std::strin
     }
     
     Scope* scope = it->second.get();
+    
+    // Get project context to access actual module files
+    auto project = ProjectManager::instance().getProjectForFile(uri);
+    if (!project) {
+        return symbols;
+    }
+    
     for (const auto& import : scope->imports) {
-        auto importedSymbols = getSymbolsFromModule(import.fullPath);
-        symbols.insert(symbols.end(), importedSymbols.begin(), importedSymbols.end());
+        // Skip built-in modules - they're handled separately
+        if (ModuleResolver::isBuiltinModule(import.fullPath)) {
+            continue;
+        }
+        
+        // Try to get the actual module
+        auto module = project->registry.getModule(import.fullPath);
+        if (!module) {
+            continue;
+        }
+        
+        // Extract symbols from the actual module AST
+        for (const auto& fn : module->ast.functions) {
+            if (fn.isPublic) {
+                auto sym = std::make_shared<Symbol>();
+                sym->name = fn.name;
+                sym->kind = SymbolKind::Function;
+                sym->isPublic = true;
+                sym->isCallable = true;
+                
+                // Build detail string
+                sym->detail = "(";
+                for (size_t i = 0; i < fn.params.size(); i++) {
+                    if (i > 0) sym->detail += ", ";
+                    sym->detail += fn.params[i].name + ": " + typeToString(fn.params[i].type);
+                }
+                sym->detail += ") -> " + typeToString(fn.returnType);
+                
+                sym->definition.uri = module->filepath;
+                sym->definition.range.start.line = fn.loc.line;
+                sym->definition.range.start.character = fn.loc.col;
+                
+                symbols.push_back(sym);
+            }
+        }
+        
+        // Extract classes
+        for (const auto& cls : module->ast.classes) {
+            if (cls.isPublic) {
+                auto sym = std::make_shared<Symbol>();
+                sym->name = cls.name;
+                sym->kind = SymbolKind::Class;
+                sym->isPublic = true;
+                sym->isCallable = false;
+                
+                sym->definition.uri = module->filepath;
+                sym->definition.range.start.line = cls.loc.line;
+                sym->definition.range.start.character = cls.loc.col;
+                
+                symbols.push_back(sym);
+            }
+        }
     }
     
     return symbols;
 }
+
 
 SymbolPtr SemanticAnalyzer::findSymbolInImports(const std::string& uri, const std::string& symbolName) {
     auto importedSymbols = resolveImportedSymbols(uri);
@@ -448,7 +530,7 @@ void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
         "jsonResponse",     "htmlResponse", "textResponse",
         "redirectResponse", "urlEncode",    "urlDecode",
         "parseQuery",       "ping",         "getLocalIP",
-        "httpGet",          "Status"};
+        "httpGet",          "Status", "serveFile"};  // Added serveFile
   } else if (importPath == "Std.Math") {
     import.importedSymbols = {
         "sqrt",  "sin", "cos", "tan",   "asin",  "acos", "atan",  "atan2",
@@ -485,11 +567,15 @@ void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
     import.importedSymbols = {"randInt", "randFloat", "randBool"};
   } else if (importPath == "Std.System") {
     import.importedSymbols = {"exit", "getEnv", "execute"};
+  } else {
+    // Not a built-in module - it's a user module
+    // The import will be resolved later by resolveImportedSymbols
+    // Just mark it as an import so we know to look it up later
   }
 
-  if (!import.importedSymbols.empty()) {
-    scope->imports.push_back(import);
-  }
+  // Always add the import, even if importedSymbols is empty
+  // (user modules will be resolved dynamically)
+  scope->imports.push_back(import);
 }
 
 std::vector<std::string>
@@ -509,3 +595,5 @@ SemanticAnalyzer::getImportedModules(const std::string &uri) {
 
   return modules;
 }
+
+

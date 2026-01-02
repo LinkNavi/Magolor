@@ -2112,10 +2112,25 @@ namespace Network {
   }
   static std::string generateTopLevel() {
     return R"(// ============================================================================
-// Top-level convenience functions
+// Top-level convenience functions with universal print support
 // ============================================================================
+// Universal print - works with any type
+template<typename T>
+inline void print(const T& val) { 
+    IO::print(mg_to_string(val)); 
+}
+
+template<typename T>
+inline void println(const T& val) { 
+    IO::println(mg_to_string(val)); 
+}
+
+// String overloads for efficiency
 inline void print(const std::string& s) { IO::print(s); }
 inline void println(const std::string& s) { IO::println(s); }
+inline void print(const char* s) { IO::print(std::string(s)); }
+inline void println(const char* s) { IO::println(std::string(s)); }
+
 inline std::string readLine() { return IO::readLine(); }
 inline std::optional<int> parseInt(const std::string& s) { return Parse::parseInt(s); }
 inline std::optional<double> parseFloat(const std::string& s) { return Parse::parseFloat(s); }
@@ -2129,6 +2144,7 @@ inline std::optional<double> parseFloat(const std::string& s) { return Parse::pa
 // ============================================================================
 template<typename T>
 inline std::string mg_to_string(const T& val) { 
+    // Try to use << operator if available
     std::ostringstream oss; 
     oss << val; 
     return oss.str(); 
@@ -2142,6 +2158,15 @@ inline std::string mg_to_string(const bool& val) {
 template<>
 inline std::string mg_to_string(const std::string& val) {
     return val;
+}
+
+// Support for pointers to objects (for class instances)
+template<typename T>
+inline std::string mg_to_string(const T* val) {
+    if (!val) return "null";
+    std::ostringstream oss;
+    oss << "<" << typeid(T).name() << " @ " << (void*)val << ">";
+    return oss.str();
 }
 
 )";
