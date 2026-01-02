@@ -489,7 +489,8 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
           emit(")");
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
-          // Check if target is also a MemberExpr (nested like Std.Math.sqrt)
+          // Check if target is also a MemberExpr (nested like Std.Math.sqrt or
+          // Network.HTTP)
           if (auto *memberObj = std::get_if<MemberExpr>(&e.object->data)) {
             // Nested member: emit parent with ::, then this member with ::
             genExpr(e.object);
@@ -504,9 +505,13 @@ void CodeGen::genExpr(const ExprPtr &expr) {
               return;
             }
 
-            // Check for built-in namespaces
+            // Check for built-in namespaces OR any capitalized identifier
+            // followed by a member This allows Network.HTTP, Network.Security,
+            // etc. to work
             if (ident->name == "Std" || ident->name == "std" ||
-                importedNamespaces.count(ident->name) > 0) {
+                importedNamespaces.count(ident->name) > 0 ||
+                (ident->name.length() > 0 && std::isupper(ident->name[0]))) {
+              // Treat as namespace access - use ::
               emit(ident->name + "::" + e.member);
               return;
             }

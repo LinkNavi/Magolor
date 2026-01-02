@@ -1,5 +1,12 @@
+// src/lsp_completion.cpp
 #include "lsp_completion.hpp"
+#include "stdlib_parser.hpp"
 #include <algorithm>
+#include <set>
+
+// Cache the parsed stdlib functions (parse once at startup)
+static std::vector<StdLibFunction> g_stdlibFunctions;
+static bool g_stdlibParsed = false;
 
 std::vector<CompletionSnippet> CompletionProvider::getBuiltinSnippets() {
   return {
@@ -59,7 +66,6 @@ bool CompletionProvider::matchesFilter(const std::string &name,
   if (filter.empty())
     return true;
 
-  // Case-insensitive prefix match
   if (name.size() < filter.size())
     return false;
 
@@ -86,7 +92,6 @@ void CompletionProvider::addCallableSymbols(JsonValue &items,
         (int)(sym->kind == SymbolKind::Method ? CompletionItemKind::Method
                                               : CompletionItemKind::Function);
 
-    // Show signature
     if (!sym->detail.empty()) {
       item["detail"] = sym->name + sym->detail;
     } else {
@@ -125,131 +130,52 @@ void CompletionProvider::addVariableSymbols(JsonValue &items,
   }
 }
 
-// NEW: Add functions from imported modules
 void CompletionProvider::addImportedFunctions(JsonValue &items,
                                               const std::string &uri,
                                               const std::string &filter) {
+  if (!g_stdlibParsed) {
+    g_stdlibFunctions = StdLibParser::parseStdLib();
+    g_stdlibParsed = true;
+  }
+
   auto importedModules = analyzer.getImportedModules(uri);
 
   for (const auto &modulePath : importedModules) {
-    // Map standard library modules to their functions
-    std::vector<std::pair<std::string, std::string>> functions;
+    std::string module;
+    std::string submodule;
 
-    if (modulePath == "Std.IO") {
-      functions = {
-          {"print", "print(s: string) -> void"},
-          {"println", "println(s: string) -> void"},
-          {"eprint", "eprint(s: string) -> void"},
-          {"eprintln", "eprintln(s: string) -> void"},
-          {"readLine", "readLine() -> string"},
-          {"read", "read() -> string"},
-          {"readChar", "readChar() -> char"},
-      };
-    } else if (modulePath == "Std.Math") {
-      functions = {
-          {"sqrt", "sqrt(x: float) -> float"},
-          {"sin", "sin(x: float) -> float"},
-          {"cos", "cos(x: float) -> float"},
-          {"tan", "tan(x: float) -> float"},
-          {"abs", "abs(x: float) -> float"},
-          {"pow", "pow(base: float, exp: float) -> float"},
-      };
-    } else if (modulePath == "Std.Network") {
-      functions = {
-          {"HttpServer", "HttpServer(port: int) -> HttpServer"},
-          {"jsonResponse",
-           "jsonResponse(json: string, status: int = 200) -> HttpResponse"},
-          {"htmlResponse",
-           "htmlResponse(html: string, status: int = 200) -> HttpResponse"},
-          {"textResponse",
-           "textResponse(text: string, status: int = 200) -> HttpResponse"},
-          {"redirectResponse",
-           "redirectResponse(url: string, status: int = 302) -> HttpResponse"},
-          {"urlEncode", "urlEncode(str: string) -> string"},
-          {"urlDecode", "urlDecode(str: string) -> string"},
-          {"parseQuery", "parseQuery(query: string) -> Map<string, string>"},
-          {"ping", "ping(host: string) -> bool"},
-          {"getLocalIP", "getLocalIP() -> string"},
-          {"httpGet", "httpGet(url: string) -> string"},
-      };
-    } else if (modulePath == "Std.String") {
-      functions = {
-          {"length", "length(s: string) -> int"},
-          {"isEmpty", "isEmpty(s: string) -> bool"},
-          {"trim", "trim(s: string) -> string"},
-          {"toLower", "toLower(s: string) -> string"},
-          {"toUpper", "toUpper(s: string) -> string"},
-          {"contains", "contains(s: string, substr: string) -> bool"},
-          {"split", "split(s: string, delim: char) -> Array<string>"},
-      };
-    } else if (modulePath == "Std.Array") {
-      functions = {
-          {"length", "length(arr: Array<T>) -> int"},
-          {"isEmpty", "isEmpty(arr: Array<T>) -> bool"},
-          {"push", "push(arr: Array<T>, item: T) -> void"},
-          {"pop", "pop(arr: Array<T>) -> Option<T>"},
-          {"contains", "contains(arr: Array<T>, item: T) -> bool"},
-          {"reverse", "reverse(arr: Array<T>) -> void"},
-          {"sort", "sort(arr: Array<T>) -> void"},
-      };
-    } else if (modulePath == "Std.Parse") {
-      functions = {
-          {"parseInt", "parseInt(s: string) -> Option<int>"},
-          {"parseFloat", "parseFloat(s: string) -> Option<float>"},
-          {"parseBool", "parseBool(s: string) -> Option<bool>"},
-      };
-    } else if (modulePath == "Std.Option") {
-      functions = {
-          {"isSome", "isSome(opt: Option<T>) -> bool"},
-          {"isNone", "isNone(opt: Option<T>) -> bool"},
-          {"unwrap", "unwrap(opt: Option<T>) -> T"},
-          {"unwrapOr", "unwrapOr(opt: Option<T>, default: T) -> T"},
-      };
-    } else if (modulePath == "Std.Map") {
-      functions = {
-          {"create", "create() -> HashMap<K, V>"},
-          {"insert", "insert(map: HashMap<K,V>, key: K, value: V) -> void"},
-          {"get", "get(map: HashMap<K,V>, key: K) -> Option<V>"},
-          {"contains", "contains(map: HashMap<K,V>, key: K) -> bool"},
-      };
-    } else if (modulePath == "Std.Set") {
-      functions = {
-          {"create", "create() -> HashSet<T>"},
-          {"insert", "insert(set: HashSet<T>, item: T) -> void"},
-          {"contains", "contains(set: HashSet<T>, item: T) -> bool"},
-      };
-    } else if (modulePath == "Std.File") {
-      functions = {
-          {"exists", "exists(path: string) -> bool"},
-          {"isFile", "isFile(path: string) -> bool"},
-          {"isDirectory", "isDirectory(path: string) -> bool"},
-          {"createDir", "createDir(path: string) -> bool"},
-      };
-    } else if (modulePath == "Std.Time") {
-      functions = {
-          {"now", "now() -> int"},
-          {"sleep", "sleep(milliseconds: int) -> void"},
-          {"timestamp", "timestamp() -> string"},
-      };
-    } else if (modulePath == "Std.Random") {
-      functions = {
-          {"randInt", "randInt(min: int, max: int) -> int"},
-          {"randFloat", "randFloat(min: float, max: float) -> float"},
-          {"randBool", "randBool() -> bool"},
-      };
+    if (modulePath.find("Std.") == 0) {
+      size_t moduleStart = 4;
+      size_t dotPos = modulePath.find('.', moduleStart);
+
+      if (dotPos != std::string::npos) {
+        module = modulePath.substr(moduleStart, dotPos - moduleStart);
+        submodule = modulePath.substr(dotPos + 1);
+      } else {
+        module = modulePath.substr(moduleStart);
+      }
     }
 
-    // Add each function as a completion item
-    for (const auto &[name, sig] : functions) {
-      if (!matchesFilter(name, filter))
+    for (const auto &func : g_stdlibFunctions) {
+      if (func.module != module)
+        continue;
+      if (!submodule.empty() && func.submodule != submodule)
+        continue;
+      if (!matchesFilter(func.name, filter))
         continue;
 
       JsonValue item = JsonValue::object();
-      item["label"] = name;
-      item["kind"] = (int)CompletionItemKind::Function;
-      item["detail"] = sig;
+      item["label"] = func.name;
+
+      if (func.isConstant) {
+        item["kind"] = (int)CompletionItemKind::Constant;
+      } else {
+        item["kind"] = (int)CompletionItemKind::Function;
+      }
+
+      item["detail"] = func.signature;
       item["documentation"] = "From " + modulePath;
-      item["sortText"] = "0_" + name; // Higher priority than snippets
+      item["sortText"] = "0_" + func.name;
       items.push(item);
     }
   }
@@ -257,11 +183,47 @@ void CompletionProvider::addImportedFunctions(JsonValue &items,
 
 void CompletionProvider::addStdLibCompletions(JsonValue &items,
                                               const std::string &context) {
+  if (!g_stdlibParsed) {
+    g_stdlibFunctions = StdLibParser::parseStdLib();
+    g_stdlibParsed = true;
+  }
+
+  std::string currentModule;
+  std::string currentSubmodule;
+
   if (context.find("Std.") != std::string::npos) {
-    std::vector<std::string> stdModules = {
-        "IO",  "Parse", "Option", "Math", "String", "Array",
-        "Map", "Set",   "File",   "Time", "Random", "System"};
-    for (const auto &mod : stdModules) {
+    size_t stdPos = context.rfind("Std.");
+    if (stdPos != std::string::npos) {
+      size_t moduleStart = stdPos + 4;
+      size_t moduleEnd = context.find('.', moduleStart);
+      if (moduleEnd == std::string::npos) {
+        moduleEnd = context.find(':', moduleStart);
+      }
+      if (moduleEnd == std::string::npos) {
+        moduleEnd = context.length();
+      }
+
+      currentModule = context.substr(moduleStart, moduleEnd - moduleStart);
+
+      if (moduleEnd < context.length() &&
+          (context[moduleEnd] == '.' || context[moduleEnd] == ':')) {
+        size_t subStart = moduleEnd + (context[moduleEnd] == ':' ? 2 : 1);
+        size_t subEnd = context.find_first_of(".:( ", subStart);
+        if (subEnd == std::string::npos) {
+          subEnd = context.length();
+        }
+        currentSubmodule = context.substr(subStart, subEnd - subStart);
+      }
+    }
+  }
+
+  if (currentModule.empty() && context.find("Std.") != std::string::npos) {
+    std::set<std::string> modules;
+    for (const auto &func : g_stdlibFunctions) {
+      modules.insert(func.module);
+    }
+
+    for (const auto &mod : modules) {
       JsonValue item = JsonValue::object();
       item["label"] = mod;
       item["kind"] = (int)CompletionItemKind::Module;
@@ -269,86 +231,57 @@ void CompletionProvider::addStdLibCompletions(JsonValue &items,
       item["sortText"] = "1_" + mod;
       items.push(item);
     }
+    return;
   }
 
-  if (context.find("Std.IO.") != std::string::npos) {
-    std::vector<std::pair<std::string, std::string>> ioFuncs = {
-        {"print", "print(s: string) -> void"},
-        {"println", "println(s: string) -> void"},
-        {"eprint", "eprint(s: string) -> void"},
-        {"eprintln", "eprintln(s: string) -> void"},
-        {"readLine", "readLine() -> string"},
-        {"read", "read() -> string"},
-    };
-    for (const auto &[name, sig] : ioFuncs) {
+  if (!currentModule.empty() && currentSubmodule.empty() &&
+      (context.back() == '.' || context.back() == ':')) {
+    std::set<std::string> submodules;
+    for (const auto &func : g_stdlibFunctions) {
+      if (func.module == currentModule && !func.submodule.empty()) {
+        submodules.insert(func.submodule);
+      }
+    }
+
+    for (const auto &sub : submodules) {
       JsonValue item = JsonValue::object();
-      item["label"] = name;
-      item["kind"] = (int)CompletionItemKind::Function;
-      item["detail"] = sig;
-      item["sortText"] = "1_" + name;
+      item["label"] = sub;
+      item["kind"] = (int)CompletionItemKind::Module;
+      item["detail"] = "Std." + currentModule + "." + sub;
+      item["sortText"] = "0_" + sub;
       items.push(item);
     }
   }
 
-  if (context.find("Std.Math.") != std::string::npos) {
-    std::vector<std::pair<std::string, std::string>> mathFuncs = {
-        {"sqrt", "sqrt(x: float) -> float"},
-        {"sin", "sin(x: float) -> float"},
-        {"cos", "cos(x: float) -> float"},
-        {"tan", "tan(x: float) -> float"},
-        {"abs", "abs(x: float) -> float"},
-        {"pow", "pow(base: float, exp: float) -> float"},
-        {"PI", "PI: float = 3.14159..."},
-        {"E", "E: float = 2.71828..."},
-    };
-    for (const auto &[name, sig] : mathFuncs) {
-      JsonValue item = JsonValue::object();
-      item["label"] = name;
-      item["kind"] = (name == "PI" || name == "E")
-                         ? (int)CompletionItemKind::Constant
-                         : (int)CompletionItemKind::Function;
-      item["detail"] = sig;
-      item["sortText"] = "1_" + name;
-      items.push(item);
-    }
-  }
+  for (const auto &func : g_stdlibFunctions) {
+    bool matches = false;
 
-  if (context.find("Std.String.") != std::string::npos) {
-    std::vector<std::pair<std::string, std::string>> stringFuncs = {
-        {"length", "length(s: string) -> int"},
-        {"isEmpty", "isEmpty(s: string) -> bool"},
-        {"trim", "trim(s: string) -> string"},
-        {"toLower", "toLower(s: string) -> string"},
-        {"toUpper", "toUpper(s: string) -> string"},
-        {"contains", "contains(s: string, substr: string) -> bool"},
-        {"split", "split(s: string, delim: char) -> Array<string>"},
-    };
-    for (const auto &[name, sig] : stringFuncs) {
-      JsonValue item = JsonValue::object();
-      item["label"] = name;
-      item["kind"] = (int)CompletionItemKind::Function;
-      item["detail"] = sig;
-      item["sortText"] = "1_" + name;
-      items.push(item);
+    if (!currentSubmodule.empty()) {
+      matches =
+          (func.module == currentModule && func.submodule == currentSubmodule);
+    } else if (!currentModule.empty()) {
+      matches = (func.module == currentModule && func.submodule.empty());
     }
-  }
 
-  if (context.find("Std.Array.") != std::string::npos) {
-    std::vector<std::pair<std::string, std::string>> arrayFuncs = {
-        {"length", "length(arr: Array<T>) -> int"},
-        {"isEmpty", "isEmpty(arr: Array<T>) -> bool"},
-        {"push", "push(arr: Array<T>, item: T) -> void"},
-        {"pop", "pop(arr: Array<T>) -> Option<T>"},
-        {"contains", "contains(arr: Array<T>, item: T) -> bool"},
-        {"reverse", "reverse(arr: Array<T>) -> void"},
-        {"sort", "sort(arr: Array<T>) -> void"},
-    };
-    for (const auto &[name, sig] : arrayFuncs) {
+    if (matches) {
       JsonValue item = JsonValue::object();
-      item["label"] = name;
-      item["kind"] = (int)CompletionItemKind::Function;
-      item["detail"] = sig;
-      item["sortText"] = "1_" + name;
+      item["label"] = func.name;
+
+      if (func.isConstant) {
+        item["kind"] = (int)CompletionItemKind::Constant;
+      } else {
+        item["kind"] = (int)CompletionItemKind::Function;
+      }
+
+      item["detail"] = func.signature;
+
+      std::string fullPath = "Std." + func.module;
+      if (!func.submodule.empty()) {
+        fullPath += "." + func.submodule;
+      }
+      item["documentation"] = "From " + fullPath;
+
+      item["sortText"] = "1_" + func.name;
       items.push(item);
     }
   }
@@ -359,7 +292,6 @@ JsonValue CompletionProvider::provideCompletions(const std::string &uri,
                                                  const std::string &lineText) {
   JsonValue items = JsonValue::array();
 
-  // Extract the word being typed
   std::string word;
   int charPos = pos.character - 1;
   while (charPos >= 0 &&
@@ -368,21 +300,17 @@ JsonValue CompletionProvider::provideCompletions(const std::string &uri,
     charPos--;
   }
 
-  // Check context for standard library completions
   std::string context = lineText.substr(0, pos.character);
   addStdLibCompletions(items, context);
-
-  // NEW: Add functions from imported modules (highest priority)
   addImportedFunctions(items, uri, word);
 
-  // Add snippets (lower priority than actual symbols)
   for (const auto &snippet : getBuiltinSnippets()) {
     if (matchesFilter(snippet.label, word)) {
       JsonValue item = JsonValue::object();
       item["label"] = snippet.label;
       item["kind"] = (int)CompletionItemKind::Snippet;
       item["insertText"] = snippet.insertText;
-      item["insertTextFormat"] = 2; // Snippet format
+      item["insertTextFormat"] = 2;
       item["detail"] = snippet.detail;
       item["documentation"] = snippet.documentation;
       item["sortText"] = "2_" + snippet.label;
@@ -390,13 +318,9 @@ JsonValue CompletionProvider::provideCompletions(const std::string &uri,
     }
   }
 
-  // Add callable symbols (functions and methods)
   addCallableSymbols(items, uri, word);
-
-  // Add variables in scope
   addVariableSymbols(items, uri, pos, word);
 
-  // Add keywords (lowest priority)
   for (const auto &kw : getKeywords()) {
     if (matchesFilter(kw, word)) {
       JsonValue item = JsonValue::object();

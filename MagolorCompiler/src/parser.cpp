@@ -783,7 +783,18 @@ ExprPtr Parser::parsePrimary() {
     e->loc = tokenToLoc(tok);
     return e;
   }
-
+  if (check(TokenType::IDENT)) {
+    Token t = advance();
+    auto e = std::make_shared<Expr>();
+    e->data = IdentExpr{t.value};
+    e->loc = tokenToLoc(t);
+    
+    // IMPORTANT: Check if this is followed by a dot - if so, DON'T treat it as a call
+    // This allows Network.HTTP to be parsed as a namespace path
+    // The parseCall() function will handle the member access
+    
+    return e;
+  }
   if (match(TokenType::SOME)) {
     Token tok = tokens[pos - 1];
     expect(TokenType::LPAREN, "Expected '(' after 'Some'");
