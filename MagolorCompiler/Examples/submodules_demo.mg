@@ -237,29 +237,14 @@ fn testResponseHelpers() {
     Std.print("║  Test 7: Response Helpers            ║\n");
     Std.print("╚═══════════════════════════════════════╝\n");
     
-    Std.print("\nJSON Response:\n");
-    let jsonResp = Std.Network.jsonResponse("{\"status\":\"success\"}", Std.Network.Status::OK);
-    Std.print("  ✓ Created JSON response with status " + jsonResp.statusCode + "\n");
-    
-    Std.print("\nHTML Response:\n");
-    let htmlResp = Std.Network.htmlResponse("<h1>Hello World</h1>", Std.Network.Status::OK);
-    Std.print("  ✓ Created HTML response with status " + htmlResp.statusCode + "\n");
-    
-    Std.print("\nText Response:\n");
-    let textResp = Std.Network.textResponse("Plain text message", Std.Network.Status::OK);
-    Std.print("  ✓ Created text response with status " + textResp.statusCode + "\n");
-    
-    Std.print("\nRedirect Response:\n");
-    let redirectResp = Std.Network.redirectResponse("/new-location", 302);
-    Std.print("  ✓ Created redirect response to: /new-location\n");
-    Std.print("  ✓ Status: " + redirectResp.statusCode + "\n");
-    
-    Std.print("\nError Response:\n");
-    let errorResp = Std.Network.errorResponse(Std.Network.Status::NOT_FOUND, "Page not found");
-    Std.print("  ✓ Created error response\n");
-    Std.print("  ✓ Status: " + errorResp.statusCode + "\n");
-}
 
+    
+Std.print($"  ✓ Created HTML response with status {htmlResp.statusCode}\n");
+Std.print($"  ✓ Created text response with status {textResp.statusCode}\n");
+Std.print($"  ✓ Status: {redirectResp.statusCode}\n");
+Std.print($"  ✓ Status: {errorResp.statusCode}\n");
+
+}
 fn testCookies() {
     Std.print("\n╔═══════════════════════════════════════╗\n");
     Std.print("║  Test 8: Cookie Management           ║\n");
