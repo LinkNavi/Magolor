@@ -498,61 +498,173 @@ namespace Set {
 
   static std::string generateFile() {
     return R"(// ============================================================================
-// Std.File - File System Operations
+// Std.File - File System Operations (High-level & DB-friendly)
 // ============================================================================
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <vector>
+#include <string>
+
 namespace File {
+
+    // ------------------------------------------------------------------------
+    // Path utilities
+    // ------------------------------------------------------------------------
     inline bool exists(const std::string& path) {
         return std::filesystem::exists(path);
     }
-    
+
     inline bool isFile(const std::string& path) {
         return std::filesystem::is_regular_file(path);
     }
-    
+
     inline bool isDirectory(const std::string& path) {
         return std::filesystem::is_directory(path);
     }
-    
+
     inline bool createDir(const std::string& path) {
         try {
             return std::filesystem::create_directories(path);
         } catch (...) { return false; }
     }
-    
+
     inline bool remove(const std::string& path) {
         try {
             return std::filesystem::remove(path);
         } catch (...) { return false; }
     }
-    
+
     inline bool removeAll(const std::string& path) {
         try {
             std::filesystem::remove_all(path);
             return true;
         } catch (...) { return false; }
     }
-    
+
     inline bool copy(const std::string& from, const std::string& to) {
         try {
             std::filesystem::copy(from, to);
             return true;
         } catch (...) { return false; }
     }
-    
+
     inline bool rename(const std::string& from, const std::string& to) {
         try {
             std::filesystem::rename(from, to);
             return true;
         } catch (...) { return false; }
     }
-    
-    inline std::optional<int> size(const std::string& path) {
+
+    inline std::optional<uint64_t> size(const std::string& path) {
         try {
             return std::filesystem::file_size(path);
         } catch (...) { return std::nullopt; }
     }
-}
 
+    // ------------------------------------------------------------------------
+    // File handle (DB-friendly)
+    // ------------------------------------------------------------------------
+    struct Handle {
+        std::fstream stream;
+    };
+
+    enum class Mode { Read, Write, ReadWrite, Append };
+    enum class Seek { Begin, Current, End };
+
+    // ------------------------------------------------------------------------
+    // Open / Close
+    // ------------------------------------------------------------------------
+    inline std::optional<Handle> open(const std::string& path, Mode mode) {
+        std::ios::openmode m = std::ios::binary;
+
+        switch (mode) {
+            case Mode::Read:      m |= std::ios::in; break;
+            case Mode::Write:     m |= std::ios::out | std::ios::trunc; break;
+            case Mode::ReadWrite: m |= std::ios::in | std::ios::out; break;
+            case Mode::Append:    m |= std::ios::out | std::ios::app; break;
+        }
+
+        Handle h;
+        h.stream.open(path, m);
+        if (!h.stream.is_open())
+            return std::nullopt;
+
+        return h;
+    }
+
+    inline void close(Handle& h) {
+        if (h.stream.is_open())
+            h.stream.close();
+    }
+
+    // ------------------------------------------------------------------------
+    // Byte I/O
+    // ------------------------------------------------------------------------
+    inline std::vector<uint8_t> read(Handle& h, size_t bytes) {
+        std::vector<uint8_t> buffer(bytes);
+        h.stream.read(reinterpret_cast<char*>(buffer.data()), bytes);
+        buffer.resize(static_cast<size_t>(h.stream.gcount()));
+        return buffer;
+    }
+
+    inline bool write(Handle& h, const std::vector<uint8_t>& data) {
+        h.stream.write(reinterpret_cast<const char*>(data.data()), data.size());
+        return h.stream.good();
+    }
+
+    inline bool flush(Handle& h) {
+        h.stream.flush();
+        return h.stream.good();
+    }
+
+    // ------------------------------------------------------------------------
+    // Seeking
+    // ------------------------------------------------------------------------
+    inline bool seek(Handle& h, int64_t offset, Seek origin) {
+        std::ios::seekdir dir;
+        switch (origin) {
+            case Seek::Begin:   dir = std::ios::beg; break;
+            case Seek::Current: dir = std::ios::cur; break;
+            case Seek::End:     dir = std::ios::end; break;
+        }
+        h.stream.seekg(offset, dir);
+        h.stream.seekp(offset, dir);
+        return h.stream.good();
+    }
+
+    inline int64_t tell(Handle& h) {
+        return static_cast<int64_t>(h.stream.tellg());
+    }
+
+    // ------------------------------------------------------------------------
+    // High-level convenience helpers
+    // ------------------------------------------------------------------------
+    inline bool write_u32(Handle& h, uint32_t value) {
+        return write(h, std::vector<uint8_t>{
+            static_cast<uint8_t>(value & 0xFF),
+            static_cast<uint8_t>((value >> 8) & 0xFF),
+            static_cast<uint8_t>((value >> 16) & 0xFF),
+            static_cast<uint8_t>((value >> 24) & 0xFF)
+        });
+    }
+
+    inline bool write_u64(Handle& h, uint64_t value) {
+        std::vector<uint8_t> data(8);
+        for (int i = 0; i < 8; i++) {
+            data[i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFF);
+        }
+        return write(h, data);
+    }
+
+    inline bool read_bytes(Handle& h, std::vector<uint8_t>& out, size_t count) {
+        out.resize(count);
+        h.stream.read(reinterpret_cast<char*>(out.data()), count);
+        out.resize(static_cast<size_t>(h.stream.gcount()));
+        return h.stream.good();
+    }
+
+} // namespace File
 )";
   }
 
