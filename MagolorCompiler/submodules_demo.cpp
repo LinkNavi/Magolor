@@ -2190,20 +2190,20 @@ void testStatusCodes() {
     Std::print(std::string("║  Test 6: HTTP Status Codes           ║\n"));
     Std::print(std::string("╚═══════════════════════════════════════╝\n"));
     Std::print(std::string("\n2xx Success:\n"));
-    Std::print(((((std::string("  ") + Std::Network::Status::OK) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::OK)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::CREATED) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::CREATED)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::NO_CONTENT) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::NO_CONTENT)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::OK) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::OK)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::CREATED) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::CREATED)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::NO_CONTENT) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::NO_CONTENT)) + std::string("\n")));
     Std::print(std::string("\n3xx Redirection:\n"));
-    Std::print(((((std::string("  ") + Std::Network::Status::MOVED_PERMANENTLY) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::MOVED_PERMANENTLY)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::FOUND) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::FOUND)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::MOVED_PERMANENTLY) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::FOUND) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::FOUND)) + std::string("\n")));
     Std::print(std::string("\n4xx Client Errors:\n"));
-    Std::print(((((std::string("  ") + Std::Network::Status::BAD_REQUEST) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::BAD_REQUEST)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::UNAUTHORIZED) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::UNAUTHORIZED)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::FORBIDDEN) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::FORBIDDEN)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::NOT_FOUND) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::NOT_FOUND)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::BAD_REQUEST) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::UNAUTHORIZED) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::FORBIDDEN) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::FORBIDDEN)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::NOT_FOUND) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::NOT_FOUND)) + std::string("\n")));
     Std::print(std::string("\n5xx Server Errors:\n"));
-    Std::print(((((std::string("  ") + Std::Network::Status::INTERNAL_SERVER_ERROR) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::INTERNAL_SERVER_ERROR)) + std::string("\n")));
-    Std::print(((((std::string("  ") + Std::Network::Status::SERVICE_UNAVAILABLE) + std::string(" - ")) + Std::Network::Status::toString(Std::Network::Status::SERVICE_UNAVAILABLE)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::INTERNAL_SERVER_ERROR) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR)) + std::string("\n")));
+    Std::print((std::string("  ") + mg_to_string(Std.Network.Status::SERVICE_UNAVAILABLE) + std::string(" - ") + mg_to_string(Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE)) + std::string("\n")));
 }
 
 void testResponseHelpers() {

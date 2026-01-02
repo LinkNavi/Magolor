@@ -213,23 +213,23 @@ fn testStatusCodes() {
     Std.print("╚═══════════════════════════════════════╝\n");
     
     Std.print("\n2xx Success:\n");
-    Std.print("  " + Std.Network.Status::OK + " - " + Std.Network.Status::toString(Std.Network.Status::OK) + "\n");
-    Std.print("  " + Std.Network.Status::CREATED + " - " + Std.Network.Status::toString(Std.Network.Status::CREATED) + "\n");
-    Std.print("  " + Std.Network.Status::NO_CONTENT + " - " + Std.Network.Status::toString(Std.Network.Status::NO_CONTENT) + "\n");
+    Std.print($"  {Std.Network.Status::OK} - {Std.Network.Status::toString(Std.Network.Status::OK)}\n");
+    Std.print($"  {Std.Network.Status::CREATED} - {Std.Network.Status::toString(Std.Network.Status::CREATED)}\n");
+    Std.print($"  {Std.Network.Status::NO_CONTENT} - {Std.Network.Status::toString(Std.Network.Status::NO_CONTENT)}\n");
     
     Std.print("\n3xx Redirection:\n");
-    Std.print("  " + Std.Network.Status::MOVED_PERMANENTLY + " - " + Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY) + "\n");
-    Std.print("  " + Std.Network.Status::FOUND + " - " + Std.Network.Status::toString(Std.Network.Status::FOUND) + "\n");
+    Std.print($"  {Std.Network.Status::MOVED_PERMANENTLY} - {Std.Network.Status::toString(Std.Network.Status::MOVED_PERMANENTLY)}\n");
+    Std.print($"  {Std.Network.Status::FOUND} - {Std.Network.Status::toString(Std.Network.Status::FOUND)}\n");
     
     Std.print("\n4xx Client Errors:\n");
-    Std.print("  " + Std.Network.Status::BAD_REQUEST + " - " + Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST) + "\n");
-    Std.print("  " + Std.Network.Status::UNAUTHORIZED + " - " + Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED) + "\n");
-    Std.print("  " + Std.Network.Status::FORBIDDEN + " - " + Std.Network.Status::toString(Std.Network.Status::FORBIDDEN) + "\n");
-    Std.print("  " + Std.Network.Status::NOT_FOUND + " - " + Std.Network.Status::toString(Std.Network.Status::NOT_FOUND) + "\n");
+    Std.print($"  {Std.Network.Status::BAD_REQUEST} - {Std.Network.Status::toString(Std.Network.Status::BAD_REQUEST)}\n");
+    Std.print($"  {Std.Network.Status::UNAUTHORIZED} - {Std.Network.Status::toString(Std.Network.Status::UNAUTHORIZED)}\n");
+    Std.print($"  {Std.Network.Status::FORBIDDEN} - {Std.Network.Status::toString(Std.Network.Status::FORBIDDEN)}\n");
+    Std.print($"  {Std.Network.Status::NOT_FOUND} - {Std.Network.Status::toString(Std.Network.Status::NOT_FOUND)}\n");
     
     Std.print("\n5xx Server Errors:\n");
-    Std.print("  " + Std.Network.Status::INTERNAL_SERVER_ERROR + " - " + Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR) + "\n");
-    Std.print("  " + Std.Network.Status::SERVICE_UNAVAILABLE + " - " + Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE) + "\n");
+    Std.print($"  {Std.Network.Status::INTERNAL_SERVER_ERROR} - {Std.Network.Status::toString(Std.Network.Status::INTERNAL_SERVER_ERROR)}\n");
+    Std.print($"  {Std.Network.Status::SERVICE_UNAVAILABLE} - {Std.Network.Status::toString(Std.Network.Status::SERVICE_UNAVAILABLE)}\n");
 }
 
 fn testResponseHelpers() {
