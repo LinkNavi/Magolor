@@ -18,6 +18,8 @@ optimization = "2"
 [scripts]
 # Custom build scripts can be defined here
 # prebuild = "echo 'Running prebuild'"
-# postbuild = "echo 'Build complete'"
+
+postbuild = "mv target/dev/Magolor ~/.local/bin/magolor && echo \"Moved!\""
+
 
 

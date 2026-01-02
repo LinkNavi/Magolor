@@ -1,49 +1,4 @@
-#pragma once
-#include <sstream>
-#include <string>
-
-class StdLibGenerator {
-public:
-  static std::string generateAll() {
-    std::stringstream ss;
-
-    // Required includes
-    ss << generateIncludes();
-    ss << "\n";
-
-    // Namespace opening
-    ss << "namespace Std {\n\n";
-
-    // Generate each module
-    ss << generateIO();
-    ss << generateParse();
-    ss << generateOption();
-    ss << generateMath();
-    ss << generateString();
-    ss << generateArray();
-    ss << generateMap(); // NEW
-    ss << generateSet(); // NEW
-    ss << generateFile();
-    ss << generateNetwork();
-    ss << generateTime();
-    ss << generateRandom();
-    ss << generateSystem();
-
-    // Top-level convenience functions
-    ss << generateTopLevel();
-
-    // Namespace closing
-    ss << "} // namespace Std\n\n";
-
-    // Template helpers
-    ss << generateTemplateHelpers();
-
-    return ss.str();
-  }
-
-private:
-  static std::string generateIncludes() {
-    return R"(#include <iostream>
+#include <iostream>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -65,11 +20,10 @@ private:
 #include <netinet/in.h>    // ADD THIS LINE
 #include <arpa/inet.h>     // ADD THIS LINE
 #include <unistd.h>        // ADD THIS LINE (if not already present)
-)";
-  }
 
-  static std::string generateIO() {
-    return R"(// ============================================================================
+namespace Std {
+
+// ============================================================================
 // Std.IO - Input/Output Operations
 // ============================================================================
 namespace IO {
@@ -115,11 +69,7 @@ namespace IO {
     }
 }
 
-)";
-  }
-
-  static std::string generateParse() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Parse - Parsing Operations
 // ============================================================================
 namespace Parse {
@@ -148,11 +98,7 @@ namespace Parse {
     }
 }
 
-)";
-  }
-
-  static std::string generateOption() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Option - Optional Value Operations
 // ============================================================================
 namespace Option {
@@ -176,11 +122,7 @@ namespace Option {
     }
 }
 
-)";
-  }
-
-  static std::string generateMath() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Math - Mathematical Operations
 // ============================================================================
 namespace Math {
@@ -223,11 +165,7 @@ namespace Math {
     }
 }
 
-)";
-  }
-
-  static std::string generateString() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.String - String Operations
 // ============================================================================
 namespace String {
@@ -306,11 +244,7 @@ namespace String {
     }
 }
 
-)";
-  }
-
-  static std::string generateArray() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Array - Array Operations
 // ============================================================================
 namespace Array {
@@ -357,11 +291,7 @@ namespace Array {
     inline void clear(std::vector<T>& arr) { arr.clear(); }
 }
 
-)";
-  }
-
-  static std::string generateMap() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Map - HashMap/Dictionary Operations
 // ============================================================================
 namespace Map {
@@ -424,11 +354,7 @@ namespace Map {
     }
 }
 
-)";
-  }
-
-  static std::string generateSet() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.Set - HashSet Operations
 // ============================================================================
 namespace Set {
@@ -493,11 +419,7 @@ namespace Set {
     }
 }
 
-)";
-  }
-
-  static std::string generateFile() {
-    return R"(// ============================================================================
+// ============================================================================
 // Std.File - File System Operations
 // ============================================================================
 namespace File {
@@ -553,85 +475,7 @@ namespace File {
     }
 }
 
-)";
-  }
-
-  static std::string generateTime() {
-    return R"(// ============================================================================
-// Std.Time - Time Operations
 // ============================================================================
-namespace Time {
-    inline int now() {
-        return std::chrono::system_clock::now().time_since_epoch().count();
-    }
-    
-    inline void sleep(int milliseconds) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
-    }
-    
-    inline std::string timestamp() {
-        auto now = std::chrono::system_clock::now();
-        auto time = std::chrono::system_clock::to_time_t(now);
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
-        return ss.str();
-    }
-}
-
-)";
-  }
-
-  static std::string generateRandom() {
-    return R"(// ============================================================================
-// Std.Random - Random Number Generation
-// ============================================================================
-namespace Random {
-    inline int randInt(int min, int max) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(min, max);
-        return dis(gen);
-    }
-    
-    inline double randFloat(double min = 0.0, double max = 1.0) {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        std::uniform_real_distribution<> dis(min, max);
-        return dis(gen);
-    }
-    
-    inline bool randBool() {
-        return randInt(0, 1) == 1;
-    }
-}
-
-)";
-  }
-
-  static std::string generateSystem() {
-    return R"(// ============================================================================
-// Std.System - System Operations
-// ============================================================================
-namespace System {
-    inline void exit(int code) {
-        std::exit(code);
-    }
-    
-    inline std::optional<std::string> getEnv(const std::string& name) {
-        const char* val = std::getenv(name.c_str());
-        if (val) return std::string(val);
-        return std::nullopt;
-    }
-    
-    inline int execute(const std::string& command) {
-        return std::system(command.c_str());
-    }
-}
-
-)";
-  }
-  static std::string generateNetwork() {
-    return R"(// ============================================================================
 // Std.Network - Cross-Platform Web Development Runtime with Submodules
 // ============================================================================
 namespace Network {
@@ -2081,10 +1925,70 @@ namespace Network {
     }
 }
 
-)";
-  }
-  static std::string generateTopLevel() {
-    return R"(// ============================================================================
+// ============================================================================
+// Std.Time - Time Operations
+// ============================================================================
+namespace Time {
+    inline int now() {
+        return std::chrono::system_clock::now().time_since_epoch().count();
+    }
+    
+    inline void sleep(int milliseconds) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+    }
+    
+    inline std::string timestamp() {
+        auto now = std::chrono::system_clock::now();
+        auto time = std::chrono::system_clock::to_time_t(now);
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+        return ss.str();
+    }
+}
+
+// ============================================================================
+// Std.Random - Random Number Generation
+// ============================================================================
+namespace Random {
+    inline int randInt(int min, int max) {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(min, max);
+        return dis(gen);
+    }
+    
+    inline double randFloat(double min = 0.0, double max = 1.0) {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_real_distribution<> dis(min, max);
+        return dis(gen);
+    }
+    
+    inline bool randBool() {
+        return randInt(0, 1) == 1;
+    }
+}
+
+// ============================================================================
+// Std.System - System Operations
+// ============================================================================
+namespace System {
+    inline void exit(int code) {
+        std::exit(code);
+    }
+    
+    inline std::optional<std::string> getEnv(const std::string& name) {
+        const char* val = std::getenv(name.c_str());
+        if (val) return std::string(val);
+        return std::nullopt;
+    }
+    
+    inline int execute(const std::string& command) {
+        return std::system(command.c_str());
+    }
+}
+
+// ============================================================================
 // Top-level convenience functions
 // ============================================================================
 inline void print(const std::string& s) { IO::print(s); }
@@ -2093,11 +1997,9 @@ inline std::string readLine() { return IO::readLine(); }
 inline std::optional<int> parseInt(const std::string& s) { return Parse::parseInt(s); }
 inline std::optional<double> parseFloat(const std::string& s) { return Parse::parseFloat(s); }
 
-)";
-  }
+} // namespace Std
 
-  static std::string generateTemplateHelpers() {
-    return R"(// ============================================================================
+// ============================================================================
 // Template Helpers for String Conversion
 // ============================================================================
 template<typename T>
@@ -2117,6 +2019,130 @@ inline std::string mg_to_string(const std::string& val) {
     return val;
 }
 
-)";
-  }
-};
+
+void demoHTTP();
+void demoSecurity();
+void demoJSON();
+void demoRouting();
+void demoTCP();
+void demoUDP();
+void demoWebSocket(int clientSocket);
+
+void demoHTTP() {
+    Std::print(std::string("=== HTTP Submodule Demo ==="));
+    auto method = Network.HTTP::Method::POST;
+    Std::print((std::string("Method: ") + Network.HTTP::methodToString(method)));
+    auto headers = Network.HTTP::Headers();
+    headers.set(std::string("Authorization"), std::string("Bearer token123"));
+    headers.set(std::string("X-Custom"), std::string("value"));
+    Std::print((std::string("Has Auth: ") + Std::toString(headers.has(std::string("Authorization")))));
+    Std::print((std::string("JSON Type: ") + Network.HTTP::ContentType::JSON));
+}
+
+void demoSecurity() {
+    Std::print(std::string("\n=== Security Submodule Demo ==="));
+    auto userInput = std::string("<script>alert('xss')</script>");
+    auto safe = Network.Security::escapeHtml(userInput);
+    Std::print((std::string("Escaped: ") + safe));
+    auto token = Network.Security::generateToken(32);
+    Std::print((std::string("Token: ") + token));
+    auto csrf = Network.Security::generateCsrfToken();
+    Std::print((std::string("CSRF: ") + csrf));
+    auto limiter = Network.Security::RateLimiter(5, 60);
+    Std::print((std::string("Allow request: ") + Std::toString(limiter.allow(std::string("user1")))));
+}
+
+void demoJSON() {
+    Std::print(std::string("\n=== JSON Submodule Demo ==="));
+    auto str = std::string("Hello \"World\"\nNew line");
+    auto escaped = Network.JSON::Parser::escape(str);
+    Std::print((std::string("Escaped: ") + escaped));
+    auto arr = Network.JSON::ArrayBuilder();
+    arr.add(std::string("first"));
+    arr.add(42);
+    arr.add(true);
+    Std::print((std::string("Array: ") + arr.build()));
+}
+
+void demoRouting() {
+    Std::print(std::string("\n=== Routing Submodule Demo ==="));
+    auto pattern = std::string("/users/:id/posts/:postId");
+    auto path = std::string("/users/123/posts/456");
+    auto lal = Network.Routing::matchRoute(pattern, path);
+    if (lal.matches) {
+        Std::print(std::string("Matched!"));
+        Std::print((std::string("User ID: ") + lal.params[std::string("id")]));
+        Std::print((std::string("Post ID: ") + lal.params[std::string("postId")]));
+    }
+}
+
+void demoTCP() {
+    Std::print(std::string("\n=== TCP Server Demo ==="));
+    auto server = Network.TCP::Server(9000);
+    if (server.start()) {
+        Std::print(std::string("TCP Server on :9000"));
+        Std::print(std::string("Waiting for connection..."));
+        auto client = server.accept();
+        if ((client != Network.INVALID_SOCKET)) {
+            Std::print(std::string("Client connected!"));
+            Network.send(client, std::string("Hello from TCP server\n"));
+            Network.CLOSE_SOCKET(client);
+        }
+        server.stop();
+    }
+}
+
+void demoUDP() {
+    Std::print(std::string("\n=== UDP Demo ==="));
+    auto socket = Network.UDP::Socket();
+    if (socket.sendTo(std::string("Hello UDP"), std::string("127.0.0.1"), 8000)) {
+        Std::print(std::string("UDP packet sent!"));
+    }
+}
+
+void demoWebSocket(int clientSocket) {
+    Std::print(std::string("\n=== WebSocket Demo ==="));
+    auto ws = Network.WebSocket::Connection(clientSocket);
+    ws.send(std::string("Hello WebSocket!"));
+    auto data = std::vector<int>{1, 2, 3};
+    ws.sendBinary(data);
+    ws.ping();
+    ws.close();
+}
+
+int main() {
+    demoHTTP();
+    demoSecurity();
+    demoJSON();
+    demoRouting();
+    auto server = Network.Server(8080);
+    auto router = Network.Routing::Router();
+    auto limiter = Network.Security::RateLimiter(10, 60);
+    router.add(std::string("GET"), std::string("/users/:id"), [=](auto req, auto params) {
+        if ((!limiter.allow(req.remoteIp))) {
+            return Network.errorResponse(429, std::string("Too many requests"));
+        }
+        auto userId = params[std::string("id")];
+        auto safe = Network.Security::escapeHtml(userId);
+        auto arr = Network.JSON::ArrayBuilder();
+        arr.add(safe);
+        arr.add((std::string("user_") + safe));
+        return Network.jsonResponse(((((std::string("{\"id\":") + safe) + std::string(",\"items\":")) + arr.build()) + std::string("}")));
+    });
+    router.add(std::string("POST"), std::string("/api/:resource"), [=](auto req, auto params) {
+        auto resource = params[std::string("resource")];
+        auto token = Network.Security::generateToken(16);
+        return Network.jsonResponse(((((std::string("{\"resource\":\"") + resource) + std::string("\",\"token\":\"")) + token) + std::string("\"}")));
+    });
+    server.use(Network.corsMiddleware());
+    server.use(Network.loggerMiddleware());
+    server.route(std::string("*"), [=](auto req) {
+        return router.route(req);
+    });
+    Std::print(std::string("\n=== Server Started ==="));
+    Std::print(std::string("Submodules demo on http://localhost:8080"));
+    Std::print(std::string("Try: /users/123 or /api/posts"));
+    server.start();
+    return 0;
+}
+
