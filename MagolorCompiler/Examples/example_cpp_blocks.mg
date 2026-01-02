@@ -8,7 +8,13 @@ fn demonstrateBasicMath() {
     let result = Math::sqrt(16.0);
     Std.print($"sqrt(16) = {result}\n");
 }
-
+class Name {
+	pub field: int;
+	
+	pub fn method() {
+		
+	}
+}
 fn demonstrateInlineCpp() {
     Std.print("\n=== Inline C++ Demo ===\n");
     

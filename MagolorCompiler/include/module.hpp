@@ -14,7 +14,7 @@ namespace fs = std::filesystem;
 struct Module {
     std::string name;
     std::string filepath;
-    std::string packageName;  // NEW: Track which package this module belongs to
+    std::string packageName;
     Program ast;
     std::vector<std::string> importedModules;
 };
@@ -56,32 +56,42 @@ private:
 
 class ModuleResolver {
 public:
+    // Check if this is a built-in standard library module
+    static bool isBuiltinModule(const std::string& modulePath) {
+        // List of all built-in Std modules
+        static const std::unordered_set<std::string> builtins = {
+            "Std", "Std.IO", "Std.Parse", "Std.Option", "Std.Math",
+            "Std.String", "Std.Array", "Std.Map", "Std.Set", "Std.File",
+            "Std.Network", "Std.Time", "Std.Random", "Std.System",
+            // Network submodules
+            "Std.Network.HTTP", "Std.Network.WebSocket", "Std.Network.TCP",
+            "Std.Network.UDP", "Std.Network.Security", "Std.Network.JSON",
+            "Std.Network.Routing"
+        };
+        
+        return builtins.count(modulePath) > 0;
+    }
+    
     // Convert file path to module name
-    // Example: src/api/handlers.mg -> "api.handlers"
     static std::string filePathToModuleName(const std::string& filepath, 
                                             const std::string& packageName = "") {
         std::string path = filepath;
         
-        // Remove package-specific paths
         if (!packageName.empty()) {
-            // Remove .magolor/packages/<package>/src/ prefix if present
             std::string packagePrefix = ".magolor/packages/" + packageName + "/src/";
             if (path.find(packagePrefix) == 0) {
                 path = path.substr(packagePrefix.length());
             }
         }
         
-        // Remove src/ prefix if present
         if (path.find("src/") == 0) {
             path = path.substr(4);
         }
         
-        // Remove .mg extension
         if (path.size() >= 3 && path.substr(path.size() - 3) == ".mg") {
             path = path.substr(0, path.size() - 3);
         }
         
-        // Replace path separators with dots
         std::string result;
         if (!packageName.empty()) {
             result = packageName + ".";
@@ -101,7 +111,11 @@ public:
     // Resolve import path relative to current module
     static std::string resolveImportPath(const std::string& importPath,
                                         const std::string& currentModulePath) {
-        // Convert path (e.g., ["api", "handlers"]) to string
+        // Check if it's a built-in module first
+        if (isBuiltinModule(importPath)) {
+            return importPath;
+        }
+        
         std::string pathStr = importPath;
         
         // Try absolute path first
@@ -129,14 +143,16 @@ public:
         }
         
         // Check in .magolor/packages
-        for (const auto& entry : fs::directory_iterator(".magolor/packages")) {
-            if (entry.is_directory()) {
-                std::string packagePath = entry.path().string() + "/src/" + pathStr;
-                std::replace(packagePath.begin(), packagePath.end(), '.', '/');
-                packagePath += ".mg";
-                
-                if (fs::exists(packagePath)) {
-                    return entry.path().filename().string() + "." + pathStr;
+        if (fs::exists(".magolor/packages")) {
+            for (const auto& entry : fs::directory_iterator(".magolor/packages")) {
+                if (entry.is_directory()) {
+                    std::string packagePath = entry.path().string() + "/src/" + pathStr;
+                    std::replace(packagePath.begin(), packagePath.end(), '.', '/');
+                    packagePath += ".mg";
+                    
+                    if (fs::exists(packagePath)) {
+                        return entry.path().filename().string() + "." + pathStr;
+                    }
                 }
             }
         }
@@ -144,13 +160,11 @@ public:
         return pathStr;
     }
     
-    // Check if a symbol is publicly accessible
     static bool isPublic(ModulePtr module, 
                         const std::string& symbolName,
                         bool isClassName = false) {
         if (!module) return false;
         
-        // Check classes
         for (const auto& cls : module->ast.classes) {
             if (cls.name == symbolName) {
                 return cls.isPublic;
@@ -170,7 +184,6 @@ public:
             }
         }
         
-        // Check functions
         for (const auto& fn : module->ast.functions) {
             if (fn.name == symbolName) {
                 return fn.isPublic;
@@ -180,7 +193,6 @@ public:
         return false;
     }
     
-    // Get all public symbols from a module
     static std::vector<std::string> getPublicSymbols(ModulePtr module) {
         std::vector<std::string> symbols;
         if (!module) return symbols;
@@ -201,7 +213,6 @@ public:
     }
 };
 
-// Import resolver
 struct ImportResult {
     bool success = true;
     std::string error;
@@ -213,22 +224,31 @@ public:
         ImportResult result;
         
         for (const auto& usingDecl : module->ast.usings) {
-            // Convert path vector to string
             std::string importPath;
             for (size_t i = 0; i < usingDecl.path.size(); i++) {
                 if (i > 0) importPath += ".";
                 importPath += usingDecl.path[i];
             }
             
-            // Resolve relative imports
+            // Check if it's a built-in module
+            if (ModuleResolver::isBuiltinModule(importPath)) {
+                // Built-in modules don't need resolution
+                module->importedModules.push_back(importPath);
+                continue;
+            }
+            
+            // Resolve relative imports for user modules
             importPath = ModuleResolver::resolveImportPath(importPath, module->name);
             
             // Check if module exists
             ModulePtr importedModule = ModuleRegistry::instance().getModule(importPath);
             if (!importedModule) {
-                result.success = false;
-                result.error = "Cannot find module: " + importPath;
-                return result;
+                // Only error if it's not a built-in module
+                if (!ModuleResolver::isBuiltinModule(importPath)) {
+                    result.success = false;
+                    result.error = "Cannot find module: " + importPath;
+                    return result;
+                }
             }
             
             module->importedModules.push_back(importPath);
@@ -238,7 +258,6 @@ public:
     }
 };
 
-// Name resolver
 struct NameResolutionResult {
     bool success = true;
     std::vector<std::string> errors;
@@ -251,6 +270,11 @@ public:
         
         // Build symbol table from imports
         for (const auto& importedModuleName : module->importedModules) {
+            // Skip built-in modules - they're handled by the C++ compiler
+            if (ModuleResolver::isBuiltinModule(importedModuleName)) {
+                continue;
+            }
+            
             ModulePtr importedModule = ModuleRegistry::instance().getModule(importedModuleName);
             if (importedModule) {
                 auto symbols = ModuleResolver::getPublicSymbols(importedModule);
@@ -267,13 +291,10 @@ private:
     std::unordered_map<std::string, std::string> importedSymbols;
 };
 
-
-
-
 struct Callable {
-    std::string name;      // function or method name
-    std::string module;    // which module it comes from
-    std::string className; // empty if top-level function
+    std::string name;
+    std::string module;
+    std::string className;
 };
 
 class CallableCollector {
@@ -292,14 +313,14 @@ private:
 
         visitedModules.insert(module->name);
 
-        // 1. Top-level functions
+        // Top-level functions
         for (const auto& fn : module->ast.functions) {
             if (fn.isPublic) {
                 callables.push_back({fn.name, module->name, ""});
             }
         }
 
-        // 2. Methods in public classes
+        // Methods in public classes
         for (const auto& cls : module->ast.classes) {
             if (!cls.isPublic) continue;
             for (const auto& method : cls.methods) {
@@ -309,11 +330,13 @@ private:
             }
         }
 
-        // 3. Recursively process imported modules
+        // Recursively process imported modules (skip built-ins)
         for (const auto& importedName : module->importedModules) {
+            if (ModuleResolver::isBuiltinModule(importedName)) {
+                continue;
+            }
             ModulePtr imported = ModuleRegistry::instance().getModule(importedName);
             collect(imported, callables, visitedModules);
         }
     }
 };
-

@@ -113,69 +113,76 @@ int buildProject(bool verbose = false) {
   try {
     if (!fs::exists("project.toml")) {
       std::cerr << "\033[1;31merror\033[0m: project.toml not found\n";
-      std::cerr << "  \033[1;34m= help:\033[0m Initialize a project with 'gear "
-                   "init'\n";
+      std::cerr << "  \033[1;34m= help:\033[0m Initialize a project with 'gear init'\n";
       return 1;
     }
 
     Package pkg = PackageManager::loadFromToml("project.toml");
 
     if (verbose) {
-      std::cout << "\033[1;32mBuilding\033[0m " << pkg.name << " v"
-                << pkg.version << "\n";
+      std::cout << "\033[1;32mBuilding\033[0m " << pkg.name << " v" << pkg.version << "\n";
     }
 
-    // Clear module registry for fresh build
+    // Clear module registry for a fresh build
     ModuleRegistry::instance().clear();
 
-    // Install/load dependencies
+    // Install/load dependencies (if any)
     std::vector<ResolvedPackage> deps;
     if (!pkg.dependencies.empty()) {
       deps = PackageManager::loadFromLockFile();
       if (deps.empty()) {
         auto result = PackageManager::installDependencies(pkg);
         if (!result.success) {
-          std::cerr
-              << "\033[1;31merror\033[0m: failed to resolve dependencies\n";
+          std::cerr << "\033[1;31merror\033[0m: failed to resolve dependencies\n";
           return 1;
         }
         deps = result.packages;
       }
     }
 
-    // Collect source files (including from dependencies)
+    // Collect source files (app + deps)
     auto sourceFiles = PackageManager::collectSourceFiles(pkg, deps);
 
     if (sourceFiles.empty()) {
       std::cerr << "\033[1;31merror\033[0m: no source files found\n";
-      std::cerr
-          << "  \033[1;34m= help:\033[0m Add .mg files to the src/ directory\n";
+      std::cerr << "  \033[1;34m= help:\033[0m Add .mg files to the src/ directory\n";
       return 1;
     }
 
-    // Compile each file and register modules
-    std::vector<Program> programs;
-    bool hasErrors = false;
-
-    // First pass: compile all files and register modules
     if (verbose) {
-      std::cout << "\033[1;32m   Compiling\033[0m " << sourceFiles.size()
-                << " files\n";
+      std::cout << "\033[1;32m   Compiling\033[0m " << sourceFiles.size() << " files\n";
     }
 
+    // Compile everything once, register modules, but only collect app programs for merging/generation.
+    std::vector<Program> appPrograms;
+    bool hasErrors = false;
+
     for (const auto &file : sourceFiles) {
-      // Determine package name from file path
+      // Determine package name for this file (app package by default; override if it belongs to a dep)
       std::string pkgName = pkg.name;
-      for (const auto &dep : deps) {
-        if (file.find(dep.location) != std::string::npos) {
-          pkgName = dep.name;
-          break;
+      try {
+        std::string fileAbs = fs::absolute(file).lexically_normal().string();
+        for (const auto &d : deps) {
+          try {
+            std::string depLoc = fs::absolute(d.location).lexically_normal().string();
+            if (fileAbs.size() >= depLoc.size() && fileAbs.compare(0, depLoc.size(), depLoc) == 0) {
+              pkgName = d.name;
+              break;
+            }
+          } catch (...) {
+            // ignore path errors and keep default pkgName
+          }
         }
+      } catch (...) {
+        // ignore path errors and keep default pkgName
       }
 
       auto prog = compileFile(file, pkgName, hasErrors, verbose);
-      if (!hasErrors) {
-        programs.push_back(prog);
+      if (hasErrors) break;
+
+      // If this file is an application source (under project's src/), keep it for merging
+      if (PackageManager::isAppSource(file, pkg)) {
+        appPrograms.push_back(prog);
       }
     }
 
@@ -184,7 +191,13 @@ int buildProject(bool verbose = false) {
       return 1;
     }
 
-    // Second pass: resolve imports
+    // Sanity: must have at least one app program (entrypoints like main.mg)
+    if (appPrograms.empty()) {
+      std::cerr << "\033[1;31merror\033[0m: no application source files found (nothing under project src/?)\n";
+      return 1;
+    }
+
+    // Second pass: resolve imports for all registered modules
     if (verbose) {
       std::cout << "\033[1;32m  Resolving\033[0m module imports...\n";
     }
@@ -201,7 +214,7 @@ int buildProject(bool verbose = false) {
       }
     }
 
-    // Third pass: resolve names
+    // Third pass: resolve names/symbols for all modules
     if (verbose) {
       std::cout << "\033[1;32m  Resolving\033[0m names and symbols...\n";
     }
@@ -217,12 +230,11 @@ int buildProject(bool verbose = false) {
       }
     }
 
-    // NEW: Fourth pass - Type checking
+    // Fourth pass: type checking across all modules (dependencies included)
     if (verbose) {
       std::cout << "\033[1;32m  Type checking\033[0m...\n";
     }
 
-    // Create a dummy error reporter for type checking
     std::string dummySource = "";
     ErrorReporter typeCheckReporter("type-check", dummySource);
     TypeChecker typeChecker(typeCheckReporter, ModuleRegistry::instance());
@@ -242,8 +254,8 @@ int buildProject(bool verbose = false) {
       std::cout << "\033[1;32m    Passed\033[0m type checking\n";
     }
 
-    // Merge all programs
-    Program merged = mergePrograms(programs);
+    // Merge only the application programs (app sources) into the final program
+    Program merged = mergePrograms(appPrograms);
 
     // Generate C++
     if (verbose) {
@@ -252,7 +264,7 @@ int buildProject(bool verbose = false) {
     CodeGen codegen;
     std::string cppCode = codegen.generate(merged);
 
-    // Create target directory
+    // Create target directory and write files
     fs::create_directories("target");
 
     std::string cppPath = "target/" + pkg.name + ".cpp";
@@ -265,8 +277,7 @@ int buildProject(bool verbose = false) {
       std::cout << "\033[1;32mCompiling\033[0m C++ code\n";
     }
 
-    std::string compileCmd =
-        "g++ -std=c++17 -O2 -o " + exePath + " " + cppPath + " 2>&1";
+    std::string compileCmd = "g++ -std=c++17 -O2 -o " + exePath + " " + cppPath + " 2>&1";
     FILE *pipe = popen(compileCmd.c_str(), "r");
     if (!pipe) {
       std::cerr << "\033[1;31merror\033[0m: failed to run g++\n";

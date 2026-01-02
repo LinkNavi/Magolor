@@ -1,0 +1,13 @@
+[project]
+name = "test-multifile-project"
+version = "0.1.0"
+authors = ["Your Name <you@example.com>"]
+description = "A Magolor project"
+license = "MIT"
+
+[dependencies]
+# Add dependencies here
+# example = "1.0.0"
+
+[build]
+optimization = "2"

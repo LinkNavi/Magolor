@@ -218,70 +218,15 @@ std::vector<std::string> collectSourceFiles(const std::string& srcDir) {
   return files;
 }
 
+
 void buildProject(bool verbose = false) {
   if (!fs::exists("project.toml")) {
-    std::cerr << "\033[1;31merror\033[0m: could not find project.toml in current directory\n";
+    std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
     std::cerr << "  \033[1;34m= help:\033[0m initialize a project with 'gear init'\n";
     return;
   }
 
-  // Parse project name from project.toml
-  std::ifstream toml("project.toml");
-  std::string line, projectName;
-  while (std::getline(toml, line)) {
-    if (line.find("name =") != std::string::npos) {
-      size_t start = line.find('"') + 1;
-      size_t end = line.rfind('"');
-      projectName = line.substr(start, end - start);
-      break;
-    }
-  }
-  toml.close();
-
-  if (projectName.empty()) {
-    std::cerr << "\033[1;31merror\033[0m: could not determine project name from project.toml\n";
-    return;
-  }
-
-  if (verbose) {
-    std::cout << "\033[1;32m   Building\033[0m " << projectName << "\n";
-  }
-
-  // Collect all source files
-  std::vector<std::string> sourceFiles = collectSourceFiles("src");
-  
-  if (sourceFiles.empty()) {
-    std::cerr << "\033[1;31merror\033[0m: no source files found in src/\n";
-    std::cerr << "  \033[1;34m= help:\033[0m create at least one .mg file in src/\n";
-    return;
-  }
-
-  if (verbose) {
-    std::cout << "\033[1;32m   Compiling\033[0m " << sourceFiles.size() << " source files\n";
-    for (const auto& file : sourceFiles) {
-      std::cout << "             " << file << "\n";
-    }
-  }
-
-  // Build command with all source files
-  std::string buildCmd = "magolor build-project";
-  if (verbose) {
-    buildCmd += " --verbose";
-  }
-  
-  int result = std::system(buildCmd.c_str());
-  if (result != 0) {
-    std::cerr << "\033[1;31merror\033[0m: build failed\n";
-  }
-}
-
-void runProject(bool verbose = false) {
-  if (!fs::exists("project.toml")) {
-    std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
-    return;
-  }
-
-  // Parse project name from project.toml
+  // Parse project name
   std::ifstream toml("project.toml");
   std::string line, projectName;
   while (std::getline(toml, line)) {
@@ -298,14 +243,70 @@ void runProject(bool verbose = false) {
     return;
   }
 
-  std::string exePath = "target/" + projectName;
-  
-  if (!fs::exists(exePath)) {
-    std::cout << "\033[1;33m   Building\033[0m project first...\n";
-    buildProject(verbose);
-    if (!fs::exists(exePath)) {
-      return;
+  std::vector<std::string> sourceFiles = collectSourceFiles("src");
+
+  if (sourceFiles.empty()) {
+    std::cerr << "\033[1;31merror\033[0m: no source files found in src/\n";
+    return;
+  }
+
+  if (verbose) {
+    std::cout << "\033[1;32m   Building\033[0m " << projectName << "\n";
+    std::cout << "\033[1;32m   Compiling\033[0m " << sourceFiles.size() << " files\n";
+    for (auto& f : sourceFiles) {
+      std::cout << "             " << f << "\n";
     }
+  }
+
+  // Build command
+  std::string buildCmd = "magolor build-project";
+
+  for (const auto& file : sourceFiles) {
+    buildCmd += " " + file;
+  }
+
+  if (verbose) {
+    buildCmd += " --verbose";
+  }
+
+  int result = std::system(buildCmd.c_str());
+  if (result != 0) {
+    std::cerr << "\033[1;31merror\033[0m: build failed\n";
+  }
+}
+
+
+
+void runProject(bool verbose = false) {
+  if (!fs::exists("project.toml")) {
+    std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
+    return;
+  }
+
+  // Parse project name
+  std::ifstream toml("project.toml");
+  std::string line, projectName;
+  while (std::getline(toml, line)) {
+    if (line.find("name =") != std::string::npos) {
+      size_t start = line.find('"') + 1;
+      size_t end = line.rfind('"');
+      projectName = line.substr(start, end - start);
+      break;
+    }
+  }
+
+  if (projectName.empty()) {
+    std::cerr << "\033[1;31merror\033[0m: could not determine project name\n";
+    return;
+  }
+
+  // ALWAYS build
+  buildProject(verbose);
+
+  std::string exePath = "target/" + projectName;
+  if (!fs::exists(exePath)) {
+    std::cerr << "\033[1;31merror\033[0m: build succeeded but binary not found\n";
+    return;
   }
 
   if (verbose) {
@@ -313,9 +314,10 @@ void runProject(bool verbose = false) {
   } else {
     std::cout << "\033[1;32m    Running\033[0m `" << exePath << "`\n";
   }
-  
+
   std::system(("./" + exePath).c_str());
 }
+
 
 void cleanProject() {
   std::cout << "\033[1;32m    Cleaning\033[0m build artifacts\n";
@@ -332,14 +334,13 @@ void cleanProject() {
   }
 }
 
+
 void checkProject() {
   if (!fs::exists("project.toml")) {
     std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
     return;
   }
 
-  std::cout << "\033[1;32m    Checking\033[0m project...\n";
-  
   std::vector<std::string> sourceFiles = collectSourceFiles("src");
 
   if (sourceFiles.empty()) {
@@ -348,6 +349,7 @@ void checkProject() {
   }
 
   bool hasErrors = false;
+
   for (const auto& file : sourceFiles) {
     std::string cmd = "magolor check " + file;
     int result = std::system(cmd.c_str());
@@ -357,9 +359,10 @@ void checkProject() {
   }
 
   if (!hasErrors) {
-    std::cout << "\033[1;32m    Finished\033[0m no errors found in " << sourceFiles.size() << " files\n";
+    std::cout << "\033[1;32m    Finished\033[0m no errors found\n";
   }
 }
+
 
 void addDependency(const std::string& package) {
   if (!fs::exists("project.toml")) {
