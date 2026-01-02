@@ -5,6 +5,9 @@
 #include "typechecker.hpp"
 #include <sstream>
 
+#include <fstream>
+
+
 void MagolorLanguageServer::handleMessage(const Message &msg) {
   if (msg.method == "initialize")
     handleInitialize(msg);
@@ -235,7 +238,39 @@ void MagolorLanguageServer::handleFormatting(const Message &msg) {
 
   transport.respond(msg.id.value(), edits);
 }
-
+void MagolorLanguageServer::run() {
+    logger.log("LSP run() called");
+    running = true;
+    
+    try {
+        while (running) {
+            logger.log("Waiting for message...");
+            
+            auto msg = transport.receive();
+            if (!msg) {
+                logger.log("No message received - connection closed");
+                break;
+            }
+            
+            logger.log("Received message: " + msg->method);
+            
+            try {
+                handleMessage(*msg);
+                logger.log("Message handled successfully");
+            } catch (const std::exception& e) {
+                logger.log("Error handling message: " + std::string(e.what()));
+                // Don't break - continue processing
+            } catch (...) {
+                logger.log("Unknown error handling message");
+                // Don't break - continue processing
+            }
+        }
+    } catch (const std::exception& e) {
+        logger.log("Fatal error in run loop: " + std::string(e.what()));
+    }
+    
+    logger.log("LSP server exiting run loop");
+}
 std::string MagolorLanguageServer::formatDocument(const std::string &content) {
   // Simple formatter implementation
   std::stringstream result;
@@ -334,19 +369,44 @@ void MagolorLanguageServer::handleShutdown(const Message &msg) {
 void MagolorLanguageServer::handleExit(const Message &) { running = false; }
 
 void MagolorLanguageServer::handleDidOpen(const Message &msg) {
-  auto &td = msg.params["textDocument"];
-  std::string uri = td["uri"].asString();
-  std::string languageId = td["languageId"].asString();
-  int version = td["version"].asInt();
-  std::string text = td["text"].asString();
+  logger.log("handleDidOpen: START");
+  
+  try {
+    auto &td = msg.params["textDocument"];
+    std::string uri = td["uri"].asString();
+    logger.log("handleDidOpen: uri = " + uri);
+    
+    std::string languageId = td["languageId"].asString();
+    logger.log("handleDidOpen: languageId = " + languageId);
+    
+    int version = td["version"].asInt();
+    logger.log("handleDidOpen: version = " + std::to_string(version));
+    
+    std::string text = td["text"].asString();
+    logger.log("handleDidOpen: text length = " + std::to_string(text.length()));
 
-  documents.open(uri, languageId, version, text);
+    documents.open(uri, languageId, version, text);
+    logger.log("handleDidOpen: document opened");
 
-  // Analyze and publish diagnostics
-  analyzeAndPublishDiagnostics(uri, text);
+    // Analyze and publish diagnostics
+    logger.log("handleDidOpen: starting analysis");
+    analyzeAndPublishDiagnostics(uri, text);
+    logger.log("handleDidOpen: analysis complete");
 
-  // Also run semantic analysis
-  analyzer.analyze(uri, text);
+    // Also run semantic analysis
+    logger.log("handleDidOpen: starting semantic analysis");
+    analyzer.analyze(uri, text);
+    logger.log("handleDidOpen: semantic analysis complete");
+    
+  } catch (const std::exception& e) {
+    logger.log("handleDidOpen: ERROR - " + std::string(e.what()));
+    throw; // Re-throw to be caught by outer handler
+  } catch (...) {
+    logger.log("handleDidOpen: UNKNOWN ERROR");
+    throw;
+  }
+  
+  logger.log("handleDidOpen: END");
 }
 
 void MagolorLanguageServer::handleDidChange(const Message &msg) {
@@ -388,65 +448,73 @@ void MagolorLanguageServer::handleDidSave(const Message &msg) {
 
 void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     const std::string &uri, const std::string &content) {
+  logger.log("analyzeAndPublishDiagnostics: START for " + uri);
+  
   std::vector<LspDiagnostic> diagnostics;
 
   // Create diagnostic collector
   DiagnosticCollector collector(uri, content);
 
   try {
+    logger.log("analyzeAndPublishDiagnostics: creating lexer");
     // Phase 1: Lexical analysis
     Lexer lexer(content, uri, collector);
+    logger.log("analyzeAndPublishDiagnostics: tokenizing");
     auto tokens = lexer.tokenize();
+    logger.log("analyzeAndPublishDiagnostics: got " + std::to_string(tokens.size()) + " tokens");
 
     if (collector.hasError()) {
+      logger.log("analyzeAndPublishDiagnostics: lexer has errors");
       diagnostics = collector.getDiagnostics();
       publishDiagnostics(uri, diagnostics);
       return;
     }
 
+    logger.log("analyzeAndPublishDiagnostics: creating parser");
     // Phase 2: Syntax analysis
     Parser parser(std::move(tokens), uri, collector);
+    logger.log("analyzeAndPublishDiagnostics: parsing");
     Program prog = parser.parse();
+    logger.log("analyzeAndPublishDiagnostics: parsed successfully");
 
     if (collector.hasError()) {
+      logger.log("analyzeAndPublishDiagnostics: parser has errors");
       diagnostics = collector.getDiagnostics();
       publishDiagnostics(uri, diagnostics);
       return;
     }
 
+    logger.log("analyzeAndPublishDiagnostics: creating module");
     // Phase 3: Type checking (if no syntax errors)
-    // Note: We're more lenient in LSP mode - don't show type errors
-    // for module/stdlib calls since they're validated by C++ compiler
     ModuleRegistry::instance().clear();
     auto module = std::make_shared<Module>();
     module->name = "current";
     module->filepath = uri;
     module->ast = prog;
     ModuleRegistry::instance().registerModule(module);
+    logger.log("analyzeAndPublishDiagnostics: module registered");
 
+    logger.log("analyzeAndPublishDiagnostics: type checking");
     TypeChecker typeChecker(collector, ModuleRegistry::instance());
     typeChecker.checkModule(module);
+    logger.log("analyzeAndPublishDiagnostics: type checking complete");
 
-    // Filter out "Cannot call non-function" errors for known patterns
+    // Filter out false positives
     if (collector.hasError()) {
+      logger.log("analyzeAndPublishDiagnostics: type checker has errors");
       auto allDiags = collector.getDiagnostics();
       for (const auto &diag : allDiags) {
-        // Skip "Cannot call non-function" errors on method calls
-        // (these are usually valid but our simple type checker doesn't know)
         bool skipError = false;
 
         if (diag.message.find("Cannot call non-function") !=
             std::string::npos) {
-          // Skip if it looks like a method call (server.get, etc.)
           skipError = true;
         }
-        // Skip errors on cimport lines - they're validated by the C++ compiler
         if (diag.message.find("string") != std::string::npos &&
-            diag.range.start.line == 3) { // Line 4 in 0-indexed
+            diag.range.start.line == 3) {
           skipError = true;
         }
         if (diag.message.find("Undefined variable") != std::string::npos) {
-          // Skip if it's likely a module/namespace reference
           if (diag.message.find("Std") != std::string::npos ||
               diag.message.find("Math") != std::string::npos) {
             skipError = true;
@@ -458,22 +526,30 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
         }
       }
     }
+    
+    logger.log("analyzeAndPublishDiagnostics: checking import errors");
 
   } catch (const std::exception &e) {
+    logger.log("analyzeAndPublishDiagnostics: EXCEPTION - " + std::string(e.what()));
     // Silently ignore internal errors in LSP mode
-    // The actual compiler will catch real errors
+  } catch (...) {
+    logger.log("analyzeAndPublishDiagnostics: UNKNOWN EXCEPTION");
   }
+  
+  logger.log("analyzeAndPublishDiagnostics: validating imports");
   auto importErrors = analyzer.validateImports(uri);
-    for (const auto& error : importErrors) {
-        LspDiagnostic diag;
-        diag.severity = DiagnosticSeverity::Error;
-        diag.message = error.message;
-        diag.range = error.range;
-        diag.source = "magolor";
-        diagnostics.push_back(diag);
-    }
-    
-    publishDiagnostics(uri, diagnostics);
+  for (const auto& error : importErrors) {
+      LspDiagnostic diag;
+      diag.severity = DiagnosticSeverity::Error;
+      diag.message = error.message;
+      diag.range = error.range;
+      diag.source = "magolor";
+      diagnostics.push_back(diag);
+  }
+  
+  logger.log("analyzeAndPublishDiagnostics: publishing " + std::to_string(diagnostics.size()) + " diagnostics");
+  publishDiagnostics(uri, diagnostics);
+  logger.log("analyzeAndPublishDiagnostics: END");
 }
 
 void MagolorLanguageServer::publishDiagnostics(
@@ -570,7 +646,7 @@ void MagolorLanguageServer::handleHover(const Message &msg) {
     transport.respond(msg.id.value(), JsonValue());
   }
 }
-void MagolorLanguageServer::handleRangeFormatting(const Message& msg) {
+void MagolorLanguageServer::handleRangeFormatting(const Message &msg) {
   std::string uri = msg.params["textDocument"]["uri"].asString();
   Range range;
   range.start.line = msg.params["range"]["start"]["line"].asInt();
@@ -578,7 +654,7 @@ void MagolorLanguageServer::handleRangeFormatting(const Message& msg) {
   range.end.line = msg.params["range"]["end"]["line"].asInt();
   range.end.character = msg.params["range"]["end"]["character"].asInt();
 
-  auto* doc = documents.get(uri);
+  auto *doc = documents.get(uri);
   if (!doc) {
     transport.respond(msg.id.value(), JsonValue::array());
     return;
@@ -596,13 +672,13 @@ void MagolorLanguageServer::handleRangeFormatting(const Message& msg) {
   transport.respond(msg.id.value(), edits);
 }
 
-void MagolorLanguageServer::handleOnTypeFormatting(const Message& msg) {
+void MagolorLanguageServer::handleOnTypeFormatting(const Message &msg) {
   std::string uri = msg.params["textDocument"]["uri"].asString();
   Position pos;
   pos.line = msg.params["position"]["line"].asInt();
   pos.character = msg.params["position"]["character"].asInt();
 
-  auto* doc = documents.get(uri);
+  auto *doc = documents.get(uri);
   if (!doc) {
     transport.respond(msg.id.value(), JsonValue::array());
     return;
@@ -613,7 +689,8 @@ void MagolorLanguageServer::handleOnTypeFormatting(const Message& msg) {
   transport.respond(msg.id.value(), JsonValue::array());
 }
 
-std::string MagolorLanguageServer::formatRange(const std::string& content, Range range) {
+std::string MagolorLanguageServer::formatRange(const std::string &content,
+                                               Range range) {
   std::istringstream input(content);
   std::stringstream result;
   std::string line;
@@ -627,13 +704,16 @@ std::string MagolorLanguageServer::formatRange(const std::string& content, Range
         result << "\n";
       } else {
         std::string trimmed = line.substr(start);
-        
-        if (trimmed[0] == '}') indentLevel--;
-        
-        for (int i = 0; i < indentLevel; i++) result << "    ";
+
+        if (trimmed[0] == '}')
+          indentLevel--;
+
+        for (int i = 0; i < indentLevel; i++)
+          result << "    ";
         result << trimmed << "\n";
-        
-        if (trimmed.back() == '{') indentLevel++;
+
+        if (trimmed.back() == '{')
+          indentLevel++;
       }
     }
     currentLine++;

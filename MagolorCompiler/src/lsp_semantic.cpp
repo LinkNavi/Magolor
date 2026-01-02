@@ -1,11 +1,12 @@
 #include "lsp_semantic.hpp"
+#include "lsp_logger.hpp"
 #include "lsp_project.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
-
+// logger is already declared extern in the header
 namespace fs = std::filesystem;
 
 // Helper function to convert TypePtr to string
@@ -110,169 +111,177 @@ void SemanticAnalyzer::reloadProject() {
 
 void SemanticAnalyzer::analyze(const std::string &uri,
                                const std::string &content) {
-  // Load entire project on first analyze
-  loadProject(uri);
+  logger.log("SemanticAnalyzer::analyze START for " + uri);
 
-  // Then analyze this specific file (updates cache)
-  extractSymbols(uri, content);
+  try {
+    // Load entire project on first analyze
+    logger.log("SemanticAnalyzer::analyze: loading project");
+    loadProject(uri);
+    logger.log("SemanticAnalyzer::analyze: project loaded");
+
+    // Then analyze this specific file (updates cache)
+    logger.log("SemanticAnalyzer::analyze: extracting symbols");
+    extractSymbols(uri, content);
+    logger.log("SemanticAnalyzer::analyze: symbols extracted");
+
+  } catch (const std::exception &e) {
+    logger.log("SemanticAnalyzer::analyze: EXCEPTION - " +
+               std::string(e.what()));
+    throw;
+  } catch (...) {
+    logger.log("SemanticAnalyzer::analyze: UNKNOWN EXCEPTION");
+    throw;
+  }
+
+  logger.log("SemanticAnalyzer::analyze END");
 }
 
 void SemanticAnalyzer::extractSymbols(const std::string &uri,
                                       const std::string &content) {
-  std::vector<SymbolPtr> symbols;
-  auto scope = std::make_shared<Scope>();
+  logger.log("extractSymbols: START for " + uri);
 
-  std::istringstream stream(content);
-  std::string line;
-  int lineNum = 0;
-  std::string currentClass;
-  Scope *currentScope = scope.get();
+  try {
+    std::vector<SymbolPtr> symbols;
+    auto scope = std::make_shared<Scope>();
 
-  while (std::getline(stream, line)) {
-    // Trim whitespace
-    line.erase(0, line.find_first_not_of(" \t"));
+    std::istringstream stream(content);
+    std::string line;
+    int lineNum = 0;
+    std::string currentClass;
+    Scope *currentScope = scope.get();
 
-    // Parse imports FIRST
-    if (line.find("using ") != std::string::npos) {
-      parseImport(line, currentScope);
-    }
-    // Parse cimports - handle both <header> and "header" syntax
-    else if (line.find("cimport ") != std::string::npos) {
-      // Just skip cimport lines - they're handled by the compiler
+    logger.log("extractSymbols: parsing " + std::to_string(content.length()) +
+               " bytes");
+
+    while (std::getline(stream, line)) {
       lineNum++;
-      continue;
-    }
-    // Class detection
-    else if (line.find("class ") != std::string::npos) {
-      auto sym = parseClass(line, lineNum, uri);
-      if (sym) {
-        sym->isCallable = false;
-        symbols.push_back(sym);
-        currentScope->define(sym);
-        currentClass = sym->name;
 
-        auto classScope = std::make_shared<Scope>();
-        classScope->parent = currentScope;
-        currentScope = classScope.get();
+      // Log every 100 lines to avoid spam
+      if (lineNum % 100 == 0) {
+        logger.log("extractSymbols: processing line " +
+                   std::to_string(lineNum));
       }
-    }
-    // Function/Method detection
-    else if (line.find("fn ") != std::string::npos) {
-      auto sym = parseFunction(line, lineNum, uri);
-      if (sym) {
-        sym->containerName = currentClass;
-        sym->isCallable = true;
-        sym->kind =
-            currentClass.empty() ? SymbolKind::Function : SymbolKind::Method;
 
-        // Extract parameter types and return type
-        size_t parenStart = line.find('(');
-        size_t parenEnd = line.find(')');
-        if (parenStart != std::string::npos && parenEnd != std::string::npos) {
-          std::string params =
-              line.substr(parenStart + 1, parenEnd - parenStart - 1);
+      // Trim whitespace
+      line.erase(0, line.find_first_not_of(" \t"));
 
-          std::istringstream paramStream(params);
-          std::string param;
-          while (std::getline(paramStream, param, ',')) {
-            size_t colonPos = param.find(':');
-            if (colonPos != std::string::npos) {
-              std::string type = param.substr(colonPos + 1);
-              type.erase(0, type.find_first_not_of(" \t"));
-              type.erase(type.find_last_not_of(" \t") + 1);
-              sym->paramTypes.push_back(type);
-            }
-          }
-
-          size_t arrowPos = line.find("->", parenEnd);
-          if (arrowPos != std::string::npos) {
-            size_t bracePos = line.find('{', arrowPos);
-            std::string retType =
-                line.substr(arrowPos + 2, bracePos - arrowPos - 2);
-            retType.erase(0, retType.find_first_not_of(" \t"));
-            retType.erase(retType.find_last_not_of(" \t") + 1);
-            sym->returnType = retType;
-          } else {
-            sym->returnType = "void";
-          }
-
-          sym->detail = "(";
-          for (size_t i = 0; i < sym->paramTypes.size(); i++) {
-            if (i > 0)
-              sym->detail += ", ";
-            sym->detail += sym->paramTypes[i];
-          }
-          sym->detail += ") -> " + sym->returnType;
+      // Parse imports FIRST
+      if (line.find("using ") != std::string::npos) {
+        logger.log("extractSymbols: parsing import at line " +
+                   std::to_string(lineNum));
+        try {
+          parseImport(line, currentScope);
+        } catch (const std::exception &e) {
+          logger.log("extractSymbols: import parse error - " +
+                     std::string(e.what()));
         }
-
-        symbols.push_back(sym);
-        currentScope->define(sym);
       }
-    }
-    // Variable detection
-    else if (line.find("let ") != std::string::npos) {
-      auto sym = parseVariable(line, lineNum, uri);
-      if (sym) {
-        sym->containerName = currentClass;
-        sym->isCallable = false;
+      // Parse cimports
+      else if (line.find("cimport ") != std::string::npos) {
+        logger.log("extractSymbols: skipping cimport at line " +
+                   std::to_string(lineNum));
+        continue;
+      }
+      // Class detection
+      else if (line.find("class ") != std::string::npos) {
+        logger.log("extractSymbols: parsing class at line " +
+                   std::to_string(lineNum));
+        try {
+          auto sym = parseClass(line, lineNum, uri);
+          if (sym) {
+            sym->isCallable = false;
+            symbols.push_back(sym);
+            currentScope->define(sym);
+            currentClass = sym->name;
 
-        // Check if the variable is assigned from a function call
-        size_t equalPos = line.find('=');
-        if (equalPos != std::string::npos) {
-          std::string rhs = line.substr(equalPos + 1);
-          rhs.erase(0, rhs.find_first_not_of(" \t"));
-
-          if (rhs.find('(') != std::string::npos) {
-            size_t parenPos = rhs.find('(');
-            std::string typeName = rhs.substr(0, parenPos);
-            typeName.erase(typeName.find_last_not_of(" \t") + 1);
-
-            size_t lastDot = typeName.rfind('.');
-            if (lastDot != std::string::npos) {
-              typeName = typeName.substr(lastDot + 1);
-            }
-
-            if (!typeName.empty()) {
-              sym->type = typeName;
-            }
+            auto classScope = std::make_shared<Scope>();
+            classScope->parent = currentScope;
+            currentScope = classScope.get();
           }
+        } catch (const std::exception &e) {
+          logger.log("extractSymbols: class parse error - " +
+                     std::string(e.what()));
         }
-
-        symbols.push_back(sym);
-        currentScope->define(sym);
       }
-    }
-
-    // Track class scope closing
-    if (line.find('}') != std::string::npos && !currentClass.empty()) {
-      bool inString = false;
-      int braceCount = 0;
-      for (char c : line) {
-        if (c == '"')
-          inString = !inString;
-        if (!inString) {
-          if (c == '{')
-            braceCount++;
-          else if (c == '}')
-            braceCount--;
+      // Function/Method detection
+      else if (line.find("fn ") != std::string::npos) {
+        logger.log("extractSymbols: parsing function at line " +
+                   std::to_string(lineNum));
+        try {
+          auto sym = parseFunction(line, lineNum, uri);
+          if (sym) {
+            sym->containerName = currentClass;
+            sym->isCallable = true;
+            sym->kind = currentClass.empty() ? SymbolKind::Function
+                                             : SymbolKind::Method;
+            symbols.push_back(sym);
+            currentScope->define(sym);
+          }
+        } catch (const std::exception &e) {
+          logger.log("extractSymbols: function parse error - " +
+                     std::string(e.what()));
+        }
+      }
+      // Variable detection
+      else if (line.find("let ") != std::string::npos) {
+        logger.log("extractSymbols: parsing variable at line " +
+                   std::to_string(lineNum));
+        try {
+          auto sym = parseVariable(line, lineNum, uri);
+          if (sym) {
+            sym->containerName = currentClass;
+            sym->isCallable = false;
+            symbols.push_back(sym);
+            currentScope->define(sym);
+          }
+        } catch (const std::exception &e) {
+          logger.log("extractSymbols: variable parse error - " +
+                     std::string(e.what()));
         }
       }
 
-      if (braceCount < 0) {
-        currentClass = "";
-        if (currentScope && currentScope->parent) {
-          currentScope = currentScope->parent;
+      // Track class scope closing
+      if (line.find('}') != std::string::npos && !currentClass.empty()) {
+        bool inString = false;
+        int braceCount = 0;
+        for (char c : line) {
+          if (c == '"')
+            inString = !inString;
+          if (!inString) {
+            if (c == '{')
+              braceCount++;
+            else if (c == '}')
+              braceCount--;
+          }
+        }
+
+        if (braceCount < 0) {
+          logger.log("extractSymbols: closing class at line " +
+                     std::to_string(lineNum));
+          currentClass = "";
+          if (currentScope && currentScope->parent) {
+            currentScope = currentScope->parent;
+          }
         }
       }
     }
 
-    lineNum++;
+    logger.log("extractSymbols: parsed " + std::to_string(symbols.size()) +
+               " symbols");
+
+    fileSymbols[uri] = symbols;
+    fileScopes[uri] = scope;
+
+    logger.log("extractSymbols: END");
+
+  } catch (const std::exception &e) {
+    logger.log("extractSymbols: FATAL ERROR - " + std::string(e.what()));
+    throw;
+  } catch (...) {
+    logger.log("extractSymbols: UNKNOWN FATAL ERROR");
+    throw;
   }
-
-  fileSymbols[uri] = symbols;
-  fileScopes[uri] = scope;
 }
-
 std::vector<SymbolPtr>
 SemanticAnalyzer::getSymbolsFromModule(const std::string &modulePath) {
   std::vector<SymbolPtr> symbols;
@@ -611,72 +620,74 @@ void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
   ImportedModule import;
   import.fullPath = importPath;
 
-
-// Map standard library modules to their symbols
-if (importPath == "Std.IO") {
-    import.importedSymbols = {"print", "println", "eprint", "eprintln",
-                              "readLine", "read", "readChar", "readFile",
+  // Map standard library modules to their symbols
+  if (importPath == "Std.IO") {
+    import.importedSymbols = {"print",     "println",   "eprint",   "eprintln",
+                              "readLine",  "read",      "readChar", "readFile",
                               "writeFile", "appendFile"};
-} else if (importPath == "Std.Network") {
-    import.importedSymbols = {"HttpServer", "HttpRequest", "HttpResponse",
-                              "jsonResponse", "htmlResponse", "textResponse",
-                              "redirectResponse", "urlEncode", "urlDecode",
-                              "parseQuery", "ping", "getLocalIP",
-                              "httpGet", "Status", "serveFile"};
-} else if (importPath == "Std.Math") {
-    import.importedSymbols = {"sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-                              "abs", "pow", "exp", "log", "log10", "log2", "floor", "ceil",
-                              "round", "min", "max", "clamp", "PI", "E"};
-} else if (importPath == "Std.String") {
-    import.importedSymbols = {"length", "isEmpty", "trim", "toLower",
-                              "toUpper", "startsWith", "endsWith", "contains",
-                              "replace", "split", "join", "repeat", "substring"};
-} else if (importPath == "Std.Array") {
-    import.importedSymbols = {"length", "isEmpty", "push", "pop", "contains",
-                              "reverse", "sort", "indexOf", "clear"};
-} else if (importPath == "Std.Parse") {
-    import.importedSymbols = {"parseInt", "parseFloat", "parseBool"};
-} else if (importPath == "Std.Option") {
-    import.importedSymbols = {"isSome", "isNone", "unwrap", "unwrapOr"};
-} else if (importPath == "Std.Map") {
-    import.importedSymbols = {"create", "insert", "get", "getOr",
-                              "contains", "remove", "size", "isEmpty",
-                              "clear", "keys", "values"};
-} else if (importPath == "Std.Set") {
-    import.importedSymbols = {"create", "insert", "contains", "remove",
-                              "size", "isEmpty", "clear", "toArray",
-                              "union_", "intersection", "difference"};
-}  else if (importPath == "Std.File") {
+  } else if (importPath == "Std.Network") {
     import.importedSymbols = {
-        // Path / FS utilities
-        "exists", "isFile", "isDirectory", "createDir",
-        "remove", "removeAll", "copy", "rename", "size",
-        
-        // File I/O functions
-        "readFile", "writeFile", "appendFile",
-        
-        // Low-level file operations
-        "Handle", "Mode", "Seek", "open", "close", "read",
-        "write", "read_bytes", "write_u32", "write_u64",
-        "seek", "tell", "flush"
-    };
-}else if (importPath == "Std.Time") {
+        "HttpServer",       "HttpRequest",  "HttpResponse",
+        "jsonResponse",     "htmlResponse", "textResponse",
+        "redirectResponse", "urlEncode",    "urlDecode",
+        "parseQuery",       "ping",         "getLocalIP",
+        "httpGet",          "Status",       "serveFile"};
+  } else if (importPath == "Std.Math") {
+    import.importedSymbols = {
+        "sqrt",  "sin", "cos", "tan",   "asin",  "acos", "atan",  "atan2",
+        "abs",   "pow", "exp", "log",   "log10", "log2", "floor", "ceil",
+        "round", "min", "max", "clamp", "PI",    "E"};
+  } else if (importPath == "Std.String") {
+    import.importedSymbols = {"length",   "isEmpty",    "trim",     "toLower",
+                              "toUpper",  "startsWith", "endsWith", "contains",
+                              "replace",  "split",      "join",     "repeat",
+                              "substring"};
+  } else if (importPath == "Std.Array") {
+    import.importedSymbols = {"length", "isEmpty",  "push",
+                              "pop",    "contains", "reverse",
+                              "sort",   "indexOf",  "clear"};
+  } else if (importPath == "Std.Parse") {
+    import.importedSymbols = {"parseInt", "parseFloat", "parseBool"};
+  } else if (importPath == "Std.Option") {
+    import.importedSymbols = {"isSome", "isNone", "unwrap", "unwrapOr"};
+  } else if (importPath == "Std.Map") {
+    import.importedSymbols = {"create",   "insert", "get",   "getOr",
+                              "contains", "remove", "size",  "isEmpty",
+                              "clear",    "keys",   "values"};
+  } else if (importPath == "Std.Set") {
+    import.importedSymbols = {"create", "insert",       "contains",  "remove",
+                              "size",   "isEmpty",      "clear",     "toArray",
+                              "union_", "intersection", "difference"};
+  } else if (importPath == "Std.File") {
+    import.importedSymbols = {// Path / FS utilities
+                              "exists", "isFile", "isDirectory", "createDir",
+                              "remove", "removeAll", "copy", "rename", "size",
+
+                              // File I/O functions
+                              "readFile", "writeFile", "appendFile",
+
+                              // Low-level file operations
+                              "Handle", "Mode", "Seek", "open", "close", "read",
+                              "write", "read_bytes", "write_u32", "write_u64",
+                              "seek", "tell", "flush"};
+  } else if (importPath == "Std.Time") {
     import.importedSymbols = {"now", "sleep", "timestamp"};
-} else if (importPath == "Std.Random") {
+  } else if (importPath == "Std.Random") {
     import.importedSymbols = {"randInt", "randFloat", "randBool"};
-} else if (importPath == "Std.System") {
+  } else if (importPath == "Std.System") {
     import.importedSymbols = {"exit", "getEnv", "execute"};
-} else {
+  } else {
     // User module - search our cached symbols
     std::string modulePath = importPath;
 
-    // Strip project name prefix (e.g., "MagolorDotDev.models.Package" -> "models/Package")
+    // Strip project name prefix (e.g., "MagolorDotDev.models.Package" ->
+    // "models/Package")
     size_t firstDot = modulePath.find('.');
     if (firstDot != std::string::npos) {
-        std::string possibleProjectName = modulePath.substr(0, firstDot);
-        if (possibleProjectName != "Std") {
-            modulePath = modulePath.substr(firstDot + 1);
-        }
+      std::string possibleProjectName = modulePath.substr(0, firstDot);
+      if (possibleProjectName != "Std") {
+        modulePath = modulePath.substr(firstDot + 1);
+      }
     }
 
     // Convert dots to slashes for path matching

@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <string>
 #include <memory>
-
+#include "lsp_logger.hpp"
 struct TextDocument {
     std::string uri;
     std::string languageId;
@@ -154,15 +154,8 @@ private:
 
 class MagolorLanguageServer {
 public:
-    void run() {
-        running = true;
-        while (running) {
-            auto msg = transport.receive();
-            if (!msg) break;
-            handleMessage(*msg);
-        }
-    }
-
+void run();
+LSPLogger logger;  // Define the global instance
 private:
     Transport transport;
     DocumentManager documents;
