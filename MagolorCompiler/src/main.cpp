@@ -176,8 +176,17 @@ int buildProject(bool verbose = false) {
       } catch (...) {
         // ignore path errors and keep default pkgName
       }
+  std::string relPath = file;
+  try {
+    fs::path absFile = fs::absolute(file);
+    fs::path absProj = fs::absolute(".");
+    relPath = fs::relative(absFile, absProj).string();
+  } catch (...) {
+    relPath = file;
+  }
+  
+  auto prog = compileFile(relPath, pkgName, hasErrors, verbose);
 
-      auto prog = compileFile(file, pkgName, hasErrors, verbose);
       if (hasErrors) break;
 
       // If this file is an application source (under project's src/), keep it for merging

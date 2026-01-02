@@ -1,5 +1,6 @@
 using Std.IO;
 using Std.Network;
+using MagolorDotDev.models.Package;
 
 fn main() {
     Std.print("Starting simple HTTP server...\n");
@@ -17,6 +18,7 @@ fn main() {
     });
 
     Std.print("Server is ready! Visit http://localhost:8080/\n");
+    let p = createPackage("SlateDB");
 
     server.start();
 }

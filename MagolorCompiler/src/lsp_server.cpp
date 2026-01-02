@@ -26,6 +26,18 @@ void MagolorLanguageServer::handleMessage(const Message &msg) {
     handleCompletion(msg);
   else if (msg.method == "textDocument/hover")
     handleHover(msg);
+  else if (msg.method == "textDocument/formatting")
+    handleFormatting(msg);
+  else if (msg.method == "textDocument/rangeFormatting")
+    handleRangeFormatting(msg);
+  else if (msg.method == "textDocument/onTypeFormatting")
+    handleOnTypeFormatting(msg);
+  else if (msg.method == "textDocument/rename")
+    handleRename(msg);
+  else if (msg.method == "textDocument/codeAction")
+    handleCodeAction(msg);
+  else if (msg.method == "textDocument/signatureHelp")
+    handleSignatureHelp(msg);
   else if (msg.method == "textDocument/definition")
     handleDefinition(msg);
   else if (msg.method == "textDocument/references")
@@ -37,6 +49,229 @@ void MagolorLanguageServer::handleMessage(const Message &msg) {
   }
 }
 
+void MagolorLanguageServer::handleSignatureHelp(const Message &msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  Position pos;
+  pos.line = msg.params["position"]["line"].asInt();
+  pos.character = msg.params["position"]["character"].asInt();
+
+  auto *doc = documents.get(uri);
+  if (!doc) {
+    transport.respond(msg.id.value(), JsonValue());
+    return;
+  }
+
+  // Find function being called
+  std::string line = doc->getLine(pos.line);
+  std::string word;
+  int parenPos = pos.character - 1;
+
+  // Walk back to find function name
+  while (parenPos >= 0 && line[parenPos] != '(') {
+    parenPos--;
+  }
+
+  if (parenPos < 0) {
+    transport.respond(msg.id.value(), JsonValue());
+    return;
+  }
+
+  // Get function name
+  int nameEnd = parenPos - 1;
+  while (nameEnd >= 0 &&
+         (std::isalnum(line[nameEnd]) || line[nameEnd] == '_')) {
+    nameEnd--;
+  }
+  nameEnd++;
+
+  std::string funcName = line.substr(nameEnd, parenPos - nameEnd);
+
+  // Look up function signature
+  auto sym = analyzer.findSymbolInImports(uri, funcName);
+  if (!sym && !funcName.empty()) {
+    // Try local scope
+    auto allSyms = analyzer.getAllSymbolsInFile(uri);
+    for (const auto &s : allSyms) {
+      if (s->name == funcName && s->kind == SymbolKind::Function) {
+        sym = s;
+        break;
+      }
+    }
+  }
+
+  if (!sym || sym->paramTypes.empty()) {
+    transport.respond(msg.id.value(), JsonValue());
+    return;
+  }
+
+  // Build signature help
+  JsonValue result = JsonValue::object();
+  result["signatures"] = JsonValue::array();
+
+  JsonValue sig = JsonValue::object();
+  sig["label"] = sym->name + sym->detail;
+  sig["parameters"] = JsonValue::array();
+
+  for (size_t i = 0; i < sym->paramTypes.size(); i++) {
+    JsonValue param = JsonValue::object();
+    param["label"] = sym->paramTypes[i];
+    sig["parameters"].push(param);
+  }
+
+  result["signatures"].push(sig);
+  result["activeSignature"] = 0;
+  result["activeParameter"] = 0; // Could be calculated from cursor position
+
+  transport.respond(msg.id.value(), result);
+}
+
+void MagolorLanguageServer::handleCodeAction(const Message &msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  Range range;
+  range.start.line = msg.params["range"]["start"]["line"].asInt();
+  range.start.character = msg.params["range"]["start"]["character"].asInt();
+  range.end.line = msg.params["range"]["end"]["line"].asInt();
+  range.end.character = msg.params["range"]["end"]["character"].asInt();
+
+  JsonValue actions = JsonValue::array();
+
+  auto *doc = documents.get(uri);
+  if (!doc) {
+    transport.respond(msg.id.value(), actions);
+    return;
+  }
+
+  // Check for missing imports
+  auto importErrors = analyzer.validateImports(uri);
+  for (const auto &error : importErrors) {
+    JsonValue action = JsonValue::object();
+    action["title"] = "Add import for " + error.modulePath;
+    action["kind"] = "quickfix";
+
+    // Create edit to add import
+    JsonValue edit = JsonValue::object();
+    edit["changes"] = JsonValue::object();
+    edit["changes"][uri] = JsonValue::array();
+
+    JsonValue textEdit = JsonValue::object();
+    textEdit["range"] = JsonValue::object();
+    textEdit["range"]["start"] = JsonValue::object();
+    textEdit["range"]["start"]["line"] = 0;
+    textEdit["range"]["start"]["character"] = 0;
+    textEdit["range"]["end"] = JsonValue::object();
+    textEdit["range"]["end"]["line"] = 0;
+    textEdit["range"]["end"]["character"] = 0;
+    textEdit["newText"] = "using " + error.modulePath + ";\n";
+
+    edit["changes"][uri].push(textEdit);
+    action["edit"] = edit;
+
+    actions.push(action);
+  }
+
+  transport.respond(msg.id.value(), actions);
+}
+void MagolorLanguageServer::handleRename(const Message &msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  Position pos;
+  pos.line = msg.params["position"]["line"].asInt();
+  pos.character = msg.params["position"]["character"].asInt();
+  std::string newName = msg.params["newName"].asString();
+
+  auto sym = analyzer.getSymbolAt(uri, pos);
+  if (!sym) {
+    transport.respond(msg.id.value(), JsonValue());
+    return;
+  }
+
+  // Build workspace edit
+  JsonValue edit = JsonValue::object();
+  edit["changes"] = JsonValue::object();
+  edit["changes"][uri] = JsonValue::array();
+
+  // Edit at definition
+  JsonValue defEdit = JsonValue::object();
+  defEdit["range"] = rangeToJson(sym->definition.range);
+  defEdit["newText"] = newName;
+  edit["changes"][uri].push(defEdit);
+
+  // Edits at all references
+  for (const auto &ref : sym->references) {
+    if (ref.uri == uri) {
+      JsonValue refEdit = JsonValue::object();
+      refEdit["range"] = rangeToJson(ref.range);
+      refEdit["newText"] = newName;
+      edit["changes"][uri].push(refEdit);
+    }
+  }
+
+  transport.respond(msg.id.value(), edit);
+}
+
+void MagolorLanguageServer::handleFormatting(const Message &msg) {
+  std::string uri = msg.params["textDocument"]["uri"].asString();
+  auto *doc = documents.get(uri);
+
+  if (!doc) {
+    transport.respond(msg.id.value(), JsonValue::array());
+    return;
+  }
+
+  std::string formatted = formatDocument(doc->content);
+
+  // Calculate edit to replace entire document
+  JsonValue edit = JsonValue::object();
+  edit["range"] = JsonValue::object();
+  edit["range"]["start"] = JsonValue::object();
+  edit["range"]["start"]["line"] = 0;
+  edit["range"]["start"]["character"] = 0;
+  edit["range"]["end"] = JsonValue::object();
+  edit["range"]["end"]["line"] = (int)doc->lineOffsets.size();
+  edit["range"]["end"]["character"] = 0;
+  edit["newText"] = formatted;
+
+  JsonValue edits = JsonValue::array();
+  edits.push(edit);
+
+  transport.respond(msg.id.value(), edits);
+}
+
+std::string MagolorLanguageServer::formatDocument(const std::string &content) {
+  // Simple formatter implementation
+  std::stringstream result;
+  std::istringstream input(content);
+  std::string line;
+  int indentLevel = 0;
+
+  while (std::getline(input, line)) {
+    // Trim line
+    size_t start = line.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+      result << "\n";
+      continue;
+    }
+
+    std::string trimmed = line.substr(start);
+
+    // Adjust indent for closing braces
+    if (trimmed[0] == '}') {
+      indentLevel--;
+    }
+
+    // Write indented line
+    for (int i = 0; i < indentLevel; i++) {
+      result << "    ";
+    }
+    result << trimmed << "\n";
+
+    // Adjust indent for opening braces
+    if (trimmed.back() == '{') {
+      indentLevel++;
+    }
+  }
+
+  return result.str();
+}
 void MagolorLanguageServer::handleInitialize(const Message &msg) {
   JsonValue caps = JsonValue::object();
 
@@ -53,7 +288,26 @@ void MagolorLanguageServer::handleInitialize(const Message &msg) {
   caps["completionProvider"]["triggerCharacters"].push(".");
   caps["completionProvider"]["triggerCharacters"].push(":");
   caps["completionProvider"]["resolveProvider"] = true;
+  // NEW: Formatting
+  caps["documentFormattingProvider"] = true;
+  caps["documentRangeFormattingProvider"] = true;
+  caps["documentOnTypeFormattingProvider"] = JsonValue::object();
+  caps["documentOnTypeFormattingProvider"]["firstTriggerCharacter"] = "}";
+  caps["documentOnTypeFormattingProvider"]["moreTriggerCharacter"] =
+      JsonValue::array();
+  caps["documentOnTypeFormattingProvider"]["moreTriggerCharacter"].push(";");
 
+  // NEW: Rename
+  caps["renameProvider"] = true;
+
+  // NEW: Code actions
+  caps["codeActionProvider"] = true;
+
+  // NEW: Signature help
+  caps["signatureHelpProvider"] = JsonValue::object();
+  caps["signatureHelpProvider"]["triggerCharacters"] = JsonValue::array();
+  caps["signatureHelpProvider"]["triggerCharacters"].push("(");
+  caps["signatureHelpProvider"]["triggerCharacters"].push(",");
   // Other capabilities
   caps["hoverProvider"] = true;
   caps["definitionProvider"] = true;
@@ -209,9 +463,17 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     // Silently ignore internal errors in LSP mode
     // The actual compiler will catch real errors
   }
-
-  // Publish diagnostics
-  publishDiagnostics(uri, diagnostics);
+  auto importErrors = analyzer.validateImports(uri);
+    for (const auto& error : importErrors) {
+        LspDiagnostic diag;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.message = error.message;
+        diag.range = error.range;
+        diag.source = "magolor";
+        diagnostics.push_back(diag);
+    }
+    
+    publishDiagnostics(uri, diagnostics);
 }
 
 void MagolorLanguageServer::publishDiagnostics(

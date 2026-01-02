@@ -44,7 +44,8 @@ public:
     CompletionProvider(SemanticAnalyzer& analyzer) : analyzer(analyzer) {}
     
     JsonValue provideCompletions(const std::string& uri, Position pos, const std::string& lineText);
-    
+    void addImportedSymbols(JsonValue& items, const std::string& uri, const std::string& filter);
+void addModuleCompletions(JsonValue& items, const std::string& uri);
 private:
     SemanticAnalyzer& analyzer;
     

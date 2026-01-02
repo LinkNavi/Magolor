@@ -3,7 +3,7 @@
 #include "stdlib_parser.hpp"
 #include <algorithm>
 #include <set>
-
+#include "lsp_project.hpp"
 // Cache the parsed stdlib functions (parse once at startup)
 static std::vector<StdLibFunction> g_stdlibFunctions;
 static bool g_stdlibParsed = false;
@@ -76,7 +76,55 @@ bool CompletionProvider::matchesFilter(const std::string &name,
   }
   return true;
 }
+void CompletionProvider::addImportedSymbols(JsonValue& items, const std::string& uri, const std::string& filter) {
+    // Get symbols from all imported modules
+    auto importedSymbols = analyzer.resolveImportedSymbols(uri);
+    
+    for (const auto& sym : importedSymbols) {
+        if (!matchesFilter(sym->name, filter)) {
+            continue;
+        }
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = sym->name;
+        
+        if (sym->kind == SymbolKind::Function) {
+            item["kind"] = (int)CompletionItemKind::Function;
+        } else if (sym->kind == SymbolKind::Class) {
+            item["kind"] = (int)CompletionItemKind::Class;
+        } else {
+            item["kind"] = (int)CompletionItemKind::Variable;
+        }
+        
+        if (!sym->detail.empty()) {
+            item["detail"] = sym->detail;
+        }
+        
+        item["sortText"] = "1_" + sym->name;
+        items.push(item);
+    }
+}
 
+void CompletionProvider::addModuleCompletions(JsonValue& items, const std::string& uri) {
+    // Get current project
+    auto project = ProjectManager::instance().getProjectForFile(uri);
+    if (!project) {
+        return;
+    }
+    
+    // Get all available modules in the project
+    for (const auto& [moduleUri, module] : project->modules) {
+        if (moduleUri == uri) continue; // Skip self
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = module->name;
+        item["kind"] = (int)CompletionItemKind::Module;
+        item["detail"] = "Module";
+        item["insertText"] = module->name;
+        item["sortText"] = "0_" + module->name;
+        items.push(item);
+    }
+}
 void CompletionProvider::addCallableSymbols(JsonValue &items,
                                             const std::string &uri,
                                             const std::string &filter) {
@@ -303,7 +351,13 @@ JsonValue CompletionProvider::provideCompletions(const std::string &uri,
   std::string context = lineText.substr(0, pos.character);
   addStdLibCompletions(items, context);
   addImportedFunctions(items, uri, word);
-
+ addImportedSymbols(items, uri, word);
+    
+    // NEW: If we're in a using statement, add module completions
+    if (lineText.find("using ") != std::string::npos) {
+        addModuleCompletions(items, uri);
+    }
+    
   for (const auto &snippet : getBuiltinSnippets()) {
     if (matchesFilter(snippet.label, word)) {
       JsonValue item = JsonValue::object();

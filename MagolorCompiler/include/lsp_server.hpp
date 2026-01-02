@@ -170,7 +170,15 @@ private:
     CompletionProvider completion{analyzer};
     bool running = false;
     bool initialized = false;
-    
+       void handleFormatting(const Message& msg);
+    void handleRangeFormatting(const Message& msg);
+    void handleOnTypeFormatting(const Message& msg);
+    void handleCodeAction(const Message &msg);
+
+void handleRename(const Message &msg);
+	void handleSignatureHelp(const Message &msg); 
+    std::string formatDocument(const std::string& content);
+    std::string formatRange(const std::string& content, Range range);
     void handleMessage(const Message& msg);
     void handleInitialize(const Message& msg);
     void handleInitialized(const Message& msg);

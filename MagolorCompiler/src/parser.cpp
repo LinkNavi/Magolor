@@ -80,7 +80,7 @@ Program Parser::parse() {
         prog.cimports.push_back(parseCImport());
       } else if (check(TokenType::CLASS)) {
         prog.classes.push_back(parseClass());
-      } else if (check(TokenType::FN)) {
+      } else if (check(TokenType::PUB) || check(TokenType::FN)) {
         prog.functions.push_back(parseFunction());
       } else {
         error("Unexpected token: " + peek().value, peek());
@@ -788,11 +788,11 @@ ExprPtr Parser::parsePrimary() {
     auto e = std::make_shared<Expr>();
     e->data = IdentExpr{t.value};
     e->loc = tokenToLoc(t);
-    
-    // IMPORTANT: Check if this is followed by a dot - if so, DON'T treat it as a call
-    // This allows Network.HTTP to be parsed as a namespace path
-    // The parseCall() function will handle the member access
-    
+
+    // IMPORTANT: Check if this is followed by a dot - if so, DON'T treat it as
+    // a call This allows Network.HTTP to be parsed as a namespace path The
+    // parseCall() function will handle the member access
+
     return e;
   }
   if (match(TokenType::SOME)) {

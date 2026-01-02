@@ -364,26 +364,31 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
               }
 
               // Check cimports
-              for (const auto &cimport : currentModule->ast.cimports) {
-                if (cimport.asNamespace == e.name) {
-                  auto moduleType = std::make_shared<Type>();
-                  moduleType->kind = Type::CLASS;
-                  moduleType->className = e.name;
-                  return moduleType;
+              for (const auto &importedModuleName :
+                   currentModule->importedModules) {
+                if (ModuleResolver::isBuiltinModule(importedModuleName)) {
+                  continue; // Skip built-in modules
                 }
-                // Check if it's a directly imported symbol
-                if (std::find(cimport.symbols.begin(), cimport.symbols.end(),
-                              e.name) != cimport.symbols.end()) {
-                  auto fnType = std::make_shared<Type>();
-                  fnType->kind = Type::FUNCTION;
-                  fnType->returnType = std::make_shared<Type>();
-                  fnType->returnType->kind = Type::VOID;
-                  return fnType;
+
+                ModulePtr importedModule =
+                    ModuleRegistry::instance().getModule(importedModuleName);
+                if (importedModule) {
+                  // Check functions in imported module
+                  for (const auto &fn : importedModule->ast.functions) {
+                    if (fn.name == e.name && fn.isPublic) {
+                      // Found it! Create function type
+                      auto fnType = std::make_shared<Type>();
+                      fnType->kind = Type::FUNCTION;
+                      fnType->returnType = fn.returnType;
+                      for (const auto &param : fn.params) {
+                        fnType->paramTypes.push_back(param.type);
+                      }
+                      return fnType;
+                    }
+                  }
                 }
               }
-            }
-
-            // Try functions
+            } // Try functions
             FnDecl *fn = lookupFunction(e.name);
             if (fn) {
               auto fnType = std::make_shared<Type>();
@@ -473,8 +478,14 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
 
           // Skip validation for module calls - they're validated by C++
           // compiler
-          if (isModuleCall) {
-            // Still type check the arguments for side effects
+          // Check if this is a method call (callee is a MemberExpr)
+          bool isMethodCall =
+              std::holds_alternative<MemberExpr>(e.callee->data);
+
+          // Skip validation for module calls OR method calls - they're
+          // validated by C++ compiler
+          if (isModuleCall ||
+              isMethodCall) { // Still type check the arguments for side effects
             for (auto &arg : e.args) {
               checkExpr(arg);
             }

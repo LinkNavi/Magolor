@@ -219,11 +219,11 @@ std::vector<std::string> collectSourceFiles(const std::string& srcDir) {
 }
 
 
-void buildProject(bool verbose = false) {
+int buildProject(bool verbose = false) {
   if (!fs::exists("project.toml")) {
     std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
     std::cerr << "  \033[1;34m= help:\033[0m initialize a project with 'gear init'\n";
-    return;
+    return 1;
   }
 
   // Parse project name
@@ -240,14 +240,14 @@ void buildProject(bool verbose = false) {
 
   if (projectName.empty()) {
     std::cerr << "\033[1;31merror\033[0m: could not determine project name\n";
-    return;
+    return 1;
   }
 
   std::vector<std::string> sourceFiles = collectSourceFiles("src");
 
   if (sourceFiles.empty()) {
     std::cerr << "\033[1;31merror\033[0m: no source files found in src/\n";
-    return;
+    return 1;
   }
 
   if (verbose) {
@@ -272,15 +272,18 @@ void buildProject(bool verbose = false) {
   int result = std::system(buildCmd.c_str());
   if (result != 0) {
     std::cerr << "\033[1;31merror\033[0m: build failed\n";
+    return 1;
   }
+  
+  return 0;
 }
 
 
 
-void runProject(bool verbose = false) {
+int runProject(bool verbose = false) {
   if (!fs::exists("project.toml")) {
     std::cerr << "\033[1;31merror\033[0m: could not find project.toml\n";
-    return;
+    return 1;
   }
 
   // Parse project name
@@ -297,16 +300,19 @@ void runProject(bool verbose = false) {
 
   if (projectName.empty()) {
     std::cerr << "\033[1;31merror\033[0m: could not determine project name\n";
-    return;
+    return 1;
   }
 
-  // ALWAYS build
-  buildProject(verbose);
+  // ALWAYS build - and check for errors
+  int buildResult = buildProject(verbose);
+  if (buildResult != 0) {
+    return buildResult;  // Don't run if build failed
+  }
 
   std::string exePath = "target/" + projectName;
   if (!fs::exists(exePath)) {
     std::cerr << "\033[1;31merror\033[0m: build succeeded but binary not found\n";
-    return;
+    return 1;
   }
 
   if (verbose) {
@@ -316,6 +322,7 @@ void runProject(bool verbose = false) {
   }
 
   std::system(("./" + exePath).c_str());
+  return 0;  // Success
 }
 
 
@@ -451,9 +458,9 @@ int main(int argc, char *argv[]) {
     std::string name = argv[2];
     initProject(name, name);
   } else if (command == "build") {
-    buildProject(verbose);
+    return buildProject(verbose);
   } else if (command == "run") {
-    runProject(verbose);
+    return runProject(verbose);
   } else if (command == "clean") {
     cleanProject();
   } else if (command == "check") {

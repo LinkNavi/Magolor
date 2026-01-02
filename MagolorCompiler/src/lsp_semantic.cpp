@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <regex>
 #include <sstream>
-
+#include "lsp_project.hpp"
 void SemanticAnalyzer::analyze(const std::string &uri,
                                const std::string &content) {
   extractSymbols(uri, content);
@@ -168,7 +168,85 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
   fileSymbols[uri] = symbols;
   fileScopes[uri] = scope;
 }
+std::vector<SymbolPtr> SemanticAnalyzer::getSymbolsFromModule(const std::string& modulePath) {
+    std::vector<SymbolPtr> symbols;
+    
+    // Check if we have cached symbols
+    auto it = moduleSymbols.find(modulePath);
+    if (it != moduleSymbols.end()) {
+        return it->second;
+    }
+    
+    // Try to get module from project context
+    auto project = ProjectManager::instance().getProjectForFile("dummy");
+    if (!project) {
+        return symbols;
+    }
+    
+    auto exportedNames = project->getExportedSymbols(modulePath);
+    for (const auto& name : exportedNames) {
+        auto sym = std::make_shared<Symbol>();
+        sym->name = name;
+        sym->kind = SymbolKind::Function; // Could be refined
+        sym->isPublic = true;
+        symbols.push_back(sym);
+    }
+    
+    moduleSymbols[modulePath] = symbols;
+    return symbols;
+}
 
+std::vector<SymbolPtr> SemanticAnalyzer::resolveImportedSymbols(const std::string& uri) {
+    std::vector<SymbolPtr> symbols;
+    
+    auto it = fileScopes.find(uri);
+    if (it == fileScopes.end()) {
+        return symbols;
+    }
+    
+    Scope* scope = it->second.get();
+    for (const auto& import : scope->imports) {
+        auto importedSymbols = getSymbolsFromModule(import.fullPath);
+        symbols.insert(symbols.end(), importedSymbols.begin(), importedSymbols.end());
+    }
+    
+    return symbols;
+}
+
+SymbolPtr SemanticAnalyzer::findSymbolInImports(const std::string& uri, const std::string& symbolName) {
+    auto importedSymbols = resolveImportedSymbols(uri);
+    
+    for (const auto& sym : importedSymbols) {
+        if (sym->name == symbolName) {
+            return sym;
+        }
+    }
+    
+    return nullptr;
+}
+
+std::vector<SemanticAnalyzer::ImportError> SemanticAnalyzer::validateImports(const std::string& uri) {
+    std::vector<ImportError> errors;
+    
+    auto project = ProjectManager::instance().getProjectForFile(uri);
+    if (!project) {
+        return errors;
+    }
+    
+    auto validationErrors = project->validateImports(uri);
+    for (const auto& error : validationErrors) {
+        ImportError ie;
+        ie.message = error;
+        // Extract module path from error message
+        size_t pos = error.find("Cannot find module: ");
+        if (pos != std::string::npos) {
+            ie.modulePath = error.substr(pos + 20);
+        }
+        errors.push_back(ie);
+    }
+    
+    return errors;
+}
 SymbolPtr SemanticAnalyzer::parseFunction(const std::string &line, int lineNum,
                                           const std::string &uri) {
   size_t fnPos = line.find("fn ");

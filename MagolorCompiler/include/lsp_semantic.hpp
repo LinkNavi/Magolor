@@ -75,11 +75,22 @@ public:
     SymbolPtr getSymbolAt(const std::string& uri, Position pos);
     std::vector<SymbolPtr> getAllSymbolsInFile(const std::string& uri);
     std::vector<std::string> getImportedModules(const std::string& uri);  // NEW
+     std::vector<SymbolPtr> getSymbolsFromModule(const std::string& modulePath);
+    std::vector<SymbolPtr> resolveImportedSymbols(const std::string& uri);
+    SymbolPtr findSymbolInImports(const std::string& uri, const std::string& symbolName);
     
+    // NEW: Import validation
+    struct ImportError {
+        std::string modulePath;
+        std::string message;
+        Range range;
+    };
+    std::vector<ImportError> validateImports(const std::string& uri);
 private:
     std::unordered_map<std::string, std::vector<SymbolPtr>> fileSymbols;
     std::unordered_map<std::string, std::shared_ptr<Scope>> fileScopes;
     
+std::unordered_map<std::string, std::vector<SymbolPtr>> moduleSymbols;
     void extractSymbols(const std::string& uri, const std::string& content);
     SymbolPtr parseFunction(const std::string& line, int lineNum, const std::string& uri);
     SymbolPtr parseClass(const std::string& line, int lineNum, const std::string& uri);
