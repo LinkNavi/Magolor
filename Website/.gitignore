@@ -1,0 +1,12 @@
+# Build artifacts
+target/
+.magolor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

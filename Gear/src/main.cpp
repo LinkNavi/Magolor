@@ -4,11 +4,12 @@
 #include <string>
 #include <cstdlib>
 #include <vector>
+#include <set>
 
 namespace fs = std::filesystem;
 
 void showHelp() {
-  std::cout << "\033[1mGear - Magolor Project Manager v0.1.0\033[0m\n\n";
+  std::cout << "\033[1mGear - Magolor Project Manager v0.2.0\033[0m\n\n";
   std::cout << "\033[1mUSAGE:\033[0m\n";
   std::cout << "    gear [COMMAND] [OPTIONS]\n\n";
   std::cout << "\033[1mCOMMANDS:\033[0m\n";
@@ -71,8 +72,9 @@ void initProject(std::string name, const std::string& targetDir = ".") {
     return;
   }
 
-  // Create folders
+  // Create folders including modules directory
   fs::create_directory(projDir / "src");
+  fs::create_directory(projDir / "src" / "modules");
   fs::create_directory(projDir / "target");
 
   // --- project.toml ---
@@ -94,14 +96,30 @@ void initProject(std::string name, const std::string& targetDir = ".") {
   }
 
   // --- src/main.mg (Hello World) ---
-  std::string mainMgContent = "using Std.IO;\n\n"
+  std::string mainMgContent = "using Std.IO;\n"
+                              "using modules.utils;\n\n"
                               "fn main() {\n"
                               "    Std.print(\"Hello, Magolor!\\n\");\n"
                               "    Std.print(\"Welcome to your new project: " + name + "\\n\");\n"
+                              "    greet(\"" + name + "\");\n"
                               "}\n";
 
   if (!writeToFile((projDir / "src" / "main.mg").string(), mainMgContent)) {
     std::cerr << "\033[1;31merror\033[0m: failed to create src/main.mg\n";
+    return;
+  }
+
+  // --- src/modules/utils.mg (Example module) ---
+  std::string utilsMgContent = "using Std.IO;\n\n"
+                              "pub fn greet(name: string) {\n"
+                              "    Std.print($\"Greetings from {name}!\\n\");\n"
+                              "}\n\n"
+                              "pub fn add(a: int, b: int) -> int {\n"
+                              "    return a + b;\n"
+                              "}\n";
+
+  if (!writeToFile((projDir / "src" / "modules" / "utils.mg").string(), utilsMgContent)) {
+    std::cerr << "\033[1;31merror\033[0m: failed to create src/modules/utils.mg\n";
     return;
   }
 
@@ -125,6 +143,15 @@ void initProject(std::string name, const std::string& targetDir = ".") {
   // --- README.md ---
   std::string readmeContent = "# " + name + "\n\n"
                              "A Magolor project\n\n"
+                             "## Project Structure\n\n"
+                             "```\n"
+                             "├── src/\n"
+                             "│   ├── main.mg          # Entry point\n"
+                             "│   └── modules/         # Your modules\n"
+                             "│       └── utils.mg     # Example module\n"
+                             "├── target/              # Build output\n"
+                             "└── project.toml         # Project configuration\n"
+                             "```\n\n"
                              "## Building\n\n"
                              "```bash\n"
                              "gear build\n"
@@ -132,11 +159,63 @@ void initProject(std::string name, const std::string& targetDir = ".") {
                              "## Running\n\n"
                              "```bash\n"
                              "gear run\n"
+                             "```\n\n"
+                             "## Module System\n\n"
+                             "Create modules in `src/` or subdirectories:\n\n"
+                             "```magolor\n"
+                             "// src/modules/math.mg\n"
+                             "pub fn add(a: int, b: int) -> int {\n"
+                             "    return a + b;\n"
+                             "}\n"
+                             "```\n\n"
+                             "Import and use in main.mg:\n\n"
+                             "```magolor\n"
+                             "using modules.math;\n\n"
+                             "fn main() {\n"
+                             "    let result = add(5, 3);\n"
+                             "}\n"
                              "```\n";
   
   writeToFile((projDir / "README.md").string(), readmeContent);
 
   std::cout << "\033[1;32m     Created\033[0m binary (application) package\n";
+  std::cout << "\033[1;36m        Note\033[0m: Multi-file project with module support\n";
+}
+
+std::vector<std::string> collectSourceFiles(const std::string& srcDir) {
+  std::vector<std::string> files;
+  std::set<std::string> uniqueFiles;
+  
+  if (!fs::exists(srcDir)) {
+    return files;
+  }
+  
+  // Recursively find all .mg files
+  for (const auto& entry : fs::recursive_directory_iterator(srcDir)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".mg") {
+      std::string filepath = entry.path().string();
+      
+      // Avoid duplicates
+      if (uniqueFiles.find(filepath) == uniqueFiles.end()) {
+        uniqueFiles.insert(filepath);
+        files.push_back(filepath);
+      }
+    }
+  }
+  
+  // Sort to ensure consistent build order (main.mg should be last for linking)
+  std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
+    // main.mg should come last
+    bool aIsMain = a.find("main.mg") != std::string::npos;
+    bool bIsMain = b.find("main.mg") != std::string::npos;
+    
+    if (aIsMain && !bIsMain) return false;
+    if (!aIsMain && bIsMain) return true;
+    
+    return a < b;
+  });
+  
+  return files;
 }
 
 void buildProject(bool verbose = false) {
@@ -146,10 +225,51 @@ void buildProject(bool verbose = false) {
     return;
   }
 
-  std::string cmd = "magolor build-project";
-  if (verbose) cmd += " --verbose";
+  // Parse project name from project.toml
+  std::ifstream toml("project.toml");
+  std::string line, projectName;
+  while (std::getline(toml, line)) {
+    if (line.find("name =") != std::string::npos) {
+      size_t start = line.find('"') + 1;
+      size_t end = line.rfind('"');
+      projectName = line.substr(start, end - start);
+      break;
+    }
+  }
+  toml.close();
+
+  if (projectName.empty()) {
+    std::cerr << "\033[1;31merror\033[0m: could not determine project name from project.toml\n";
+    return;
+  }
+
+  if (verbose) {
+    std::cout << "\033[1;32m   Building\033[0m " << projectName << "\n";
+  }
+
+  // Collect all source files
+  std::vector<std::string> sourceFiles = collectSourceFiles("src");
   
-  int result = std::system(cmd.c_str());
+  if (sourceFiles.empty()) {
+    std::cerr << "\033[1;31merror\033[0m: no source files found in src/\n";
+    std::cerr << "  \033[1;34m= help:\033[0m create at least one .mg file in src/\n";
+    return;
+  }
+
+  if (verbose) {
+    std::cout << "\033[1;32m   Compiling\033[0m " << sourceFiles.size() << " source files\n";
+    for (const auto& file : sourceFiles) {
+      std::cout << "             " << file << "\n";
+    }
+  }
+
+  // Build command with all source files
+  std::string buildCmd = "magolor build-project";
+  if (verbose) {
+    buildCmd += " --verbose";
+  }
+  
+  int result = std::system(buildCmd.c_str());
   if (result != 0) {
     std::cerr << "\033[1;31merror\033[0m: build failed\n";
   }
@@ -220,11 +340,11 @@ void checkProject() {
 
   std::cout << "\033[1;32m    Checking\033[0m project...\n";
   
-  std::vector<std::string> sourceFiles;
-  for (const auto& entry : fs::recursive_directory_iterator("src")) {
-    if (entry.is_regular_file() && entry.path().extension() == ".mg") {
-      sourceFiles.push_back(entry.path().string());
-    }
+  std::vector<std::string> sourceFiles = collectSourceFiles("src");
+
+  if (sourceFiles.empty()) {
+    std::cerr << "\033[1;31merror\033[0m: no source files found\n";
+    return;
   }
 
   bool hasErrors = false;
@@ -237,7 +357,7 @@ void checkProject() {
   }
 
   if (!hasErrors) {
-    std::cout << "\033[1;32m    Finished\033[0m no errors found\n";
+    std::cout << "\033[1;32m    Finished\033[0m no errors found in " << sourceFiles.size() << " files\n";
   }
 }
 
