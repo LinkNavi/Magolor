@@ -20,12 +20,13 @@ using ExprPtr = std::shared_ptr<Expr>;
 using StmtPtr = std::shared_ptr<Stmt>;
 
 struct Type {
-    enum Kind { INT, FLOAT, STRING, BOOL, VOID, FUNCTION, CLASS, OPTION, ARRAY };
+    enum Kind { INT, FLOAT, STRING, BOOL, VOID, FUNCTION, CLASS, OPTION, ARRAY, GENERIC };
     Kind kind;
     std::string className;
     TypePtr returnType;
     std::vector<TypePtr> paramTypes;
     TypePtr innerType; // for Option<T>, Array<T>
+    std::vector<TypePtr> genericArgs; // NEW: for Map<K,V>, custom generics
 };
 
 struct Param {

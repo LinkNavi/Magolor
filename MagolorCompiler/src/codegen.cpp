@@ -33,6 +33,30 @@ std::string CodeGen::typeToString(const TypePtr &type) {
     return "std::optional<" + typeToString(type->innerType) + ">";
   case Type::ARRAY:
     return "std::vector<" + typeToString(type->innerType) + ">";
+ case Type::GENERIC: {
+    // Handle generic types like Map<K,V>
+    std::string result = type->className;
+    if (!type->genericArgs.empty()) {
+      result += "<";
+      for (size_t i = 0; i < type->genericArgs.size(); i++) {
+        if (i > 0) result += ", ";
+        result += typeToString(type->genericArgs[i]);
+      }
+      result += ">";
+    }
+    
+    // Map Magolor generic types to C++ equivalents
+    if (type->className == "Map" && type->genericArgs.size() == 2) {
+      return "std::unordered_map<" + 
+             typeToString(type->genericArgs[0]) + ", " + 
+             typeToString(type->genericArgs[1]) + ">";
+    }
+    if (type->className == "Set" && type->genericArgs.size() == 1) {
+      return "std::unordered_set<" + typeToString(type->genericArgs[0]) + ">";
+    }
+    
+    return result;
+  }
   case Type::FUNCTION: {
     std::string s = "std::function<" + typeToString(type->returnType) + "(";
     for (size_t i = 0; i < type->paramTypes.size(); i++) {
@@ -44,9 +68,7 @@ std::string CodeGen::typeToString(const TypePtr &type) {
   }
   }
   return "auto";
-}
-
-void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
+}void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
 
 void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   if (cimports.empty())

@@ -14,7 +14,7 @@ private:
     std::string filename;
     ErrorReporter& reporter;
     size_t pos = 0;
-    
+    bool skipGenericArgs(); 
     Token peek(int offset = 0);
     Token advance();
     bool check(TokenType t);

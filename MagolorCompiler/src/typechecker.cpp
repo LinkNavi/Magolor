@@ -808,6 +808,14 @@ bool TypeChecker::typesEqual(TypePtr a, TypePtr b) {
     return false;
 
   switch (a->kind) {
+ case Type::GENERIC:
+    if (a->className != b->className) return false;
+    if (a->genericArgs.size() != b->genericArgs.size()) return false;
+    for (size_t i = 0; i < a->genericArgs.size(); i++) {
+      if (!typesEqual(a->genericArgs[i], b->genericArgs[i]))
+        return false;
+    }
+    return true;
   case Type::CLASS:
     return a->className == b->className;
   case Type::OPTION:
@@ -889,6 +897,14 @@ std::string TypeChecker::typeToString(TypePtr type) {
     return "unknown";
 
   switch (type->kind) {
+case Type::GENERIC: {
+    std::string s = type->className + "<";
+    for (size_t i = 0; i < type->genericArgs.size(); i++) {
+      if (i > 0) s += ", ";
+      s += typeToString(type->genericArgs[i]);
+    }
+    return s + ">";
+  }
   case Type::INT:
     return "int";
   case Type::FLOAT:

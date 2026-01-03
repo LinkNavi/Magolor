@@ -171,6 +171,7 @@ CImportDecl Parser::parseCImport() {
   expect(TokenType::SEMICOLON, "Expected ';' after cimport");
   return decl;
 }
+
 TypePtr Parser::parseType() {
   auto type = std::make_shared<Type>();
   if (check(TokenType::FN))
@@ -196,6 +197,35 @@ TypePtr Parser::parseType() {
   case TokenType::IDENT:
     type->kind = Type::CLASS;
     type->className = t.value;
+    
+    // NEW: Check for generic arguments
+    if (check(TokenType::LT)) {
+      advance(); // consume '<'
+      
+      // Parse first generic argument
+      type->genericArgs.push_back(parseType());
+      
+      // Parse additional generic arguments
+      while (match(TokenType::COMMA)) {
+        type->genericArgs.push_back(parseType());
+      }
+      
+      expect(TokenType::GT, "Expected '>' after generic arguments");
+      
+      // Handle special generic types
+      if (type->className == "Option" && type->genericArgs.size() == 1) {
+        type->kind = Type::OPTION;
+        type->innerType = type->genericArgs[0];
+        type->genericArgs.clear();
+      } else if (type->className == "Array" && type->genericArgs.size() == 1) {
+        type->kind = Type::ARRAY;
+        type->innerType = type->genericArgs[0];
+        type->genericArgs.clear();
+      } else {
+        // Keep as generic class type
+        type->kind = Type::GENERIC;
+      }
+    }
     break;
   default:
     error("Expected type", t);
@@ -636,11 +666,72 @@ ExprPtr Parser::parseUnary() {
   }
   return parseCall();
 }
-
+bool Parser::skipGenericArgs() {
+  if (!check(TokenType::LT)) return false;
+  
+  // Look ahead to determine if this is a generic call
+  // We check if we have pattern like: name<...>(
+  int savedPos = pos;
+  advance(); // consume '<'
+  
+  int depth = 1;
+  bool success = false;
+  
+  while (depth > 0 && pos < tokens.size() - 1) {
+    TokenType t = peek().type;
+    
+    if (t == TokenType::LT) {
+      depth++;
+      advance();
+    } else if (t == TokenType::GT) {
+      depth--;
+      advance();
+      if (depth == 0) {
+        // Successfully found closing '>'
+        // Check if next token is '(' for function call
+        if (check(TokenType::LPAREN)) {
+          success = true;
+        }
+        break;
+      }
+    } else if (t == TokenType::COMMA || 
+               t == TokenType::IDENT || 
+               t == TokenType::INT || 
+               t == TokenType::FLOAT ||
+               t == TokenType::STRING ||
+               t == TokenType::BOOL ||
+               t == TokenType::VOID) {
+      advance();
+    } else {
+      // Unexpected token - probably not generic args
+      break;
+    }
+  }
+  
+  if (!success) {
+    // Not generic args, restore position
+    pos = savedPos;
+    return false;
+  }
+  
+  return true;
+}
 ExprPtr Parser::parseCall() {
   auto expr = parsePrimary();
 
   while (true) {
+    // NEW: Check for generic type arguments before '('
+    if (check(TokenType::LT)) {
+      // Check if this is a member access (method call)
+      bool isMemberAccess = std::holds_alternative<MemberExpr>(expr->data);
+      
+      if (isMemberAccess) {
+        // Try to skip generic args
+        skipGenericArgs();
+        // Continue to parse the '(' below
+      }
+    }
+    
     if (match(TokenType::LPAREN)) {
       Token tok = tokens[pos - 1];
       auto callExpr = std::make_shared<Expr>();
@@ -654,8 +745,9 @@ ExprPtr Parser::parseCall() {
       }
       expect(TokenType::RPAREN, "Expected ')' after arguments");
       callExpr->data = ce;
-      callExpr->loc = expr->loc; // Use callee's location
+      callExpr->loc = expr->loc;
       expr = callExpr;
+      
     } else if (match(TokenType::DOT)) {
       Token memberTok = expect(TokenType::IDENT, "Expected member name");
       auto memberExpr = std::make_shared<Expr>();
@@ -663,8 +755,9 @@ ExprPtr Parser::parseCall() {
       me.object = expr;
       me.member = memberTok.value;
       memberExpr->data = me;
-      memberExpr->loc = expr->loc; // Use object's location
+      memberExpr->loc = expr->loc;
       expr = memberExpr;
+      
     } else if (match(TokenType::LBRACKET)) {
       auto indexExpr = std::make_shared<Expr>();
       IndexExpr ie;
@@ -672,25 +765,25 @@ ExprPtr Parser::parseCall() {
       ie.index = parseExpr();
       expect(TokenType::RBRACKET, "Expected ']' after index");
       indexExpr->data = ie;
-      indexExpr->loc = expr->loc; // Use object's location
+      indexExpr->loc = expr->loc;
       expr = indexExpr;
+      
     } else if (match(TokenType::DOUBLE_COLON)) {
-      Token memberTok =
-          expect(TokenType::IDENT, "Expected function/member name after '::'");
+      Token memberTok = expect(TokenType::IDENT, "Expected function/member name after '::'");
       auto memberExpr = std::make_shared<Expr>();
       MemberExpr me;
       me.object = expr;
       me.member = memberTok.value;
       memberExpr->data = me;
-      memberExpr->loc = expr->loc; // Use object's location
+      memberExpr->loc = expr->loc;
       expr = memberExpr;
+      
     } else {
       break;
     }
   }
   return expr;
 }
-
 ExprPtr Parser::parseLambda() {
   expect(TokenType::FN, "Expected 'fn'");
   expect(TokenType::LPAREN, "Expected '('");

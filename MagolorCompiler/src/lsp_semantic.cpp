@@ -159,131 +159,90 @@ void SemanticAnalyzer::extractSymbols(const std::string &uri,
                                       const std::string &content) {
   logger.log("extractSymbols: START for " + uri);
 
-  try {
-    std::vector<SymbolPtr> symbols;
-    auto scope = std::make_shared<Scope>();
+  std::vector<SymbolPtr> symbols;
+  auto scope = std::make_shared<Scope>();
 
-    std::istringstream stream(content);
-    std::string line;
-    int lineNum = 0;
-    std::string currentClass;
-    Scope *currentScope = scope.get();
+  std::istringstream stream(content);
+  std::string line;
+  int lineNum = 0;
+  std::string currentClass;
 
-    logger.log("extractSymbols: parsing " + std::to_string(content.length()) +
-               " bytes");
+  logger.log("extractSymbols: parsing " + std::to_string(content.length()) + " bytes");
 
-    while (std::getline(stream, line)) {
-      lineNum++;
+  while (std::getline(stream, line)) {
+    lineNum++;
+    
+    // Log EVERY line to find the crash
+    logger.log("extractSymbols: LINE " + std::to_string(lineNum) + ": " + 
+               line.substr(0, std::min((size_t)50, line.size())));
 
-      if (lineNum % 100 == 0) {
-        logger.log("extractSymbols: processing line " +
-                   std::to_string(lineNum));
+    // Trim leading whitespace safely
+    size_t firstNonSpace = line.find_first_not_of(" \t");
+    std::string trimmedLine = (firstNonSpace != std::string::npos) 
+                              ? line.substr(firstNonSpace) 
+                              : "";
+
+    try {
+      if (trimmedLine.find("using ") == 0) {
+        logger.log("extractSymbols: parsing import at line " + std::to_string(lineNum));
+        parseImport(line, scope.get());
+      } 
+      else if (trimmedLine.find("cimport ") == 0) {
+        continue;
+      } 
+      else if (trimmedLine.find("class ") != std::string::npos ||
+               (trimmedLine.find("pub ") == 0 && trimmedLine.find("class ") != std::string::npos)) {
+        logger.log("extractSymbols: parsing class at line " + std::to_string(lineNum));
+        auto sym = parseClass(line, lineNum, uri);
+        if (sym) {
+          sym->isCallable = false;
+          symbols.push_back(sym);
+          scope->define(sym);
+          currentClass = sym->name;
+        }
+      } 
+      else if (trimmedLine.find("fn ") != std::string::npos) {
+        logger.log("extractSymbols: parsing function at line " + std::to_string(lineNum));
+        auto sym = parseFunction(line, lineNum, uri);
+        if (sym) {
+          sym->containerName = currentClass;
+          sym->isCallable = true;
+          sym->kind = currentClass.empty() ? SymbolKind::Function : SymbolKind::Method;
+          symbols.push_back(sym);
+          scope->define(sym);
+        }
+      } 
+      else if (trimmedLine.find("let ") == 0) {
+        logger.log("extractSymbols: parsing variable at line " + std::to_string(lineNum));
+        auto sym = parseVariable(line, lineNum, uri);
+        if (sym) {
+          sym->containerName = currentClass;
+          sym->isCallable = false;
+          symbols.push_back(sym);
+          scope->define(sym);
+        }
       }
 
-      line.erase(0, line.find_first_not_of(" \t"));
-
-      // All parsing wrapped in individual try-catch blocks
-      try {
-        if (line.find("using ") != std::string::npos) {
-          logger.log("extractSymbols: parsing import at line " +
-                     std::to_string(lineNum));
-          parseImport(line, currentScope);
-        } else if (line.find("cimport ") != std::string::npos) {
-          logger.log("extractSymbols: skipping cimport at line " +
-                     std::to_string(lineNum));
-          continue;
-        } else if (line.find("class ") != std::string::npos) {
-          logger.log("extractSymbols: parsing class at line " +
-                     std::to_string(lineNum));
-          auto sym = parseClass(line, lineNum, uri);
-          if (sym) {
-            sym->isCallable = false;
-            symbols.push_back(sym);
-            currentScope->define(sym);
-            currentClass = sym->name;
-
-            auto classScope = std::make_shared<Scope>();
-            classScope->parent = currentScope;
-            currentScope = classScope.get();
-          }
-        } else if (line.find("fn ") != std::string::npos) {
-          logger.log("extractSymbols: parsing function at line " +
-                     std::to_string(lineNum));
-          auto sym = parseFunction(line, lineNum, uri);
-          if (sym) {
-            sym->containerName = currentClass;
-            sym->isCallable = true;
-            sym->kind = currentClass.empty() ? SymbolKind::Function
-                                             : SymbolKind::Method;
-            symbols.push_back(sym);
-            currentScope->define(sym);
-          }
-        } else if (line.find("let ") != std::string::npos) {
-          logger.log("extractSymbols: parsing variable at line " +
-                     std::to_string(lineNum));
-          auto sym = parseVariable(line, lineNum, uri);
-          if (sym) {
-            sym->containerName = currentClass;
-            sym->isCallable = false;
-            symbols.push_back(sym);
-            currentScope->define(sym);
-          }
-        }
-      } catch (const std::exception &e) {
-        logger.log("extractSymbols: error on line " + std::to_string(lineNum) +
-                   ": " + std::string(e.what()));
-        // Continue parsing next line
-      } catch (...) {
-        logger.log("extractSymbols: unknown error on line " +
-                   std::to_string(lineNum));
-        // Continue parsing next line
-      }
-
-      if (line.find('}') != std::string::npos && !currentClass.empty()) {
-        bool inString = false;
-        int braceCount = 0;
-        for (char c : line) {
-          if (c == '"')
-            inString = !inString;
-          if (!inString) {
-            if (c == '{')
-              braceCount++;
-            else if (c == '}')
-              braceCount--;
-          }
-        }
-
-        if (braceCount < 0) {
-          logger.log("extractSymbols: closing class at line " +
-                     std::to_string(lineNum));
+      // Check for class closing brace
+      if (!currentClass.empty() && trimmedLine.find('}') != std::string::npos) {
+        // Simple check: if line is just "}" or starts with "}"
+        if (trimmedLine == "}" || trimmedLine[0] == '}') {
+          logger.log("extractSymbols: closing class at line " + std::to_string(lineNum));
           currentClass = "";
-          if (currentScope && currentScope->parent) {
-            currentScope = currentScope->parent;
-          }
         }
       }
+    } catch (const std::exception &e) {
+      logger.log("extractSymbols: EXCEPTION at line " + std::to_string(lineNum) + ": " + e.what());
+    } catch (...) {
+      logger.log("extractSymbols: UNKNOWN EXCEPTION at line " + std::to_string(lineNum));
     }
-
-    logger.log("extractSymbols: parsed " + std::to_string(symbols.size()) +
-               " symbols");
-
-    fileSymbols[uri] = symbols;
-    fileScopes[uri] = scope;
-
-    logger.log("extractSymbols: END");
-
-  } catch (const std::exception &e) {
-    logger.log("extractSymbols: FATAL ERROR - " + std::string(e.what()));
-    // Don't re-throw - just log and continue with empty symbols
-    fileSymbols[uri] = {};
-    fileScopes[uri] = std::make_shared<Scope>();
-  } catch (...) {
-    logger.log("extractSymbols: UNKNOWN FATAL ERROR");
-    fileSymbols[uri] = {};
-    fileScopes[uri] = std::make_shared<Scope>();
   }
-}
-std::vector<SymbolPtr>
+
+  logger.log("extractSymbols: parsed " + std::to_string(symbols.size()) + " symbols");
+  fileSymbols[uri] = symbols;
+  fileScopes[uri] = scope;
+  logger.log("extractSymbols: END");
+}std::vector<SymbolPtr>
 SemanticAnalyzer::getSymbolsFromModule(const std::string &modulePath) {
   std::vector<SymbolPtr> symbols;
 
@@ -565,30 +524,56 @@ SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
   sym->definition.range.start = {lineNum - 1, (int)nameStart}; // LSP is 0-based
   sym->definition.range.end = {lineNum - 1, (int)nameEnd};
 
-  // Try to extract type
+ // Try to extract type
   try {
+    size_t equalPos = line.find('=', nameEnd);
     size_t colonPos = line.find(':', nameEnd);
-    if (colonPos != std::string::npos && colonPos < line.find('=')) {
+    
+    // Check if colon comes before equal sign (explicit type annotation)
+    if (colonPos != std::string::npos && 
+        (equalPos == std::string::npos || colonPos < equalPos)) {
       // Has explicit type annotation
-      size_t typeEnd = line.find('=', colonPos);
+      size_t typeEnd = equalPos;
       if (typeEnd == std::string::npos)
         typeEnd = line.find(';', colonPos);
       if (typeEnd == std::string::npos)
         typeEnd = line.size();
 
-      sym->type = line.substr(colonPos + 1, typeEnd - colonPos - 1);
-      sym->type.erase(0, sym->type.find_first_not_of(" \t"));
-      sym->type.erase(sym->type.find_last_not_of(" \t") + 1);
-    } else {
+      if (colonPos + 1 < typeEnd) {
+        sym->type = line.substr(colonPos + 1, typeEnd - colonPos - 1);
+        sym->type.erase(0, sym->type.find_first_not_of(" \t"));
+        if (!sym->type.empty()) {
+          size_t lastNonSpace = sym->type.find_last_not_of(" \t");
+          if (lastNonSpace != std::string::npos) {
+            sym->type = sym->type.substr(0, lastNonSpace + 1);
+          }
+        }
+      }
+    } else if (equalPos != std::string::npos) {
       // Try to infer type from initialization
-      size_t equalPos = line.find('=', nameEnd);
-      if (equalPos != std::string::npos) {
-        size_t newPos = line.find("new ", equalPos);
-        if (newPos != std::string::npos && newPos < equalPos + 10) {
-          size_t classStart = newPos + 4;
+      size_t newPos = line.find("new ", equalPos);
+      if (newPos != std::string::npos) {
+        size_t classStart = newPos + 4;
+        if (classStart < line.size()) {
           size_t classEnd = line.find_first_of("( \t;", classStart);
-          if (classEnd != std::string::npos) {
+          if (classEnd == std::string::npos) {
+            classEnd = line.size();
+          }
+          if (classEnd > classStart) {
             sym->type = line.substr(classStart, classEnd - classStart);
+          }
+        }
+      } else {
+        // Check for ClassName.new() pattern (like SlateDB.new())
+        size_t dotNewPos = line.find(".new(", equalPos);
+        if (dotNewPos != std::string::npos) {
+          size_t classStart = equalPos + 1;
+          while (classStart < dotNewPos && 
+                 (line[classStart] == ' ' || line[classStart] == '\t')) {
+            classStart++;
+          }
+          if (classStart < dotNewPos) {
+            sym->type = line.substr(classStart, dotNewPos - classStart);
           }
         }
       }
@@ -596,9 +581,9 @@ SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
   } catch (const std::exception &e) {
     logger.log("parseVariable: exception extracting type - " +
                std::string(e.what()));
-  }
-
-  logger.log("parseVariable: successfully parsed '" + sym->name + "' type='" +
+  } catch (...) {
+    logger.log("parseVariable: unknown exception extracting type");
+  }  logger.log("parseVariable: successfully parsed '" + sym->name + "' type='" +
              (sym->type.empty() ? "<inferred>" : sym->type) + "'");
 
   return sym;
