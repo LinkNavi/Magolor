@@ -197,21 +197,21 @@ TypePtr Parser::parseType() {
   case TokenType::IDENT:
     type->kind = Type::CLASS;
     type->className = t.value;
-    
+
     // NEW: Check for generic arguments
     if (check(TokenType::LT)) {
       advance(); // consume '<'
-      
+
       // Parse first generic argument
       type->genericArgs.push_back(parseType());
-      
+
       // Parse additional generic arguments
       while (match(TokenType::COMMA)) {
         type->genericArgs.push_back(parseType());
       }
-      
+
       expect(TokenType::GT, "Expected '>' after generic arguments");
-      
+
       // Handle special generic types
       if (type->className == "Option" && type->genericArgs.size() == 1) {
         type->kind = Type::OPTION;
@@ -667,19 +667,20 @@ ExprPtr Parser::parseUnary() {
   return parseCall();
 }
 bool Parser::skipGenericArgs() {
-  if (!check(TokenType::LT)) return false;
-  
-  // Look ahead to determine if this is a generic call
-  // We check if we have pattern like: name<...>(
+  if (!check(TokenType::LT))
+    return false;
+
+  // Save position in case this isn't generic args
   int savedPos = pos;
   advance(); // consume '<'
-  
+
   int depth = 1;
-  bool success = false;
-  
-  while (depth > 0 && pos < tokens.size() - 1) {
+  bool foundComma = false;
+  bool foundType = false;
+
+  while (depth > 0 && pos < tokens.size()) {
     TokenType t = peek().type;
-    
+
     if (t == TokenType::LT) {
       depth++;
       advance();
@@ -688,50 +689,38 @@ bool Parser::skipGenericArgs() {
       advance();
       if (depth == 0) {
         // Successfully found closing '>'
-        // Check if next token is '(' for function call
+        // Must be followed by '(' for method call
         if (check(TokenType::LPAREN)) {
-          success = true;
+          return true;
         }
         break;
       }
-    } else if (t == TokenType::COMMA || 
-               t == TokenType::IDENT || 
-               t == TokenType::INT || 
-               t == TokenType::FLOAT ||
-               t == TokenType::STRING ||
-               t == TokenType::BOOL ||
-               t == TokenType::VOID) {
+    } else if (t == TokenType::COMMA) {
+      foundComma = true;
       advance();
-    } else {
-      // Unexpected token - probably not generic args
+    } else if (t == TokenType::IDENT || t == TokenType::INT ||
+               t == TokenType::FLOAT || t == TokenType::STRING ||
+               t == TokenType::BOOL || t == TokenType::VOID) {
+      foundType = true;
+      advance();
+    } else if (t == TokenType::ASSIGN || t == TokenType::SEMICOLON ||
+               t == TokenType::EOF_TOK) {
+      // Definitely not generic args
       break;
+    } else {
+      // Unexpected token
+      advance();
     }
   }
-  
-  if (!success) {
-    // Not generic args, restore position
-    pos = savedPos;
-    return false;
-  }
-  
-  return true;
+
+  // Not generic args, restore position
+  pos = savedPos;
+  return false;
 }
 ExprPtr Parser::parseCall() {
   auto expr = parsePrimary();
 
   while (true) {
-    // NEW: Check for generic type arguments before '('
-    if (check(TokenType::LT)) {
-      // Check if this is a member access (method call)
-      bool isMemberAccess = std::holds_alternative<MemberExpr>(expr->data);
-      
-      if (isMemberAccess) {
-        // Try to skip generic args
-        skipGenericArgs();
-        // Continue to parse the '(' below
-      }
-    }
-    
     if (match(TokenType::LPAREN)) {
       Token tok = tokens[pos - 1];
       auto callExpr = std::make_shared<Expr>();
@@ -747,7 +736,7 @@ ExprPtr Parser::parseCall() {
       callExpr->data = ce;
       callExpr->loc = expr->loc;
       expr = callExpr;
-      
+
     } else if (match(TokenType::DOT)) {
       Token memberTok = expect(TokenType::IDENT, "Expected member name");
       auto memberExpr = std::make_shared<Expr>();
@@ -757,7 +746,14 @@ ExprPtr Parser::parseCall() {
       memberExpr->data = me;
       memberExpr->loc = expr->loc;
       expr = memberExpr;
-      
+
+      // NEW: Check for generic arguments AFTER member access
+      // This handles cases like: Array.create<int>()
+      if (check(TokenType::LT)) {
+        skipGenericArgs();
+        // The '(' will be handled in the next iteration
+      }
+
     } else if (match(TokenType::LBRACKET)) {
       auto indexExpr = std::make_shared<Expr>();
       IndexExpr ie;
@@ -767,9 +763,10 @@ ExprPtr Parser::parseCall() {
       indexExpr->data = ie;
       indexExpr->loc = expr->loc;
       expr = indexExpr;
-      
+
     } else if (match(TokenType::DOUBLE_COLON)) {
-      Token memberTok = expect(TokenType::IDENT, "Expected function/member name after '::'");
+      Token memberTok =
+          expect(TokenType::IDENT, "Expected function/member name after '::'");
       auto memberExpr = std::make_shared<Expr>();
       MemberExpr me;
       me.object = expr;
@@ -777,7 +774,12 @@ ExprPtr Parser::parseCall() {
       memberExpr->data = me;
       memberExpr->loc = expr->loc;
       expr = memberExpr;
-      
+
+      // NEW: Check for generic arguments AFTER :: access
+      if (check(TokenType::LT)) {
+        skipGenericArgs();
+      }
+
     } else {
       break;
     }

@@ -68,7 +68,9 @@ std::string CodeGen::typeToString(const TypePtr &type) {
   }
   }
   return "auto";
-}void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
+}
+
+void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
 
 void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   if (cimports.empty())
@@ -146,6 +148,40 @@ std::string CodeGen::generate(const Program &prog) {
 
   // Generate standard library
   genStdLib();
+
+  // Add using declarations for common Std functions
+  out << "// Import Std namespace for convenience\n";
+  out << "using Std::println;\n";
+  out << "using Std::print;\n";
+  out << "using Std::readLine;\n";
+  out << "\n";
+  out << "// Array helper wrappers\n";
+  out << "namespace Array {\n";
+  out << "  template<typename T> std::vector<T> create() { return {}; }\n";
+  out << "}\n";
+  out << "template<typename T> int length(const std::vector<T>& arr) { return Std::Array::length(arr); }\n";
+  out << "template<typename T> void push(std::vector<T>& arr, const T& val) { Std::Array::push(arr, val); }\n";
+  out << "template<typename T> T pop(std::vector<T>& arr) { return Std::Array::pop(arr); }\n";
+  out << "\n";
+  out << "// Map helper wrappers\n";
+  out << "namespace Map {\n";
+  out << "  template<typename K, typename V> std::unordered_map<K,V> create() { return {}; }\n";
+  out << "  template<typename K, typename V> void insert(std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = v; }\n";
+  out << "  template<typename K, typename V> std::optional<V> get(const std::unordered_map<K,V>& m, const K& k) {\n";
+  out << "    auto it = m.find(k); return it != m.end() ? std::optional<V>(it->second) : std::nullopt;\n";
+  out << "  }\n";
+  out << "  template<typename K, typename V> std::vector<V> values(const std::unordered_map<K,V>& m) {\n";
+  out << "    std::vector<V> r; for(auto& p : m) r.push_back(p.second); return r;\n";
+  out << "  }\n";
+  out << "}\n";
+  out << "\n";
+  out << "// File helper\n";
+  out << "namespace File {\n";
+  out << "  inline bool exists(const std::string& path) {\n";
+  out << "    std::ifstream f(path); return f.good();\n";
+  out << "  }\n";
+  out << "}\n";
+  out << "\n";
 
   // Forward declarations for classes
   for (const auto &cls : prog.classes) {
@@ -264,36 +300,66 @@ void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("};");  // Close the class definition
   emitLine("");
   
-  // NEW: Auto-generate operator<< for printing (OUTSIDE the class)
+  // Auto-generate operator<< for printing (OUTSIDE the class)
+  // Only print simple types, skip Map/Array/complex types
   emitLine("// Auto-generated print support");
   emitLine("inline std::ostream& operator<<(std::ostream& os, const " +
            cls.name + "& obj) {");
   indent++;
   emitLine("os << \"" + cls.name + " { \";");
   
-  // Print public fields
+  // Print public fields - only simple types
   bool first = true;
   for (const auto &f : cls.fields) {
     if (f.isPublic && !f.isStatic) {
-      if (!first) {
-        emitLine("os << \", \";");
+      // Skip complex types that don't have operator<< (Map, Array, other classes)
+      bool isSimpleType = false;
+      if (f.type) {
+        switch (f.type->kind) {
+          case Type::INT:
+          case Type::FLOAT:
+          case Type::STRING:
+          case Type::BOOL:
+            isSimpleType = true;
+            break;
+          default:
+            isSimpleType = false;
+            break;
+        }
       }
-      emitLine("os << \"" + f.name + ": \" << obj." + f.name + ";");
-      first = false;
+      
+      if (isSimpleType) {
+        if (!first) {
+          emitLine("os << \", \";");
+        }
+        emitLine("os << \"" + f.name + ": \" << obj." + f.name + ";");
+        first = false;
+      }
     }
   }
   
- emitLine("os << \" }\\n\";"); 
+  emitLine("os << \" }\";"); 
   emitLine("return os;");
   indent--;
   emitLine("}");
   emitLine("");
 }
+
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
   std::string retType = typeToString(fn.returnType);
   if (fn.name == "main" && className.empty())
     emitLine("int main() {");
-  else {
+  else if (fn.name == "create" && !className.empty()) {
+    // Constructor - special handling
+    emitIndent();
+    emit("void create(");
+    for (size_t i = 0; i < fn.params.size(); i++) {
+      if (i > 0)
+        emit(", ");
+      emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
+    }
+    emit(") {\n");
+  } else {
     emitIndent();
     emit(retType + " " + fn.name + "(");
     for (size_t i = 0; i < fn.params.size(); i++) {
@@ -578,7 +644,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // Regular member access - use -> for pointers
+          // Regular member access - use -> for pointers, . for values
           genExpr(e.object);
 
           // Check if object is 'this' - use -> instead of .
@@ -628,7 +694,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this"); // Changed from (*this)
+          emit("(*this)"); // Dereference for proper return by value
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";
@@ -636,7 +702,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             elemType = typeToString(e.elements[0]->type);
           }
 
-          // NEW: Check if this looks like an enum type
+          // Check if this looks like an enum type
           bool isEnum = false;
           if (!e.elements.empty()) {
             // Check if first element is a member access with ::
@@ -657,6 +723,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
       },
       expr->data);
 }
+
 std::string CodeGen::paramTypeToString(const TypePtr &type) {
   // For untyped lambda parameters (type is VOID from parser), use "auto"
   if (!type || type->kind == Type::VOID) {
@@ -665,6 +732,7 @@ std::string CodeGen::paramTypeToString(const TypePtr &type) {
   // For explicitly typed parameters, use normal type conversion
   return typeToString(type);
 }
+
 void CodeGen::enterScope() {
   // Placeholder for future scope management
 }

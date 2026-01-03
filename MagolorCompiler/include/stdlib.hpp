@@ -1,7 +1,7 @@
 #pragma once
 #include <sstream>
 #include <string>
-
+#include <unordered_map>
 class StdLibGenerator {
 public:
   static std::string generateAll() {
@@ -2445,4 +2445,6 @@ inline std::string mg_to_string(const T* val) {
 
 )";
   }
+// Add to stdlib.hpp after generateTemplateHelpers()
+
 };
