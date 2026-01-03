@@ -7,7 +7,7 @@
 
 #include <fstream>
 
-
+LSPLogger logger;
 void MagolorLanguageServer::handleMessage(const Message &msg) {
   if (msg.method == "initialize")
     handleInitialize(msg);
@@ -239,37 +239,37 @@ void MagolorLanguageServer::handleFormatting(const Message &msg) {
   transport.respond(msg.id.value(), edits);
 }
 void MagolorLanguageServer::run() {
-    logger.log("LSP run() called");
-    running = true;
-    
-    try {
-        while (running) {
-            logger.log("Waiting for message...");
-            
-            auto msg = transport.receive();
-            if (!msg) {
-                logger.log("No message received - connection closed");
-                break;
-            }
-            
-            logger.log("Received message: " + msg->method);
-            
-            try {
-                handleMessage(*msg);
-                logger.log("Message handled successfully");
-            } catch (const std::exception& e) {
-                logger.log("Error handling message: " + std::string(e.what()));
-                // Don't break - continue processing
-            } catch (...) {
-                logger.log("Unknown error handling message");
-                // Don't break - continue processing
-            }
-        }
-    } catch (const std::exception& e) {
-        logger.log("Fatal error in run loop: " + std::string(e.what()));
+  logger.log("LSP run() called");
+  running = true;
+
+  try {
+    while (running) {
+      logger.log("Waiting for message...");
+
+      auto msg = transport.receive();
+      if (!msg) {
+        logger.log("No message received - connection closed");
+        break;
+      }
+
+      logger.log("Received message: " + msg->method);
+
+      try {
+        handleMessage(*msg);
+        logger.log("Message handled successfully");
+      } catch (const std::exception &e) {
+        logger.log("Error handling message: " + std::string(e.what()));
+        // Don't break - continue processing
+      } catch (...) {
+        logger.log("Unknown error handling message");
+        // Don't break - continue processing
+      }
     }
-    
-    logger.log("LSP server exiting run loop");
+  } catch (const std::exception &e) {
+    logger.log("Fatal error in run loop: " + std::string(e.what()));
+  }
+
+  logger.log("LSP server exiting run loop");
 }
 std::string MagolorLanguageServer::formatDocument(const std::string &content) {
   // Simple formatter implementation
@@ -390,41 +390,105 @@ void MagolorLanguageServer::handleDidOpen(const Message &msg) {
 
     // Analyze and publish diagnostics
     logger.log("handleDidOpen: starting analysis");
-    analyzeAndPublishDiagnostics(uri, text);
-    logger.log("handleDidOpen: analysis complete");
+    try {
+      analyzeAndPublishDiagnostics(uri, text);
+      logger.log("handleDidOpen: analysis complete");
+    } catch (const std::exception& e) {
+      logger.log("handleDidOpen: analysis failed - " + std::string(e.what()));
+      // Publish empty diagnostics so editor doesn't hang
+      publishDiagnostics(uri, {});
+    } catch (...) {
+      logger.log("handleDidOpen: analysis failed - unknown error");
+      publishDiagnostics(uri, {});
+    }
 
     // Also run semantic analysis
     logger.log("handleDidOpen: starting semantic analysis");
-    analyzer.analyze(uri, text);
-    logger.log("handleDidOpen: semantic analysis complete");
+    try {
+      analyzer.analyze(uri, text);
+      logger.log("handleDidOpen: semantic analysis complete");
+    } catch (const std::exception& e) {
+      logger.log("handleDidOpen: semantic analysis failed - " + std::string(e.what()));
+      // Don't crash - semantic analysis is optional for basic LSP features
+    } catch (...) {
+      logger.log("handleDidOpen: semantic analysis failed - unknown error");
+    }
     
   } catch (const std::exception& e) {
     logger.log("handleDidOpen: ERROR - " + std::string(e.what()));
-    throw; // Re-throw to be caught by outer handler
+    // Don't re-throw - LSP must never crash
   } catch (...) {
     logger.log("handleDidOpen: UNKNOWN ERROR");
-    throw;
   }
   
   logger.log("handleDidOpen: END");
 }
 
 void MagolorLanguageServer::handleDidChange(const Message &msg) {
-  auto &td = msg.params["textDocument"];
-  std::string uri = td["uri"].asString();
-  int version = td["version"].asInt();
+  logger.log("handleDidChange: START");
+  
+  try {
+    auto &td = msg.params["textDocument"];
+    std::string uri = td["uri"].asString();
+    int version = td["version"].asInt();
 
-  auto &changes = msg.params["contentChanges"].asArray();
-  if (!changes.empty()) {
-    std::string text = changes[0]["text"].asString();
-    documents.change(uri, version, text);
+    auto &changes = msg.params["contentChanges"].asArray();
+    if (!changes.empty()) {
+      std::string text = changes[0]["text"].asString();
+      documents.change(uri, version, text);
 
-    // Analyze and publish diagnostics
-    analyzeAndPublishDiagnostics(uri, text);
+      // Analyze and publish diagnostics (wrapped)
+      try {
+        analyzeAndPublishDiagnostics(uri, text);
+      } catch (...) {
+        logger.log("handleDidChange: analysis failed");
+        publishDiagnostics(uri, {});
+      }
 
-    // Also run semantic analysis
-    analyzer.analyze(uri, text);
+      // Also run semantic analysis (wrapped)
+      try {
+        analyzer.analyze(uri, text);
+      } catch (...) {
+        logger.log("handleDidChange: semantic analysis failed");
+      }
+    }
+  } catch (const std::exception& e) {
+    logger.log("handleDidChange: ERROR - " + std::string(e.what()));
+  } catch (...) {
+    logger.log("handleDidChange: UNKNOWN ERROR");
   }
+  
+  logger.log("handleDidChange: END");
+}
+
+void MagolorLanguageServer::handleDidSave(const Message &msg) {
+  logger.log("handleDidSave: START");
+  
+  try {
+    std::string uri = msg.params["textDocument"]["uri"].asString();
+    auto *doc = documents.get(uri);
+    if (doc) {
+      // Re-analyze on save (wrapped)
+      try {
+        analyzeAndPublishDiagnostics(uri, doc->content);
+      } catch (...) {
+        logger.log("handleDidSave: analysis failed");
+        publishDiagnostics(uri, {});
+      }
+      
+      try {
+        analyzer.analyze(uri, doc->content);
+      } catch (...) {
+        logger.log("handleDidSave: semantic analysis failed");
+      }
+    }
+  } catch (const std::exception& e) {
+    logger.log("handleDidSave: ERROR - " + std::string(e.what()));
+  } catch (...) {
+    logger.log("handleDidSave: UNKNOWN ERROR");
+  }
+  
+  logger.log("handleDidSave: END");
 }
 
 void MagolorLanguageServer::handleDidClose(const Message &msg) {
@@ -436,20 +500,10 @@ void MagolorLanguageServer::handleDidClose(const Message &msg) {
   documents.close(uri);
 }
 
-void MagolorLanguageServer::handleDidSave(const Message &msg) {
-  std::string uri = msg.params["textDocument"]["uri"].asString();
-  auto *doc = documents.get(uri);
-  if (doc) {
-    // Re-analyze on save
-    analyzeAndPublishDiagnostics(uri, doc->content);
-    analyzer.analyze(uri, doc->content);
-  }
-}
-
 void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     const std::string &uri, const std::string &content) {
   logger.log("analyzeAndPublishDiagnostics: START for " + uri);
-  
+
   std::vector<LspDiagnostic> diagnostics;
 
   // Create diagnostic collector
@@ -461,7 +515,8 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     Lexer lexer(content, uri, collector);
     logger.log("analyzeAndPublishDiagnostics: tokenizing");
     auto tokens = lexer.tokenize();
-    logger.log("analyzeAndPublishDiagnostics: got " + std::to_string(tokens.size()) + " tokens");
+    logger.log("analyzeAndPublishDiagnostics: got " +
+               std::to_string(tokens.size()) + " tokens");
 
     if (collector.hasError()) {
       logger.log("analyzeAndPublishDiagnostics: lexer has errors");
@@ -471,11 +526,50 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     }
 
     logger.log("analyzeAndPublishDiagnostics: creating parser");
-    // Phase 2: Syntax analysis
+    // Phase 2: Syntax analysis - WRAPPED IN TRY-CATCH
     Parser parser(std::move(tokens), uri, collector);
     logger.log("analyzeAndPublishDiagnostics: parsing");
-    Program prog = parser.parse();
-    logger.log("analyzeAndPublishDiagnostics: parsed successfully");
+
+    Program prog;
+    try {
+      prog = parser.parse();
+      logger.log("analyzeAndPublishDiagnostics: parsed successfully");
+    } catch (const std::exception &e) {
+      logger.log("analyzeAndPublishDiagnostics: parser exception - " +
+                 std::string(e.what()));
+      // Parser threw exception - collect any partial diagnostics
+      diagnostics = collector.getDiagnostics();
+
+      // Add a generic parse error if no specific errors were collected
+      if (diagnostics.empty()) {
+        LspDiagnostic diag;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.message = "Parse error: " + std::string(e.what());
+        diag.range.start = {0, 0};
+        diag.range.end = {0, 1};
+        diag.source = "magolor";
+        diagnostics.push_back(diag);
+      }
+
+      publishDiagnostics(uri, diagnostics);
+      return;
+    } catch (...) {
+      logger.log("analyzeAndPublishDiagnostics: unknown parser exception");
+
+      diagnostics = collector.getDiagnostics();
+      if (diagnostics.empty()) {
+        LspDiagnostic diag;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.message = "Unknown parse error";
+        diag.range.start = {0, 0};
+        diag.range.end = {0, 1};
+        diag.source = "magolor";
+        diagnostics.push_back(diag);
+      }
+
+      publishDiagnostics(uri, diagnostics);
+      return;
+    }
 
     if (collector.hasError()) {
       logger.log("analyzeAndPublishDiagnostics: parser has errors");
@@ -485,73 +579,117 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     }
 
     logger.log("analyzeAndPublishDiagnostics: creating module");
-    // Phase 3: Type checking (if no syntax errors)
-    ModuleRegistry::instance().clear();
-    auto module = std::make_shared<Module>();
-    module->name = "current";
-    module->filepath = uri;
-    module->ast = prog;
-    ModuleRegistry::instance().registerModule(module);
-    logger.log("analyzeAndPublishDiagnostics: module registered");
+    // Phase 3: Type checking (if no syntax errors) - WRAPPED IN TRY-CATCH
+    try {
+      ModuleRegistry::instance().clear();
+      auto module = std::make_shared<Module>();
+      module->name = "current";
+      module->filepath = uri;
+      module->ast = prog;
+      ModuleRegistry::instance().registerModule(module);
+      logger.log("analyzeAndPublishDiagnostics: module registered");
 
-    logger.log("analyzeAndPublishDiagnostics: type checking");
-    TypeChecker typeChecker(collector, ModuleRegistry::instance());
-    typeChecker.checkModule(module);
-    logger.log("analyzeAndPublishDiagnostics: type checking complete");
+      logger.log("analyzeAndPublishDiagnostics: type checking");
+      TypeChecker typeChecker(collector, ModuleRegistry::instance());
+      typeChecker.checkModule(module);
+      logger.log("analyzeAndPublishDiagnostics: type checking complete");
 
-    // Filter out false positives
-    if (collector.hasError()) {
-      logger.log("analyzeAndPublishDiagnostics: type checker has errors");
-      auto allDiags = collector.getDiagnostics();
-      for (const auto &diag : allDiags) {
-        bool skipError = false;
+      // Filter out false positives
+      if (collector.hasError()) {
+        logger.log("analyzeAndPublishDiagnostics: type checker has errors");
+        auto allDiags = collector.getDiagnostics();
+        for (const auto &diag : allDiags) {
+          bool skipError = false;
 
-        if (diag.message.find("Cannot call non-function") !=
-            std::string::npos) {
-          skipError = true;
-        }
-        if (diag.message.find("string") != std::string::npos &&
-            diag.range.start.line == 3) {
-          skipError = true;
-        }
-        if (diag.message.find("Undefined variable") != std::string::npos) {
-          if (diag.message.find("Std") != std::string::npos ||
-              diag.message.find("Math") != std::string::npos) {
+          if (diag.message.find("Cannot call non-function") !=
+              std::string::npos) {
             skipError = true;
           }
-        }
+          if (diag.message.find("string") != std::string::npos &&
+              diag.range.start.line == 3) {
+            skipError = true;
+          }
+          if (diag.message.find("Undefined variable") != std::string::npos) {
+            if (diag.message.find("Std") != std::string::npos ||
+                diag.message.find("Math") != std::string::npos) {
+              skipError = true;
+            }
+          }
 
-        if (!skipError) {
-          diagnostics.push_back(diag);
+          if (!skipError) {
+            diagnostics.push_back(diag);
+          }
         }
       }
+    } catch (const std::exception &e) {
+      logger.log("analyzeAndPublishDiagnostics: type checker exception - " +
+                 std::string(e.what()));
+      // Type checker threw exception - add diagnostic
+      LspDiagnostic diag;
+      diag.severity = DiagnosticSeverity::Error;
+      diag.message = "Type check error: " + std::string(e.what());
+      diag.range.start = {0, 0};
+      diag.range.end = {0, 1};
+      diag.source = "magolor";
+      diagnostics.push_back(diag);
+    } catch (...) {
+      logger.log(
+          "analyzeAndPublishDiagnostics: unknown type checker exception");
+      LspDiagnostic diag;
+      diag.severity = DiagnosticSeverity::Error;
+      diag.message = "Unknown type check error";
+      diag.range.start = {0, 0};
+      diag.range.end = {0, 1};
+      diag.source = "magolor";
+      diagnostics.push_back(diag);
     }
-    
+
     logger.log("analyzeAndPublishDiagnostics: checking import errors");
 
   } catch (const std::exception &e) {
-    logger.log("analyzeAndPublishDiagnostics: EXCEPTION - " + std::string(e.what()));
-    // Silently ignore internal errors in LSP mode
+    logger.log("analyzeAndPublishDiagnostics: EXCEPTION - " +
+               std::string(e.what()));
+    // Top-level exception - create diagnostic
+    LspDiagnostic diag;
+    diag.severity = DiagnosticSeverity::Error;
+    diag.message = "Analysis error: " + std::string(e.what());
+    diag.range.start = {0, 0};
+    diag.range.end = {0, 1};
+    diag.source = "magolor";
+    diagnostics.push_back(diag);
   } catch (...) {
     logger.log("analyzeAndPublishDiagnostics: UNKNOWN EXCEPTION");
+    LspDiagnostic diag;
+    diag.severity = DiagnosticSeverity::Error;
+    diag.message = "Unknown analysis error";
+    diag.range.start = {0, 0};
+    diag.range.end = {0, 1};
+    diag.source = "magolor";
+    diagnostics.push_back(diag);
   }
-  
-  logger.log("analyzeAndPublishDiagnostics: validating imports");
-  auto importErrors = analyzer.validateImports(uri);
-  for (const auto& error : importErrors) {
+
+  // Always validate imports (wrapped in try-catch)
+  try {
+    logger.log("analyzeAndPublishDiagnostics: validating imports");
+    auto importErrors = analyzer.validateImports(uri);
+    for (const auto &error : importErrors) {
       LspDiagnostic diag;
       diag.severity = DiagnosticSeverity::Error;
       diag.message = error.message;
       diag.range = error.range;
       diag.source = "magolor";
       diagnostics.push_back(diag);
+    }
+  } catch (...) {
+    logger.log("analyzeAndPublishDiagnostics: import validation failed");
+    // Don't add diagnostic - import validation is optional
   }
-  
-  logger.log("analyzeAndPublishDiagnostics: publishing " + std::to_string(diagnostics.size()) + " diagnostics");
+
+  logger.log("analyzeAndPublishDiagnostics: publishing " +
+             std::to_string(diagnostics.size()) + " diagnostics");
   publishDiagnostics(uri, diagnostics);
   logger.log("analyzeAndPublishDiagnostics: END");
 }
-
 void MagolorLanguageServer::publishDiagnostics(
     const std::string &uri, const std::vector<LspDiagnostic> &diagnostics) {
   JsonValue params = JsonValue::object();
