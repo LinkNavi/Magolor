@@ -489,7 +489,7 @@ SymbolPtr SemanticAnalyzer::parseClass(const std::string &line, int lineNum,
 
 SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
                                           const std::string &uri) {
-  size_t letPos = line.find("let ");
+   size_t letPos = line.find("let ");
   if (letPos == std::string::npos)
     return nullptr;
 
@@ -507,22 +507,37 @@ SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
     nameStart++;
   }
 
-  size_t nameEnd = line.find_first_of(":=", nameStart);
-  if (nameEnd == std::string::npos) {
-    logger.log("parseVariable: no type or assignment found at line " +
+  // Find the end of the variable name - it's the first character that's not alphanumeric or underscore
+  size_t nameEnd = nameStart;
+  while (nameEnd < line.size() && 
+         (std::isalnum(line[nameEnd]) || line[nameEnd] == '_')) {
+    nameEnd++;
+  }
+
+  if (nameEnd == nameStart) {
+    logger.log("parseVariable: no variable name found at line " +
                std::to_string(lineNum));
     return nullptr;
   }
 
   std::string name = line.substr(nameStart, nameEnd - nameStart);
 
-  // Trim whitespace from name
-  name.erase(0, name.find_first_not_of(" \t"));
-  name.erase(name.find_last_not_of(" \t") + 1);
-
-  // Check if name is empty
+  // Check if name is empty (shouldn't happen after the check above, but be safe)
   if (name.empty()) {
     logger.log("parseVariable: empty variable name at line " +
+               std::to_string(lineNum));
+    return nullptr;
+  }
+
+  // Skip whitespace after name
+  while (nameEnd < line.size() && 
+         (line[nameEnd] == ' ' || line[nameEnd] == '\t')) {
+    nameEnd++;
+  }
+
+  // Now we should have either : (type annotation) or = (assignment)
+  if (nameEnd >= line.size() || (line[nameEnd] != ':' && line[nameEnd] != '=')) {
+    logger.log("parseVariable: expected ':' or '=' after variable name at line " +
                std::to_string(lineNum));
     return nullptr;
   }
