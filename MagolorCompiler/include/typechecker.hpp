@@ -59,7 +59,7 @@ TypePtr checkIdentExpr(const IdentExpr& e) {
 private:
   ErrorReporter &reporter;
   ModuleRegistry &registry;
-
+  bool isSymbolAvailable(const std::string& symbolName);
 	  struct SymbolResolutionResult {
         bool found;
         TypePtr type;

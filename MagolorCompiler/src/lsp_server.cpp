@@ -511,6 +511,7 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
 
   try {
     logger.log("analyzeAndPublishDiagnostics: creating lexer");
+    
     // Phase 1: Lexical analysis
     Lexer lexer(content, uri, collector);
     logger.log("analyzeAndPublishDiagnostics: tokenizing");
@@ -526,7 +527,8 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     }
 
     logger.log("analyzeAndPublishDiagnostics: creating parser");
-    // Phase 2: Syntax analysis - WRAPPED IN TRY-CATCH
+    
+    // Phase 2: Syntax analysis
     Parser parser(std::move(tokens), uri, collector);
     logger.log("analyzeAndPublishDiagnostics: parsing");
 
@@ -537,10 +539,8 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     } catch (const std::exception &e) {
       logger.log("analyzeAndPublishDiagnostics: parser exception - " +
                  std::string(e.what()));
-      // Parser threw exception - collect any partial diagnostics
       diagnostics = collector.getDiagnostics();
 
-      // Add a generic parse error if no specific errors were collected
       if (diagnostics.empty()) {
         LspDiagnostic diag;
         diag.severity = DiagnosticSeverity::Error;
@@ -579,41 +579,50 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     }
 
     logger.log("analyzeAndPublishDiagnostics: creating module");
-    // Phase 3: Type checking (if no syntax errors) - WRAPPED IN TRY-CATCH
+    
+    // Phase 3: Type checking (NEW - was skipped before!)
     try {
-      ModuleRegistry::instance().clear();
+      // Create a temporary module for this file
       auto module = std::make_shared<Module>();
+      
+      // Convert URI to relative path
+      std::string filepath = uri;
+      if (filepath.find("file://") == 0) {
+        filepath = filepath.substr(7);
+      }
+      
       module->name = "current";
-      module->filepath = uri;
+      module->filepath = filepath;
       module->ast = prog;
-      ModuleRegistry::instance().registerModule(module);
-      logger.log("analyzeAndPublishDiagnostics: module registered");
-
+      
+      // Temporarily register this module
+      ModuleRegistry::instance().registerModule("current", module);
+      
       logger.log("analyzeAndPublishDiagnostics: type checking");
+      
+      // Create a fresh type checker with our collector
       TypeChecker typeChecker(collector, ModuleRegistry::instance());
+      
+      // Set the current module context
       typeChecker.checkModule(module);
+      
       logger.log("analyzeAndPublishDiagnostics: type checking complete");
 
-      // Filter out false positives
+      // Get diagnostics from type checking
       if (collector.hasError()) {
         logger.log("analyzeAndPublishDiagnostics: type checker has errors");
         auto allDiags = collector.getDiagnostics();
+        
+        // Filter out false positives (keep this for now)
         for (const auto &diag : allDiags) {
           bool skipError = false;
 
-          if (diag.message.find("Cannot call non-function") !=
-              std::string::npos) {
+          if (diag.message.find("Cannot call non-function") != std::string::npos) {
             skipError = true;
           }
           if (diag.message.find("string") != std::string::npos &&
               diag.range.start.line == 3) {
             skipError = true;
-          }
-          if (diag.message.find("Undefined variable") != std::string::npos) {
-            if (diag.message.find("Std") != std::string::npos ||
-                diag.message.find("Math") != std::string::npos) {
-              skipError = true;
-            }
           }
 
           if (!skipError) {
@@ -621,10 +630,14 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
           }
         }
       }
+      
+      // Clean up temporary module
+      ModuleRegistry::instance().clear();
+      
     } catch (const std::exception &e) {
       logger.log("analyzeAndPublishDiagnostics: type checker exception - " +
                  std::string(e.what()));
-      // Type checker threw exception - add diagnostic
+      // Add diagnostic for type check error
       LspDiagnostic diag;
       diag.severity = DiagnosticSeverity::Error;
       diag.message = "Type check error: " + std::string(e.what());
@@ -633,8 +646,7 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
       diag.source = "magolor";
       diagnostics.push_back(diag);
     } catch (...) {
-      logger.log(
-          "analyzeAndPublishDiagnostics: unknown type checker exception");
+      logger.log("analyzeAndPublishDiagnostics: unknown type checker exception");
       LspDiagnostic diag;
       diag.severity = DiagnosticSeverity::Error;
       diag.message = "Unknown type check error";
@@ -649,7 +661,6 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
   } catch (const std::exception &e) {
     logger.log("analyzeAndPublishDiagnostics: EXCEPTION - " +
                std::string(e.what()));
-    // Top-level exception - create diagnostic
     LspDiagnostic diag;
     diag.severity = DiagnosticSeverity::Error;
     diag.message = "Analysis error: " + std::string(e.what());
@@ -668,7 +679,7 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     diagnostics.push_back(diag);
   }
 
-  // Always validate imports (wrapped in try-catch)
+  // Validate imports (keep this)
   try {
     logger.log("analyzeAndPublishDiagnostics: validating imports");
     auto importErrors = analyzer.validateImports(uri);
@@ -682,15 +693,13 @@ void MagolorLanguageServer::analyzeAndPublishDiagnostics(
     }
   } catch (...) {
     logger.log("analyzeAndPublishDiagnostics: import validation failed");
-    // Don't add diagnostic - import validation is optional
   }
 
   logger.log("analyzeAndPublishDiagnostics: publishing " +
              std::to_string(diagnostics.size()) + " diagnostics");
   publishDiagnostics(uri, diagnostics);
   logger.log("analyzeAndPublishDiagnostics: END");
-}
-void MagolorLanguageServer::publishDiagnostics(
+}void MagolorLanguageServer::publishDiagnostics(
     const std::string &uri, const std::vector<LspDiagnostic> &diagnostics) {
   JsonValue params = JsonValue::object();
   params["uri"] = uri;

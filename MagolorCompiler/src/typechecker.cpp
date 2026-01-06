@@ -114,64 +114,65 @@ ClassDecl *TypeChecker::lookupClass(const std::string &name) {
 // NEW: Check if a function name is a built-in Std library function
 bool TypeChecker::isStdLibFunction(const std::string &name) {
   static const std::unordered_set<std::string> stdFunctions = {
-    // Std.IO
-    "print", "println", "eprint", "eprintln", "readLine", "read", "readChar",
-    // Std.Parse
-    "parseInt", "parseFloat", "parseBool",
-    // Std.Option
-    "isSome", "isNone", "unwrap", "unwrapOr",
-    // Std.String
-    "length", "isEmpty", "trim", "toLower", "toUpper", "startsWith", "endsWith",
-    "contains", "replace", "split", "join", "repeat", "substring", "indexOf",
-    // Std.Array
-    "push", "pop", "reverse", "sort", "clear",
-    // Std.Math
-    "abs", "pow", "sqrt", "sin", "cos", "tan", "min", "max", "floor", "ceil",
-    // Std.File
-    "exists", "isFile", "isDirectory", "createDir", "remove", "readFile", "writeFile",
-    // Top-level helpers
-    "toString"
-  };
-  
+      // Std.IO
+      "print", "println", "eprint", "eprintln", "readLine", "read", "readChar",
+      // Std.Parse
+      "parseInt", "parseFloat", "parseBool",
+      // Std.Option
+      "isSome", "isNone", "unwrap", "unwrapOr",
+      // Std.String
+      "length", "isEmpty", "trim", "toLower", "toUpper", "startsWith",
+      "endsWith", "contains", "replace", "split", "join", "repeat", "substring",
+      "indexOf",
+      // Std.Array
+      "push", "pop", "reverse", "sort", "clear",
+      // Std.Math
+      "abs", "pow", "sqrt", "sin", "cos", "tan", "min", "max", "floor", "ceil",
+      // Std.File
+      "exists", "isFile", "isDirectory", "createDir", "remove", "readFile",
+      "writeFile",
+      // Top-level helpers
+      "toString"};
+
   return stdFunctions.count(name) > 0;
 }
 
 // NEW: Get return type for Std library function
 TypePtr TypeChecker::getStdLibReturnType(const std::string &name) {
   auto type = std::make_shared<Type>();
-  
+
   // Option functions
   if (name == "isSome" || name == "isNone") {
     type->kind = Type::BOOL;
     return type;
   }
-  
+
   if (name == "unwrap" || name == "unwrapOr") {
     // Return generic type - will be inferred from context
     type->kind = Type::VOID;
     return type;
   }
-  
+
   // String functions
   if (name == "length" || name == "indexOf") {
     type->kind = Type::INT;
     return type;
   }
-  
-  if (name == "isEmpty" || name == "startsWith" || name == "endsWith" || 
-      name == "contains" || name == "exists" || name == "isFile" || 
+
+  if (name == "isEmpty" || name == "startsWith" || name == "endsWith" ||
+      name == "contains" || name == "exists" || name == "isFile" ||
       name == "isDirectory") {
     type->kind = Type::BOOL;
     return type;
   }
-  
-  if (name == "trim" || name == "toLower" || name == "toUpper" || 
-      name == "replace" || name == "join" || name == "repeat" || 
+
+  if (name == "trim" || name == "toLower" || name == "toUpper" ||
+      name == "replace" || name == "join" || name == "repeat" ||
       name == "substring" || name == "toString" || name == "readLine") {
     type->kind = Type::STRING;
     return type;
   }
-  
+
   if (name == "split") {
     type->kind = Type::ARRAY;
     auto innerType = std::make_shared<Type>();
@@ -179,7 +180,7 @@ TypePtr TypeChecker::getStdLibReturnType(const std::string &name) {
     type->innerType = innerType;
     return type;
   }
-  
+
   if (name == "readFile") {
     type->kind = Type::OPTION;
     auto innerType = std::make_shared<Type>();
@@ -187,24 +188,25 @@ TypePtr TypeChecker::getStdLibReturnType(const std::string &name) {
     type->innerType = innerType;
     return type;
   }
-  
-  if (name == "writeFile" || name == "appendFile" || name == "createDir" || name == "remove") {
+
+  if (name == "writeFile" || name == "appendFile" || name == "createDir" ||
+      name == "remove") {
     type->kind = Type::BOOL;
     return type;
   }
-  
+
   // Math functions
-  if (name == "abs" || name == "sqrt" || name == "sin" || name == "cos" || 
+  if (name == "abs" || name == "sqrt" || name == "sin" || name == "cos" ||
       name == "tan" || name == "pow" || name == "floor" || name == "ceil") {
     type->kind = Type::FLOAT;
     return type;
   }
-  
+
   if (name == "min" || name == "max") {
     type->kind = Type::INT;
     return type;
   }
-  
+
   // Default to void for print functions
   type->kind = Type::VOID;
   return type;
@@ -248,8 +250,10 @@ void TypeChecker::checkClass(ClassDecl &cls) {
       TypePtr initType = checkExpr(field.initValue);
       if (!isAssignable(initType, field.type)) {
         // Relaxed: Allow string concatenation to produce strings
-        if (!(field.type->kind == Type::STRING && initType->kind == Type::STRING)) {
-          error("Static field '" + field.name + "' initialization type mismatch");
+        if (!(field.type->kind == Type::STRING &&
+              initType->kind == Type::STRING)) {
+          error("Static field '" + field.name +
+                "' initialization type mismatch");
         }
       }
     }
@@ -296,7 +300,8 @@ void TypeChecker::checkStmt(StmtPtr stmt) {
           if (s.type) {
             if (!isAssignable(initType, s.type)) {
               // Relaxed: Allow more flexible assignments
-              if (!(s.type->kind == Type::STRING && initType->kind == Type::STRING)) {
+              if (!(s.type->kind == Type::STRING &&
+                    initType->kind == Type::STRING)) {
                 // Skip error for now - will be caught by C++ compiler
               }
             }
@@ -353,7 +358,7 @@ void TypeChecker::checkStmt(StmtPtr stmt) {
             elemType->kind = Type::VOID;
             defineVar(s.var, elemType);
           }
-          
+
           for (auto &stmt : s.body) {
             checkStmt(stmt);
           }
@@ -392,12 +397,13 @@ void TypeChecker::checkStmt(StmtPtr stmt) {
 bool TypeChecker::isModulePath(ExprPtr expr) {
   if (auto *ident = std::get_if<IdentExpr>(&expr->data)) {
     // Check for Std or imported modules
-    if (ident->name == "Std" || ident->name == "File" || ident->name == "String" ||
-        ident->name == "Array" || ident->name == "Option" || ident->name == "Parse" ||
+    if (ident->name == "Std" || ident->name == "File" ||
+        ident->name == "String" || ident->name == "Array" ||
+        ident->name == "Option" || ident->name == "Parse" ||
         ident->name == "Math" || ident->name == "IO") {
       return true;
     }
-    
+
     if (currentModule) {
       for (const auto &usingDecl : currentModule->ast.usings) {
         if (!usingDecl.path.empty() && usingDecl.path[0] == ident->name) {
@@ -418,7 +424,71 @@ bool TypeChecker::isModulePath(ExprPtr expr) {
 
   return false;
 }
+bool TypeChecker::isSymbolAvailable(const std::string &symbolName) {
+  // Check local scope first
+  if (lookupVar(symbolName) || lookupFunction(symbolName) ||
+      lookupClass(symbolName)) {
+    return true;
+  }
 
+  // Check stdlib functions
+  if (isStdLibFunction(symbolName)) {
+    return true;
+  }
+
+  // Check if it's a module name
+  if (currentModule) {
+    for (const auto &usingDecl : currentModule->ast.usings) {
+      if (!usingDecl.path.empty() && usingDecl.path[0] == symbolName) {
+        return true;
+      }
+    }
+  }
+
+  // Check imported modules
+  if (currentModule) {
+    for (const auto &usingDecl : currentModule->ast.usings) {
+      std::string modulePath;
+      for (size_t i = 0; i < usingDecl.path.size(); i++) {
+        if (i > 0)
+          modulePath += ".";
+        modulePath += usingDecl.path[i];
+      }
+
+      if (ModuleResolver::isBuiltinModule(modulePath)) {
+        continue;
+      }
+
+      // Try multiple patterns
+      std::vector<std::string> candidates = {
+          modulePath, currentModule->packageName + "." + modulePath};
+
+      for (const auto &candidate : candidates) {
+        auto it = registry.getModules().find(candidate);
+        if (it == registry.getModules().end())
+          continue;
+
+        auto module = it->second;
+
+        // Check functions
+        for (const auto &fn : module->ast.functions) {
+          if (fn.name == symbolName && fn.isPublic) {
+            return true;
+          }
+        }
+
+        // Check classes
+        for (const auto &cls : module->ast.classes) {
+          if (cls.name == symbolName && cls.isPublic) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
 TypePtr TypeChecker::checkExpr(ExprPtr expr) {
   TypePtr resultType = std::visit(
       [this, expr](auto &&e) -> TypePtr {
@@ -441,122 +511,121 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
           type->kind = Type::BOOL;
           return type;
         } else if constexpr (std::is_same_v<T, IdentExpr>) {
-          // Check if it's a stdlib function first
+          // FIX: Strict validation instead of relaxed
+
+          // Check stdlib functions first
           if (isStdLibFunction(e.name)) {
             return getStdLibReturnType(e.name);
           }
-          
+
+          // Check local variables
           TypePtr varType = lookupVar(e.name);
-          if (!varType) {
-            FnDecl *fn = lookupFunction(e.name);
-            if (fn) {
-              auto fnType = std::make_shared<Type>();
-              fnType->kind = Type::FUNCTION;
-              fnType->returnType = fn->returnType;
-              for (const auto &param : fn->params) {
-                fnType->paramTypes.push_back(param.type);
-              }
-              return fnType;
+          if (varType) {
+            return varType;
+          }
+
+          // Check local functions
+          FnDecl *fn = lookupFunction(e.name);
+          if (fn) {
+            auto fnType = std::make_shared<Type>();
+            fnType->kind = Type::FUNCTION;
+            fnType->returnType = fn->returnType;
+            for (const auto &param : fn->params) {
+              fnType->paramTypes.push_back(param.type);
             }
+            return fnType;
+          }
 
-            if (currentModule) {
-              for (const auto &usingDecl : currentModule->ast.usings) {
-                std::string modulePath;
-                for (size_t i = 0; i < usingDecl.path.size(); i++) {
-                  if (i > 0)
-                    modulePath += ".";
-                  modulePath += usingDecl.path[i];
-                }
+          // FIX: Check imported modules with proper validation
+          if (currentModule) {
+            bool foundInImports = false;
 
-                if (ModuleResolver::isBuiltinModule(modulePath))
+            for (const auto &usingDecl : currentModule->ast.usings) {
+              std::string modulePath;
+              for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                if (i > 0)
+                  modulePath += ".";
+                modulePath += usingDecl.path[i];
+              }
+
+              // Skip built-in modules (handled separately)
+              if (ModuleResolver::isBuiltinModule(modulePath)) {
+                continue;
+              }
+
+              // Try multiple name patterns
+              std::vector<std::string> candidates = {
+                  modulePath, currentModule->packageName + "." + modulePath};
+
+              for (const auto &candidate : candidates) {
+                auto regModule = registry.getModules().find(candidate);
+                if (regModule == registry.getModules().end()) {
                   continue;
+                }
 
-                for (const auto &[regName, regModule] : registry.getModules()) {
-                  bool matches = (regName == modulePath);
+                auto module = regModule->second;
 
-                  if (!matches) {
-                    if (modulePath.size() > regName.size()) {
-                      size_t offset = modulePath.size() - regName.size();
-                      if (modulePath[offset - 1] == '.' &&
-                          modulePath.substr(offset) == regName) {
-                        matches = true;
-                      }
+                // Check functions
+                for (const auto &importedFn : module->ast.functions) {
+                  if (importedFn.name == e.name && importedFn.isPublic) {
+                    auto fnType = std::make_shared<Type>();
+                    fnType->kind = Type::FUNCTION;
+                    fnType->returnType = importedFn.returnType;
+                    for (const auto &param : importedFn.params) {
+                      fnType->paramTypes.push_back(param.type);
                     }
-                    if (!matches && regName.size() > modulePath.size()) {
-                      size_t offset = regName.size() - modulePath.size();
-                      if (regName[offset - 1] == '.' &&
-                          regName.substr(offset) == modulePath) {
-                        matches = true;
-                      }
-                    }
-                  }
-
-                  if (matches) {
-                    for (const auto &importedFn : regModule->ast.functions) {
-                      if (importedFn.name == e.name && importedFn.isPublic) {
-                        auto fnType = std::make_shared<Type>();
-                        fnType->kind = Type::FUNCTION;
-                        fnType->returnType = importedFn.returnType;
-                        for (const auto &param : importedFn.params) {
-                          fnType->paramTypes.push_back(param.type);
-                        }
-                        return fnType;
-                      }
-                    }
-                    for (const auto &importedCls : regModule->ast.classes) {
-                      if (importedCls.name == e.name) {
-                        auto clsType = std::make_shared<Type>();
-                        clsType->kind = Type::CLASS;
-                        clsType->className = e.name;
-                        return clsType;
-                      }
-                    }
+                    foundInImports = true;
+                    return fnType;
                   }
                 }
+
+                // Check classes
+                for (const auto &importedCls : module->ast.classes) {
+                  if (importedCls.name == e.name && importedCls.isPublic) {
+                    auto clsType = std::make_shared<Type>();
+                    clsType->kind = Type::CLASS;
+                    clsType->className = e.name;
+                    foundInImports = true;
+                    return clsType;
+                  }
+                }
+
+                if (foundInImports)
+                  break;
               }
 
-              for (const auto &usingDecl : currentModule->ast.usings) {
-                if (!usingDecl.path.empty() && usingDecl.path[0] == e.name) {
-                  auto moduleType = std::make_shared<Type>();
-                  moduleType->kind = Type::CLASS;
-                  moduleType->className = e.name;
-                  return moduleType;
-                }
+              if (foundInImports)
+                break;
+            }
+
+            // Check if it's a module name itself
+            for (const auto &usingDecl : currentModule->ast.usings) {
+              if (!usingDecl.path.empty() && usingDecl.path[0] == e.name) {
+                auto moduleType = std::make_shared<Type>();
+                moduleType->kind = Type::CLASS;
+                moduleType->className = e.name;
+                return moduleType;
               }
             }
 
-            // Relaxed: Don't error on undefined - C++ compiler will catch it
-            auto voidType = std::make_shared<Type>();
-            voidType->kind = Type::VOID;
-            return voidType;
-          }
-          return varType;
-        } else if constexpr (std::is_same_v<T, BinaryExpr>) {
-          TypePtr leftType = checkExpr(e.left);
-          TypePtr rightType = checkExpr(e.right);
+            // If we checked imports and didn't find it, ERROR
+            if (!foundInImports) {
+              errorAt("Undefined symbol: " + e.name +
+                          " (not found in current scope or imported modules)",
+                      expr->loc);
 
-          // FIXED: Allow string concatenation with +
-          if (e.op == "+") {
-            if (leftType->kind == Type::STRING || rightType->kind == Type::STRING) {
-              auto strType = std::make_shared<Type>();
-              strType->kind = Type::STRING;
-              return strType;
+              // Return error type
+              auto voidType = std::make_shared<Type>();
+              voidType->kind = Type::VOID;
+              return voidType;
             }
           }
 
-          if (e.op == "+" || e.op == "-" || e.op == "*" || e.op == "/" || e.op == "%") {
-            // Relaxed: Accept any numeric-like types
-            return leftType;
-          } else if (e.op == "==" || e.op == "!=" || e.op == "<" || e.op == ">" ||
-                     e.op == "<=" || e.op == ">=") {
-            auto boolType = std::make_shared<Type>();
-            boolType->kind = Type::BOOL;
-            return boolType;
-          } else if (e.op == "&&" || e.op == "||") {
-            return leftType;
-          }
-
-          return leftType;
+          // Not found anywhere - ERROR
+          errorAt("Undefined symbol: " + e.name, expr->loc);
+          auto voidType = std::make_shared<Type>();
+          voidType->kind = Type::VOID;
+          return voidType;
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
           TypePtr operandType = checkExpr(e.operand);
           return operandType;
@@ -575,7 +644,7 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
               }
               return getStdLibReturnType(ident->name);
             }
-            
+
             if (currentModule) {
               for (const auto &cimport : currentModule->ast.cimports) {
                 if (std::find(cimport.symbols.begin(), cimport.symbols.end(),
@@ -587,7 +656,8 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
             }
           }
 
-          bool isMethodCall = std::holds_alternative<MemberExpr>(e.callee->data);
+          bool isMethodCall =
+              std::holds_alternative<MemberExpr>(e.callee->data);
 
           if (isModuleCall || isMethodCall) {
             for (auto &arg : e.args) {
@@ -615,7 +685,8 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
             return voidType;
           }
 
-          for (size_t i = 0; i < e.args.size() && i < calleeType->paramTypes.size(); i++) {
+          for (size_t i = 0;
+               i < e.args.size() && i < calleeType->paramTypes.size(); i++) {
             checkExpr(e.args[i]);
           }
 
@@ -629,7 +700,7 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
               fnType->returnType = getStdLibReturnType(e.member);
               return fnType;
             }
-            
+
             auto moduleType = std::make_shared<Type>();
             moduleType->kind = Type::FUNCTION;
             moduleType->returnType = std::make_shared<Type>();
@@ -692,7 +763,47 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
         } else if constexpr (std::is_same_v<T, NewExpr>) {
           ClassDecl *cls = lookupClass(e.className);
 
+          // If not found locally, search imported modules
           if (!cls && currentModule) {
+            bool foundInImports = false;
+
+            // DEBUG: Log what we're looking for
+            std::cerr << "[TypeChecker] Looking for class: " << e.className
+                      << std::endl;
+            std::cerr << "[TypeChecker] Current module: " << currentModule->name
+                      << std::endl;
+            std::cerr << "[TypeChecker] Package name: "
+                      << currentModule->packageName << std::endl;
+
+            // Show all imports
+            std::cerr << "[TypeChecker] Imports in this module:" << std::endl;
+            for (const auto &usingDecl : currentModule->ast.usings) {
+              std::string importPath;
+              for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                if (i > 0)
+                  importPath += ".";
+                importPath += usingDecl.path[i];
+              }
+              std::cerr << "  - " << importPath << std::endl;
+            }
+
+            // Show all registered modules
+            std::cerr << "[TypeChecker] All registered modules:" << std::endl;
+            for (const auto &[name, mod] : registry.getModules()) {
+              std::cerr << "  - " << name;
+              if (!mod->ast.classes.empty()) {
+                std::cerr << " (classes: ";
+                for (size_t i = 0; i < mod->ast.classes.size(); i++) {
+                  if (i > 0)
+                    std::cerr << ", ";
+                  std::cerr << mod->ast.classes[i].name;
+                }
+                std::cerr << ")";
+              }
+              std::cerr << std::endl;
+            }
+
+            // Try to find the class in imported modules
             for (const auto &usingDecl : currentModule->ast.usings) {
               std::string modulePath;
               for (size_t i = 0; i < usingDecl.path.size(); i++) {
@@ -700,38 +811,123 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
                   modulePath += ".";
                 modulePath += usingDecl.path[i];
               }
-              if (ModuleResolver::isBuiltinModule(modulePath))
+
+              // Skip built-in modules
+              if (ModuleResolver::isBuiltinModule(modulePath)) {
+                std::cerr << "[TypeChecker] Skipping builtin: " << modulePath
+                          << std::endl;
                 continue;
+              }
 
+              // CRITICAL: Try MULTIPLE name patterns
+              std::vector<std::string> candidates;
+
+              // Pattern 1: Exact import path (e.g., "SlateDB.slate.db")
+              candidates.push_back(modulePath);
+
+              // Pattern 2: Just the import path without first part (e.g.,
+              // "slate.db")
+              size_t firstDot = modulePath.find('.');
+              if (firstDot != std::string::npos) {
+                candidates.push_back(modulePath.substr(firstDot + 1));
+              }
+
+              // Pattern 3: With package prefix if not already present
+              if (modulePath.find(currentModule->packageName) != 0) {
+                candidates.push_back(currentModule->packageName + "." +
+                                     modulePath);
+              }
+
+              // Pattern 4: Try all registered module names that end with our
+              // import
               for (const auto &[regName, regModule] : registry.getModules()) {
-                bool matches = (regName == modulePath);
-                if (!matches && modulePath.size() > regName.size()) {
-                  size_t offset = modulePath.size() - regName.size();
-                  if (modulePath[offset - 1] == '.' &&
-                      modulePath.substr(offset) == regName)
-                    matches = true;
-                }
-                if (!matches && regName.size() > modulePath.size()) {
+                // Check if registered name ends with our import path
+                if (regName.size() >= modulePath.size()) {
                   size_t offset = regName.size() - modulePath.size();
-                  if (regName[offset - 1] == '.' &&
-                      regName.substr(offset) == modulePath)
-                    matches = true;
-                }
-
-                if (matches) {
-                  for (auto &importedCls : regModule->ast.classes) {
-                    if (importedCls.name == e.className) {
-                      currentScope->classes[e.className] = &importedCls;
-                      cls = &importedCls;
-                      break;
+                  if (regName.substr(offset) == modulePath) {
+                    // Add this as a candidate
+                    if (std::find(candidates.begin(), candidates.end(),
+                                  regName) == candidates.end()) {
+                      candidates.push_back(regName);
                     }
                   }
                 }
-                if (cls)
+              }
+
+              std::cerr << "[TypeChecker] Trying candidates for import '"
+                        << modulePath << "':" << std::endl;
+              for (const auto &candidate : candidates) {
+                std::cerr << "  - Trying: " << candidate << std::endl;
+
+                auto regModule = registry.getModules().find(candidate);
+                if (regModule == registry.getModules().end()) {
+                  std::cerr << "    ✗ Not found in registry" << std::endl;
+                  continue;
+                }
+
+                auto module = regModule->second;
+                std::cerr << "    ✓ Found module!" << std::endl;
+
+                // Search for the class in this module
+                for (auto &importedCls : module->ast.classes) {
+                  std::cerr << "      Checking class: " << importedCls.name
+                            << " (public: " << importedCls.isPublic << ")"
+                            << std::endl;
+
+                  if (importedCls.name == e.className) {
+                    if (!importedCls.isPublic) {
+                      std::cerr << "      ✗ Class is not public!" << std::endl;
+                      errorAt("Class '" + e.className +
+                                  "' exists but is not public in module " +
+                                  candidate,
+                              expr->loc);
+                      foundInImports = false;
+                      break;
+                    }
+
+                    std::cerr << "      ✓ Found class " << e.className
+                              << " in module " << candidate << std::endl;
+                    currentScope->classes[e.className] = &importedCls;
+                    cls = &importedCls;
+                    foundInImports = true;
+                    break;
+                  }
+                }
+
+                if (foundInImports)
                   break;
               }
-              if (cls)
+
+              if (foundInImports)
                 break;
+            }
+
+            // If still not found, give a helpful error
+            if (!cls) {
+              std::stringstream hint;
+              hint << "Class '" << e.className << "' not found. ";
+              hint << "Make sure:\n";
+              hint << "  1. The module containing '" << e.className
+                   << "' is imported\n";
+              hint << "  2. The class is marked with 'pub'\n";
+              hint << "  3. The import path matches the module name\n";
+              hint << "\nImported modules: ";
+              bool first = true;
+              for (const auto &usingDecl : currentModule->ast.usings) {
+                if (!first)
+                  hint << ", ";
+                for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                  if (i > 0)
+                    hint << ".";
+                  hint << usingDecl.path[i];
+                }
+                first = false;
+              }
+
+              errorAt("Cannot create instance of undefined class '" +
+                          e.className + "' - class not declared or imported\n" +
+                          hint.str(),
+                      expr->loc);
             }
           }
 
@@ -808,9 +1004,11 @@ bool TypeChecker::typesEqual(TypePtr a, TypePtr b) {
     return false;
 
   switch (a->kind) {
- case Type::GENERIC:
-    if (a->className != b->className) return false;
-    if (a->genericArgs.size() != b->genericArgs.size()) return false;
+  case Type::GENERIC:
+    if (a->className != b->className)
+      return false;
+    if (a->genericArgs.size() != b->genericArgs.size())
+      return false;
     for (size_t i = 0; i < a->genericArgs.size(); i++) {
       if (!typesEqual(a->genericArgs[i], b->genericArgs[i]))
         return false;
@@ -838,13 +1036,14 @@ bool TypeChecker::typesEqual(TypePtr a, TypePtr b) {
 
 bool TypeChecker::isAssignable(TypePtr from, TypePtr to) {
   // Relaxed: Allow more flexible type assignments
-  if (!from || !to) return true;
-  
+  if (!from || !to)
+    return true;
+
   // Allow string assignments
   if (to->kind == Type::STRING && from->kind == Type::STRING) {
     return true;
   }
-  
+
   return typesEqual(from, to);
 }
 
@@ -897,10 +1096,11 @@ std::string TypeChecker::typeToString(TypePtr type) {
     return "unknown";
 
   switch (type->kind) {
-case Type::GENERIC: {
+  case Type::GENERIC: {
     std::string s = type->className + "<";
     for (size_t i = 0; i < type->genericArgs.size(); i++) {
-      if (i > 0) s += ", ";
+      if (i > 0)
+        s += ", ";
       s += typeToString(type->genericArgs[i]);
     }
     return s + ">";

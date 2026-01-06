@@ -336,7 +336,7 @@ FnDecl Parser::parseFunction() {
 }
 
 ClassDecl Parser::parseClass() {
-  expect(TokenType::CLASS, "Expected 'class'");
+	
   ClassDecl cls;
 
   // Check for pub modifier
