@@ -137,7 +137,13 @@ std::string CodeGen::generate(const Program &prog) {
   out.clear();
   importedNamespaces.clear();
   knownClassNames.clear();
-
+// At the very beginning of CodeGen::generate()
+out << "// Force stdlib generation\n";
+out << "#include <vector>\n";
+out << "#include <unordered_map>\n"; 
+out << "#include <optional>\n";
+out << "#include <iostream>\n";
+out << "#include <string>\n\n";
   // Collect all class names first
   for (const auto &cls : prog.classes) {
     knownClassNames.insert(cls.name);
@@ -156,15 +162,12 @@ std::string CodeGen::generate(const Program &prog) {
   out << "using Std::readLine;\n";
   out << "\n";
   out << "// Array helper wrappers\n";
-  out << "namespace Array {\n";
-  out << "  template<typename T> std::vector<T> create() { return {}; }\n";
-  out << "}\n";
   out << "template<typename T> int length(const std::vector<T>& arr) { return "
-         "Std::Array::length(arr); }\n";
+         "arr.size(); }\n";
   out << "template<typename T> void push(std::vector<T>& arr, const T& val) { "
-         "Std::Array::push(arr, val); }\n";
-  out << "template<typename T> T pop(std::vector<T>& arr) { return "
-         "Std::Array::pop(arr); }\n";
+         "arr.push_back(val); }\n";
+  out << "template<typename T> T pop(std::vector<T>& arr) { auto v = "
+         "arr.back(); arr.pop_back(); return v; }\n";
   out << "\n";
   out << "// Map helper wrappers\n";
   out << "namespace Map {\n";
@@ -359,7 +362,7 @@ void CodeGen::genClass(const ClassDecl &cls) {
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
   // Track current class context for proper 'this' handling in return statements
   currentClassName = className;
-  
+
   std::string retType = typeToString(fn.returnType);
   if (fn.name == "main" && className.empty())
     emitLine("int main() {");
@@ -390,7 +393,7 @@ void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
     emitLine("return 0;");
   indent--;
   emitLine("}");
-  
+
   // Clear class context after function
   currentClassName.clear();
 }
@@ -677,7 +680,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
 
           // FIX: Use -> for 'this' pointer, . for regular values
           if (std::holds_alternative<ThisExpr>(e.object->data)) {
-            emit("this->" + e.member);
+            emit("this->" + e.member); // ← This line should already be there
           } else {
             // Regular member access
             genExpr(e.object);
@@ -724,7 +727,8 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this"); // Just emit pointer - dereferencing happens in ReturnStmt
+          emit("this"); // Just emit pointer - dereferencing happens in
+                        // ReturnStmt
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";

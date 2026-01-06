@@ -20,7 +20,7 @@ void SemanticAnalyzer::initStdLib() {
     if (stdlibInitialized) return;
     
     std::vector<std::string> searchPaths = {
-        "./stdlib",
+        "./stdlib",  // ← Make sure this path is correct!
         "/usr/local/share/magolor/stdlib",
         "/usr/share/magolor/stdlib",
         std::string(getenv("HOME") ? getenv("HOME") : "") + "/.magolor/stdlib"
@@ -30,12 +30,15 @@ void SemanticAnalyzer::initStdLib() {
     for (const auto& path : searchPaths) {
         if (fs::exists(path)) {
             stdlibPath = path;
+            std::cerr << "Found stdlib at: " << path << std::endl;  // ← Add logging
             break;
         }
     }
     
     if (!stdlibPath.empty()) {
         StdLibLoader::instance().init(stdlibPath);
+    } else {
+        std::cerr << "WARNING: stdlib not found!" << std::endl;  // ← Add warning
     }
     
     stdlibInitialized = true;
