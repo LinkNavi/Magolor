@@ -1,5 +1,6 @@
 #pragma once
 #include "ast.hpp"
+#include "stdlib_loader.hpp"
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -9,6 +10,7 @@
 #include <llvm/IR/Verifier.h>
 #include <unordered_map>
 #include <memory>
+#include <string>
 
 class LLVMCodeGen {
 public:
@@ -28,10 +30,17 @@ public:
     
     llvm::Module* getModule() { return module.get(); }
     
+    // Stdlib integration
+    void setStdLibPath(const std::string& path);
+    
 private:
     std::unique_ptr<llvm::LLVMContext> context;
     std::unique_ptr<llvm::Module> module;
     std::unique_ptr<llvm::IRBuilder<>> builder;
+    
+    // Stdlib loader
+    std::string stdlibPath;
+    bool stdlibInitialized = false;
     
     // Symbol tables
     std::unordered_map<std::string, llvm::Value*> namedValues;
@@ -90,8 +99,10 @@ private:
     llvm::Function* getRuntimeFunction(const std::string& name);
     
     // Standard library function declarations
+    void initStdLib();
     void declareStdLibFunctions();
     llvm::Function* getStdLibFunction(const std::string& name);
+    bool isStdLibFunction(const std::string& name);
     
     // GC support (simplified reference counting)
     void genIncRef(llvm::Value* ptr);
