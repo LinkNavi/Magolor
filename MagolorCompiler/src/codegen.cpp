@@ -137,76 +137,98 @@ std::string CodeGen::generate(const Program &prog) {
   out.clear();
   importedNamespaces.clear();
   knownClassNames.clear();
-// At the very beginning of CodeGen::generate()
-out << "// Force stdlib generation\n";
-out << "#include <vector>\n";
-out << "#include <unordered_map>\n"; 
-out << "#include <optional>\n";
-out << "#include <iostream>\n";
-out << "#include <string>\n\n";
-  // Collect all class names first
+  
+  // Generate includes FIRST (before any namespaces)
+  out << "// Force stdlib generation\n";
+  out << "#include <vector>\n";
+  out << "#include <unordered_map>\n"; 
+  out << "#include <optional>\n";
+  out << "#include <iostream>\n";
+  out << "#include <string>\n\n";
+  
+  // Collect all class names
   for (const auto &cls : prog.classes) {
     knownClassNames.insert(cls.name);
   }
-
-  // Generate C/C++ imports first
+  
+  // Generate C/C++ imports
   genCImports(prog.cimports);
-
-  // Generate standard library
-  genStdLib();
-
+  
+  // Generate standard library OUTSIDE any namespace wrapping
+  // Make sure stdlib uses ::std:: prefix
+  std::string stdlibCode = StdLibGenerator::generateAll();
+  
+  // Replace all "std::" with "::std::" in stdlib code
+  size_t pos = 0;
+  while ((pos = stdlibCode.find("std::", pos)) != std::string::npos) {
+      if (pos == 0 || stdlibCode[pos-1] != ':') {
+          stdlibCode.insert(pos, "::");
+          pos += 7;
+      } else {
+          pos += 5;
+      }
+  }
+  
+  out << stdlibCode;
+  
   // Add using declarations for common Std functions
   out << "// Import Std namespace for convenience\n";
   out << "using Std::println;\n";
   out << "using Std::print;\n";
   out << "using Std::readLine;\n";
   out << "\n";
+  
+  // Array helper wrappers - USE ::std:: prefix
   out << "// Array helper wrappers\n";
-  out << "template<typename T> int length(const std::vector<T>& arr) { return "
+  out << "template<typename T> int length(const ::std::vector<T>& arr) { return "
          "arr.size(); }\n";
-  out << "template<typename T> void push(std::vector<T>& arr, const T& val) { "
+  out << "template<typename T> void push(::std::vector<T>& arr, const T& val) { "
          "arr.push_back(val); }\n";
-  out << "template<typename T> T pop(std::vector<T>& arr) { auto v = "
+  out << "template<typename T> T pop(::std::vector<T>& arr) { auto v = "
          "arr.back(); arr.pop_back(); return v; }\n";
   out << "\n";
+  
+  // Map helper wrappers - USE ::std:: prefix
   out << "// Map helper wrappers\n";
   out << "namespace Map {\n";
-  out << "  template<typename K, typename V> std::unordered_map<K,V> create() "
+  out << "  template<typename K, typename V> ::std::unordered_map<K,V> create() "
          "{ return {}; }\n";
   out << "  template<typename K, typename V> void "
-         "insert(std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = "
+         "insert(::std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = "
          "v; }\n";
-  out << "  template<typename K, typename V> std::optional<V> get(const "
-         "std::unordered_map<K,V>& m, const K& k) {\n";
+  out << "  template<typename K, typename V> ::std::optional<V> get(const "
+         "::std::unordered_map<K,V>& m, const K& k) {\n";
   out << "    auto it = m.find(k); return it != m.end() ? "
-         "std::optional<V>(it->second) : std::nullopt;\n";
+         "::std::optional<V>(it->second) : ::std::nullopt;\n";
   out << "  }\n";
-  out << "  template<typename K, typename V> std::vector<V> values(const "
-         "std::unordered_map<K,V>& m) {\n";
-  out << "    std::vector<V> r; for(auto& p : m) r.push_back(p.second); return "
+  out << "  template<typename K, typename V> ::std::vector<V> values(const "
+         "::std::unordered_map<K,V>& m) {\n";
+  out << "    ::std::vector<V> r; for(auto& p : m) r.push_back(p.second); return "
          "r;\n";
   out << "  }\n";
   out << "}\n";
   out << "\n";
+  
+  // File helper - USE ::std:: prefix
   out << "// File helper\n";
   out << "namespace File {\n";
-  out << "  inline bool exists(const std::string& path) {\n";
-  out << "    std::ifstream f(path); return f.good();\n";
+  out << "  inline bool exists(const ::std::string& path) {\n";
+  out << "    ::std::ifstream f(path); return f.good();\n";
   out << "  }\n";
   out << "}\n";
   out << "\n";
-
+  
   // Forward declarations for classes
   for (const auto &cls : prog.classes) {
     emitLine("class " + cls.name + ";");
   }
   emitLine("");
-
+  
   // Generate classes
   for (const auto &cls : prog.classes) {
     genClass(cls);
   }
-
+  
   // Forward declarations for functions
   for (const auto &fn : prog.functions) {
     if (fn.name != "main") {
@@ -220,13 +242,13 @@ out << "#include <string>\n\n";
     }
   }
   emitLine("");
-
+  
   // Generate function definitions
   for (const auto &fn : prog.functions) {
     genFunction(fn);
     emitLine("");
   }
-
+  
   return out.str();
 }
 
