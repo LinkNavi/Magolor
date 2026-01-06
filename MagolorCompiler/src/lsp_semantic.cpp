@@ -1,915 +1,744 @@
 #include "lsp_semantic.hpp"
-#include "lsp_logger.hpp"
-#include "lsp_project.hpp"
+#include "jsonrpc.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <regex>
 #include <sstream>
-// logger is already declared extern in the header
+#include <regex>
+
 namespace fs = std::filesystem;
-std::vector<std::string>
-getModuleFileCandidates(const std::string &importPath,
-                        const std::string &projectRoot) {
-  std::vector<std::string> candidates;
 
-  // Convert dots to slashes: slate.db -> slate/db.mg
-  std::string pathVersion = importPath;
-  std::replace(pathVersion.begin(), pathVersion.end(), '.', '/');
+// ============================================================================
+// SemanticAnalyzer Implementation
+// ============================================================================
 
-  // Try with .mg extension
-  candidates.push_back(projectRoot + "/src/" + pathVersion + ".mg");
-
-  // Try as directory with same-named file: slate/db -> slate/db/db.mg
-  size_t lastSlash = pathVersion.rfind('/');
-  if (lastSlash != std::string::npos) {
-    std::string dirName = pathVersion.substr(lastSlash + 1);
-    candidates.push_back(projectRoot + "/src/" + pathVersion + "/" + dirName +
-                         ".mg");
-  }
-
-  return candidates;
+SemanticAnalyzer::SemanticAnalyzer() {
+    initStdLib();
 }
 
-// Helper function to convert TypePtr to string
-std::string typeToString(const TypePtr &type) {
-  if (!type)
-    return "void";
-
-  switch (type->kind) {
-  case Type::INT:
-    return "int";
-  case Type::FLOAT:
-    return "float";
-  case Type::STRING:
-    return "string";
-  case Type::BOOL:
-    return "bool";
-  case Type::VOID:
-    return "void";
-  case Type::CLASS:
-    return type->className;
-  case Type::OPTION:
-    return "Option<" + typeToString(type->innerType) + ">";
-  case Type::ARRAY:
-    return "Array<" + typeToString(type->innerType) + ">";
-  case Type::FUNCTION: {
-    std::string result = "fn(";
-    for (size_t i = 0; i < type->paramTypes.size(); i++) {
-      if (i > 0)
-        result += ", ";
-      result += typeToString(type->paramTypes[i]);
-    }
-    result += ") -> " + typeToString(type->returnType);
-    return result;
-  }
-  }
-  return "unknown";
-}
-
-void SemanticAnalyzer::loadProject(const std::string &startUri) {
-  if (projectLoaded)
-    return;
-
-  // Find project root by looking for project.toml
-  std::string path = startUri;
-  if (path.find("file://") == 0) {
-    path = path.substr(7);
-  }
-
-  fs::path current = fs::path(path).parent_path();
-  while (!current.empty() && current.has_parent_path()) {
-    if (fs::exists(current / "project.toml")) {
-      projectRoot = current.string();
-      break;
-    }
-    current = current.parent_path();
-  }
-
-  if (projectRoot.empty())
-    return;
-
-  // Scan src directory
-  std::string srcDir = projectRoot + "/src";
-  if (fs::exists(srcDir)) {
-    scanSourceDirectory(srcDir);
-  }
-
-  projectLoaded = true;
-}
-
-void SemanticAnalyzer::scanSourceDirectory(const std::string &srcDir) {
-  try {
-    for (const auto &entry : fs::recursive_directory_iterator(srcDir)) {
-      if (entry.is_regular_file() && entry.path().extension() == ".mg") {
-        std::string filePath = entry.path().string();
-        std::string uri = "file://" + filePath;
-
-        // Skip if already analyzed
-        if (fileSymbols.find(uri) != fileSymbols.end())
-          continue;
-
-        // Read and analyze
-        std::ifstream file(filePath);
-        if (file) {
-          std::stringstream buffer;
-          buffer << file.rdbuf();
-          extractSymbols(uri, buffer.str());
+void SemanticAnalyzer::initStdLib() {
+    if (stdlibInitialized) return;
+    
+    std::vector<std::string> searchPaths = {
+        "./stdlib",
+        "/usr/local/share/magolor/stdlib",
+        "/usr/share/magolor/stdlib",
+        std::string(getenv("HOME") ? getenv("HOME") : "") + "/.magolor/stdlib"
+    };
+    
+    std::string stdlibPath;
+    for (const auto& path : searchPaths) {
+        if (fs::exists(path)) {
+            stdlibPath = path;
+            break;
         }
-      }
     }
-  } catch (const std::exception &e) {
-    // Silently ignore filesystem errors
-  }
+    
+    if (!stdlibPath.empty()) {
+        StdLibLoader::instance().init(stdlibPath);
+    }
+    
+    stdlibInitialized = true;
+}
+
+bool SemanticAnalyzer::isStdLibModule(const std::string& modulePath) const {
+    if (modulePath.find("Std.") != 0 && modulePath != "Std") {
+        return false;
+    }
+    return StdLibLoader::instance().hasModule(modulePath);
+}
+
+std::vector<std::string> SemanticAnalyzer::getAvailableStdModules() const {
+    return StdLibLoader::instance().getAvailableModules();
+}
+
+std::vector<SymbolPtr> SemanticAnalyzer::getStdLibSymbols(const std::string& modulePath) {
+    auto it = stdlibSymbolCache.find(modulePath);
+    if (it != stdlibSymbolCache.end()) {
+        return it->second;
+    }
+    
+    std::vector<SymbolPtr> symbols;
+    
+    auto functions = StdLibLoader::instance().getFunctions(modulePath);
+    for (const auto& func : functions) {
+        symbols.push_back(stdFunctionToSymbol(func, modulePath));
+    }
+    
+    auto classes = StdLibLoader::instance().getClasses(modulePath);
+    for (const auto& cls : classes) {
+        auto sym = std::make_shared<Symbol>();
+        sym->name = cls.name;
+        sym->kind = SymbolKind::Class;
+        sym->isPublic = true;
+        sym->modulePath = modulePath;
+        sym->documentation = cls.documentation;
+        symbols.push_back(sym);
+    }
+    
+    stdlibSymbolCache[modulePath] = symbols;
+    return symbols;
+}
+
+SymbolPtr SemanticAnalyzer::stdFunctionToSymbol(const StdFunction& func, const std::string& modulePath) {
+    auto sym = std::make_shared<Symbol>();
+    sym->name = func.name;
+    sym->kind = func.isConstant ? SymbolKind::Constant : SymbolKind::Function;
+    sym->isPublic = true;
+    sym->isCallable = !func.isConstant;
+    sym->modulePath = modulePath;
+    sym->detail = func.signature;
+    sym->returnType = func.returnType;
+    sym->paramTypes = func.paramTypes;
+    sym->documentation = func.documentation;
+    
+    return sym;
+}
+
+void SemanticAnalyzer::analyze(const std::string& uri, const std::string& content) {
+    loadProject(uri);
+    extractSymbols(uri, content);
+}
+
+void SemanticAnalyzer::loadProject(const std::string& startUri) {
+    if (projectLoaded) return;
+    
+    std::string path = startUri;
+    if (path.find("file://") == 0) {
+        path = path.substr(7);
+    }
+    
+    fs::path current = fs::path(path).parent_path();
+    while (!current.empty() && current.has_parent_path()) {
+        if (fs::exists(current / "project.toml")) {
+            projectRoot = current.string();
+            break;
+        }
+        current = current.parent_path();
+    }
+    
+    if (!projectRoot.empty()) {
+        std::string srcDir = projectRoot + "/src";
+        if (fs::exists(srcDir)) {
+            scanSourceDirectory(srcDir);
+        }
+    }
+    
+    projectLoaded = true;
+}
+
+void SemanticAnalyzer::scanSourceDirectory(const std::string& srcDir) {
+    try {
+        for (const auto& entry : fs::recursive_directory_iterator(srcDir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".mg") {
+                std::string filePath = entry.path().string();
+                std::string uri = "file://" + filePath;
+                
+                if (fileSymbols.find(uri) != fileSymbols.end()) continue;
+                
+                std::ifstream file(filePath);
+                if (file) {
+                    std::stringstream buffer;
+                    buffer << file.rdbuf();
+                    extractSymbols(uri, buffer.str());
+                }
+            }
+        }
+    } catch (...) {}
 }
 
 void SemanticAnalyzer::reloadProject() {
-  projectLoaded = false;
-  projectRoot.clear();
-  fileSymbols.clear();
-  fileScopes.clear();
-  moduleSymbols.clear();
+    projectLoaded = false;
+    projectRoot.clear();
+    fileSymbols.clear();
+    fileScopes.clear();
+    moduleSymbolCache.clear();
 }
 
-void SemanticAnalyzer::analyze(const std::string &uri,
-                               const std::string &content) {
-  logger.log("SemanticAnalyzer::analyze START for " + uri);
-
-  try {
-    // Load entire project on first analyze
-    logger.log("SemanticAnalyzer::analyze: loading project");
-
-    try {
-      loadProject(uri);
-      logger.log("SemanticAnalyzer::analyze: project loaded");
-    } catch (const std::exception &e) {
-      logger.log("SemanticAnalyzer::analyze: project load failed - " +
-                 std::string(e.what()));
-      // Continue anyway - we can still analyze this file
-    } catch (...) {
-      logger.log(
-          "SemanticAnalyzer::analyze: project load failed - unknown error");
-      // Continue anyway
+void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string& content) {
+    std::vector<SymbolPtr> symbols;
+    auto scope = std::make_shared<Scope>();
+    
+    std::istringstream stream(content);
+    std::string line;
+    int lineNum = 0;
+    std::string currentClass;
+    
+    while (std::getline(stream, line)) {
+        lineNum++;
+        
+        size_t firstNonSpace = line.find_first_not_of(" \t");
+        std::string trimmedLine = (firstNonSpace != std::string::npos) 
+                                   ? line.substr(firstNonSpace) : "";
+        
+        if (trimmedLine.find("using ") == 0) {
+            parseImport(line, scope.get());
+        }
+        else if (trimmedLine.find("class ") != std::string::npos ||
+                 (trimmedLine.find("pub ") == 0 && trimmedLine.find("class ") != std::string::npos)) {
+            auto sym = parseClass(line, lineNum, uri);
+            if (sym) {
+                sym->isCallable = false;
+                symbols.push_back(sym);
+                scope->define(sym);
+                currentClass = sym->name;
+            }
+        }
+        else if (trimmedLine.find("fn ") != std::string::npos) {
+            auto sym = parseFunction(line, lineNum, uri);
+            if (sym) {
+                sym->containerName = currentClass;
+                sym->isCallable = true;
+                sym->kind = currentClass.empty() ? SymbolKind::Function : SymbolKind::Method;
+                symbols.push_back(sym);
+                scope->define(sym);
+            }
+        }
+        else if (trimmedLine.find("let ") == 0) {
+            auto sym = parseVariable(line, lineNum, uri);
+            if (sym) {
+                sym->containerName = currentClass;
+                sym->isCallable = false;
+                symbols.push_back(sym);
+                scope->define(sym);
+            }
+        }
+        
+        if (!currentClass.empty() && trimmedLine == "}") {
+            currentClass = "";
+        }
     }
-
-    // Then analyze this specific file (updates cache)
-    logger.log("SemanticAnalyzer::analyze: extracting symbols");
-
-    try {
-      extractSymbols(uri, content);
-      logger.log("SemanticAnalyzer::analyze: symbols extracted");
-    } catch (const std::exception &e) {
-      logger.log("SemanticAnalyzer::analyze: symbol extraction failed - " +
-                 std::string(e.what()));
-      // Mark as failed but don't crash
-      fileSymbols[uri] = {};
-      fileScopes[uri] = std::make_shared<Scope>();
-    } catch (...) {
-      logger.log("SemanticAnalyzer::analyze: symbol extraction failed - "
-                 "unknown error");
-      fileSymbols[uri] = {};
-      fileScopes[uri] = std::make_shared<Scope>();
-    }
-
-  } catch (const std::exception &e) {
-    logger.log("SemanticAnalyzer::analyze: EXCEPTION - " +
-               std::string(e.what()));
-    // Don't re-throw - LSP must never crash
-  } catch (...) {
-    logger.log("SemanticAnalyzer::analyze: UNKNOWN EXCEPTION");
-    // Don't re-throw
-  }
-
-  logger.log("SemanticAnalyzer::analyze END");
+    
+    fileSymbols[uri] = symbols;
+    fileScopes[uri] = scope;
 }
-void SemanticAnalyzer::extractSymbols(const std::string &uri,
-                                      const std::string &content) {
-  logger.log("extractSymbols: START for " + uri);
 
-  std::vector<SymbolPtr> symbols;
-  auto scope = std::make_shared<Scope>();
-
-  std::istringstream stream(content);
-  std::string line;
-  int lineNum = 0;
-  std::string currentClass;
-
-  logger.log("extractSymbols: parsing " + std::to_string(content.length()) +
-             " bytes");
-
-  while (std::getline(stream, line)) {
-    lineNum++;
-
-    // Log EVERY line to find the crash
-    logger.log("extractSymbols: LINE " + std::to_string(lineNum) + ": " +
-               line.substr(0, std::min((size_t)50, line.size())));
-
-    // Trim leading whitespace safely
-    size_t firstNonSpace = line.find_first_not_of(" \t");
-    std::string trimmedLine =
-        (firstNonSpace != std::string::npos) ? line.substr(firstNonSpace) : "";
-
-    try {
-      if (trimmedLine.find("using ") == 0) {
-        logger.log("extractSymbols: parsing import at line " +
-                   std::to_string(lineNum));
-        parseImport(line, scope.get());
-      } else if (trimmedLine.find("cimport ") == 0) {
-        continue;
-      } else if (trimmedLine.find("class ") != std::string::npos ||
-                 (trimmedLine.find("pub ") == 0 &&
-                  trimmedLine.find("class ") != std::string::npos)) {
-        logger.log("extractSymbols: parsing class at line " +
-                   std::to_string(lineNum));
-        auto sym = parseClass(line, lineNum, uri);
-        if (sym) {
-          sym->isCallable = false;
-          symbols.push_back(sym);
-          scope->define(sym);
-          currentClass = sym->name;
-        }
-      } else if (trimmedLine.find("fn ") != std::string::npos) {
-        logger.log("extractSymbols: parsing function at line " +
-                   std::to_string(lineNum));
-        auto sym = parseFunction(line, lineNum, uri);
-        if (sym) {
-          sym->containerName = currentClass;
-          sym->isCallable = true;
-          sym->kind =
-              currentClass.empty() ? SymbolKind::Function : SymbolKind::Method;
-          symbols.push_back(sym);
-          scope->define(sym);
-        }
-      } else if (trimmedLine.find("let ") == 0) {
-        logger.log("extractSymbols: parsing variable at line " +
-                   std::to_string(lineNum));
-        auto sym = parseVariable(line, lineNum, uri);
-        if (sym) {
-          sym->containerName = currentClass;
-          sym->isCallable = false;
-          symbols.push_back(sym);
-          scope->define(sym);
-        }
-      }
-
-      // Check for class closing brace
-      if (!currentClass.empty() && trimmedLine.find('}') != std::string::npos) {
-        // Simple check: if line is just "}" or starts with "}"
-        if (trimmedLine == "}" || trimmedLine[0] == '}') {
-          logger.log("extractSymbols: closing class at line " +
-                     std::to_string(lineNum));
-          currentClass = "";
-        }
-      }
-    } catch (const std::exception &e) {
-      logger.log("extractSymbols: EXCEPTION at line " +
-                 std::to_string(lineNum) + ": " + e.what());
-    } catch (...) {
-      logger.log("extractSymbols: UNKNOWN EXCEPTION at line " +
-                 std::to_string(lineNum));
+void SemanticAnalyzer::parseImport(const std::string& line, Scope* scope) {
+    size_t usingPos = line.find("using ");
+    if (usingPos == std::string::npos) return;
+    
+    size_t start = usingPos + 6;
+    size_t end = line.find(';', start);
+    if (end == std::string::npos) end = line.size();
+    
+    std::string importPath = line.substr(start, end - start);
+    
+    importPath.erase(0, importPath.find_first_not_of(" \t"));
+    importPath.erase(importPath.find_last_not_of(" \t") + 1);
+    
+    size_t pos = importPath.find("::");
+    if (pos != std::string::npos) {
+        importPath.replace(pos, 2, ".");
     }
-  }
-
-  logger.log("extractSymbols: parsed " + std::to_string(symbols.size()) +
-             " symbols");
-  fileSymbols[uri] = symbols;
-  fileScopes[uri] = scope;
-  logger.log("extractSymbols: END");
+    
+    ImportedModule import;
+    import.fullPath = importPath;
+    import.isStdLib = isStdLibModule(importPath);
+    
+    if (import.isStdLib) {
+        auto symbols = getStdLibSymbols(importPath);
+        for (const auto& sym : symbols) {
+            import.importedSymbols.push_back(sym->name);
+        }
+    }
+    
+    scope->imports.push_back(import);
 }
-std::vector<SymbolPtr>
-SemanticAnalyzer::getSymbolsFromModule(const std::string &modulePath) {
-  std::vector<SymbolPtr> symbols;
 
-  auto it = moduleSymbols.find(modulePath);
-  if (it != moduleSymbols.end()) {
-    return it->second;
-  }
-
-  auto project = ProjectManager::instance().getProjectForFile(projectRoot);
-  if (!project) {
-    return symbols;
-  }
-
-  auto exportedNames = project->getExportedSymbols(modulePath);
-  for (const auto &name : exportedNames) {
+SymbolPtr SemanticAnalyzer::parseFunction(const std::string& line, int lineNum, const std::string& uri) {
+    size_t fnPos = line.find("fn ");
+    if (fnPos == std::string::npos) return nullptr;
+    
+    size_t nameStart = fnPos + 3;
+    size_t nameEnd = line.find('(', nameStart);
+    if (nameEnd == std::string::npos) return nullptr;
+    
+    std::string name = line.substr(nameStart, nameEnd - nameStart);
+    name.erase(0, name.find_first_not_of(" \t"));
+    name.erase(name.find_last_not_of(" \t") + 1);
+    
+    if (name.empty()) return nullptr;
+    
     auto sym = std::make_shared<Symbol>();
     sym->name = name;
     sym->kind = SymbolKind::Function;
-    sym->isPublic = true;
-    symbols.push_back(sym);
-  }
-
-  moduleSymbols[modulePath] = symbols;
-  return symbols;
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)nameStart};
+    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
+    sym->isPublic = line.find("pub ") != std::string::npos;
+    sym->isStatic = line.find("static ") != std::string::npos;
+    
+    size_t parenEnd = line.find(')', nameEnd);
+    size_t arrowPos = line.find("->", parenEnd != std::string::npos ? parenEnd : 0);
+    
+    if (parenEnd != std::string::npos) {
+        std::string params = line.substr(nameEnd, parenEnd - nameEnd + 1);
+        sym->detail = params;
+        
+        if (arrowPos != std::string::npos) {
+            size_t typeStart = arrowPos + 2;
+            size_t typeEnd = line.find_first_of(" {", typeStart);
+            if (typeEnd == std::string::npos) typeEnd = line.size();
+            sym->returnType = line.substr(typeStart, typeEnd - typeStart);
+            sym->returnType.erase(0, sym->returnType.find_first_not_of(" \t"));
+            sym->returnType.erase(sym->returnType.find_last_not_of(" \t") + 1);
+            sym->detail += " -> " + sym->returnType;
+        }
+    }
+    
+    return sym;
 }
 
-
-std::vector<SymbolPtr> SemanticAnalyzer::resolveImportedSymbols(const std::string &uri) {
-    logger.log("resolveImportedSymbols: START for " + uri);
-    std::vector<SymbolPtr> symbols;
-
-    auto it = fileScopes.find(uri);
-    if (it == fileScopes.end()) {
-        logger.log("resolveImportedSymbols: No scope found for " + uri);
-        return symbols;
-    }
-
-    Scope *scope = it->second.get();
-    auto project = ProjectManager::instance().getProjectForFile(uri);
+SymbolPtr SemanticAnalyzer::parseClass(const std::string& line, int lineNum, const std::string& uri) {
+    size_t classPos = line.find("class ");
+    if (classPos == std::string::npos) return nullptr;
     
-    if (!project) {
-        logger.log("resolveImportedSymbols: No project found");
-        return symbols;
+    size_t nameStart = classPos + 6;
+    size_t nameEnd = line.find_first_of(" {<", nameStart);
+    if (nameEnd == std::string::npos) return nullptr;
+    
+    std::string name = line.substr(nameStart, nameEnd - nameStart);
+    name.erase(name.find_last_not_of(" \t") + 1);
+    
+    auto sym = std::make_shared<Symbol>();
+    sym->name = name;
+    sym->kind = SymbolKind::Class;
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)nameStart};
+    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
+    sym->isPublic = line.find("pub ") != std::string::npos;
+    
+    return sym;
+}
+
+SymbolPtr SemanticAnalyzer::parseVariable(const std::string& line, int lineNum, const std::string& uri) {
+    size_t letPos = line.find("let ");
+    if (letPos == std::string::npos) return nullptr;
+    
+    size_t nameStart = letPos + 4;
+    
+    if (line.find("mut ", nameStart) == nameStart) {
+        nameStart += 4;
     }
+    
+    while (nameStart < line.size() && (line[nameStart] == ' ' || line[nameStart] == '\t')) {
+        nameStart++;
+    }
+    
+    size_t nameEnd = nameStart;
+    while (nameEnd < line.size() && (std::isalnum(line[nameEnd]) || line[nameEnd] == '_')) {
+        nameEnd++;
+    }
+    
+    if (nameEnd == nameStart) return nullptr;
+    
+    std::string name = line.substr(nameStart, nameEnd - nameStart);
+    
+    auto sym = std::make_shared<Symbol>();
+    sym->name = name;
+    sym->kind = SymbolKind::Variable;
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)nameStart};
+    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
+    
+    size_t colonPos = line.find(':', nameEnd);
+    size_t equalPos = line.find('=', nameEnd);
+    
+    if (colonPos != std::string::npos && (equalPos == std::string::npos || colonPos < equalPos)) {
+        size_t typeEnd = (equalPos != std::string::npos) ? equalPos : line.find(';', colonPos);
+        if (typeEnd == std::string::npos) typeEnd = line.size();
+        sym->type = line.substr(colonPos + 1, typeEnd - colonPos - 1);
+        sym->type.erase(0, sym->type.find_first_not_of(" \t"));
+        sym->type.erase(sym->type.find_last_not_of(" \t") + 1);
+    }
+    
+    return sym;
+}
 
-    for (const auto &import : scope->imports) {
-        logger.log("resolveImportedSymbols: Processing import " + import.fullPath);
-        
-        // Skip built-in modules (Std.*)
-        if (ModuleResolver::isBuiltinModule(import.fullPath)) {
-            logger.log("  -> Skipping builtin module");
-            continue;
-        }
-
-        // FIX #1: Try multiple module name patterns
-        std::vector<std::string> moduleNameCandidates = {
-            import.fullPath,                          // slate.db
-            project->projectName + "." + import.fullPath,  // SlateDB.slate.db
-        };
-        
-        // Also try finding the actual file
-        std::vector<std::string> fileCandidates = getModuleFileCandidates(
-            import.fullPath, project->rootPath
-        );
-        
-        ModulePtr module = nullptr;
-        
-        // Try registered modules first
-        for (const auto& candidate : moduleNameCandidates) {
-            module = project->registry.getModule(candidate);
-            if (module) {
-                logger.log("  -> Found module with name: " + candidate);
-                break;
-            }
-        }
-        
-        // FIX #2: If not found, try to load from file directly
-        if (!module) {
-            for (const auto& filePath : fileCandidates) {
-                logger.log("  -> Trying file: " + filePath);
-                
-                if (!fs::exists(filePath)) {
-                    continue;
-                }
-                
-                // Check if already loaded by file URI
-                std::string fileUri = "file://" + filePath;
-                auto fileSyms = fileSymbols.find(fileUri);
-                
-                if (fileSyms != fileSymbols.end()) {
-                    logger.log("  -> Found in file cache: " + fileUri);
-                    
-                    // Add all public symbols from this file
-                    for (const auto& sym : fileSyms->second) {
-                        if (sym->isPublic || sym->kind == SymbolKind::Function || 
-                            sym->kind == SymbolKind::Class) {
-                            logger.log("    -> Adding symbol: " + sym->name);
-                            symbols.push_back(sym);
-                        }
-                    }
-                    break;
-                }
-                
-                // Try to load and analyze the file
-                try {
-                    std::ifstream file(filePath);
-                    std::stringstream buffer;
-                    buffer << file.rdbuf();
-                    std::string content = buffer.str();
-                    
-                    std::string fileUri = "file://" + filePath;
-                    extractSymbols(fileUri, content);
-                    
-                    // Now get symbols
-                    auto newFileSyms = fileSymbols.find(fileUri);
-                    if (newFileSyms != fileSymbols.end()) {
-                        for (const auto& sym : newFileSyms->second) {
-                            if (sym->isPublic || sym->kind == SymbolKind::Function || 
-                                sym->kind == SymbolKind::Class) {
-                                logger.log("    -> Adding symbol from loaded file: " + sym->name);
-                                symbols.push_back(sym);
-                            }
-                        }
-                    }
-                    break;
-                } catch (const std::exception& e) {
-                    logger.log("  -> Failed to load file: " + std::string(e.what()));
-                    continue;
-                }
-            }
-        }
-        
-        // Add symbols from registered module
-        if (module) {
-            logger.log("  -> Processing module AST");
-            
-            // Add functions
-            for (const auto &fn : module->ast.functions) {
-                if (fn.isPublic) {
-                    auto sym = std::make_shared<Symbol>();
-                    sym->name = fn.name;
-                    sym->kind = SymbolKind::Function;
-                    sym->isPublic = true;
-                    sym->isCallable = true;
-
-                    sym->detail = "(";
-                    for (size_t i = 0; i < fn.params.size(); i++) {
-                        if (i > 0) sym->detail += ", ";
-                        sym->detail += fn.params[i].name + ": " + typeToString(fn.params[i].type);
-                    }
-                    sym->detail += ") -> " + typeToString(fn.returnType);
-
-                    sym->definition.uri = module->filepath;
-                    sym->definition.range.start.line = fn.loc.line;
-                    sym->definition.range.start.character = fn.loc.col;
-
-                    logger.log("    -> Added function: " + sym->name);
-                    symbols.push_back(sym);
-                }
-            }
-
-            // Add classes
-            for (const auto &cls : module->ast.classes) {
-                if (cls.isPublic) {
-                    auto sym = std::make_shared<Symbol>();
-                    sym->name = cls.name;
-                    sym->kind = SymbolKind::Class;
-                    sym->isPublic = true;
-                    sym->isCallable = false;
-
-                    sym->definition.uri = module->filepath;
-                    sym->definition.range.start.line = cls.loc.line;
-                    sym->definition.range.start.character = cls.loc.col;
-
-                    logger.log("    -> Added class: " + sym->name);
-                    symbols.push_back(sym);
-                }
+std::vector<SymbolPtr> SemanticAnalyzer::getCallableSymbols(const std::string& uri) {
+    std::vector<SymbolPtr> result;
+    
+    auto it = fileSymbols.find(uri);
+    if (it != fileSymbols.end()) {
+        for (const auto& sym : it->second) {
+            if (sym->isCallable) {
+                result.push_back(sym);
             }
         }
     }
+    
+    return result;
+}
 
-    logger.log("resolveImportedSymbols: END - found " + std::to_string(symbols.size()) + " symbols");
+std::vector<SymbolPtr> SemanticAnalyzer::getVariablesInScope(const std::string& uri, Position pos) {
+    std::vector<SymbolPtr> result;
+    
+    auto it = fileSymbols.find(uri);
+    if (it != fileSymbols.end()) {
+        for (const auto& sym : it->second) {
+            if ((sym->kind == SymbolKind::Variable || sym->kind == SymbolKind::Parameter) &&
+                sym->definition.range.start.line <= pos.line) {
+                result.push_back(sym);
+            }
+        }
+    }
+    
+    return result;
+}
+
+SymbolPtr SemanticAnalyzer::getSymbolAt(const std::string& uri, Position pos) {
+    auto it = fileSymbols.find(uri);
+    if (it == fileSymbols.end()) return nullptr;
+    
+    for (const auto& sym : it->second) {
+        if (sym->definition.uri == uri) {
+            auto& range = sym->definition.range;
+            if (range.start.line == pos.line &&
+                range.start.character <= pos.character &&
+                pos.character <= range.end.character) {
+                return sym;
+            }
+        }
+    }
+    
+    return nullptr;
+}
+
+std::vector<SymbolPtr> SemanticAnalyzer::getAllSymbolsInFile(const std::string& uri) {
+    auto it = fileSymbols.find(uri);
+    if (it != fileSymbols.end()) {
+        return it->second;
+    }
+    return {};
+}
+
+std::vector<std::string> SemanticAnalyzer::getImportedModules(const std::string& uri) {
+    std::vector<std::string> modules;
+    
+    auto it = fileScopes.find(uri);
+    if (it != fileScopes.end()) {
+        Scope* scope = it->second.get();
+        while (scope) {
+            for (const auto& import : scope->imports) {
+                modules.push_back(import.fullPath);
+            }
+            scope = scope->parent;
+        }
+    }
+    
+    return modules;
+}
+
+std::vector<SymbolPtr> SemanticAnalyzer::getSymbolsFromModule(const std::string& modulePath) {
+    if (isStdLibModule(modulePath)) {
+        return getStdLibSymbols(modulePath);
+    }
+    
+    auto it = moduleSymbolCache.find(modulePath);
+    if (it != moduleSymbolCache.end()) {
+        return it->second;
+    }
+    
+    return {};
+}
+
+std::vector<SymbolPtr> SemanticAnalyzer::resolveImportedSymbols(const std::string& uri) {
+    std::vector<SymbolPtr> symbols;
+    
+    auto it = fileScopes.find(uri);
+    if (it == fileScopes.end()) return symbols;
+    
+    Scope* scope = it->second.get();
+    
+    for (const auto& import : scope->imports) {
+        auto moduleSymbols = getSymbolsFromModule(import.fullPath);
+        for (const auto& sym : moduleSymbols) {
+            if (sym->isPublic) {
+                symbols.push_back(sym);
+            }
+        }
+    }
+    
     return symbols;
 }
 
-
-SymbolPtr SemanticAnalyzer::findSymbolInImports(const std::string &uri,
-                                                const std::string &symbolName) {
-    logger.log("findSymbolInImports: Looking for " + symbolName + " in " + uri);
-    
+SymbolPtr SemanticAnalyzer::findSymbolInImports(const std::string& uri, const std::string& symbolName) {
     auto importedSymbols = resolveImportedSymbols(uri);
-
-    for (const auto &sym : importedSymbols) {
+    
+    for (const auto& sym : importedSymbols) {
         if (sym->name == symbolName) {
-            logger.log("  -> Found: " + symbolName);
             return sym;
         }
     }
-
-    logger.log("  -> Not found: " + symbolName);
+    
     return nullptr;
 }
 
-std::vector<SemanticAnalyzer::ImportError>
-SemanticAnalyzer::validateImports(const std::string &uri) {
-  std::vector<ImportError> errors;
-
-  auto project = ProjectManager::instance().getProjectForFile(uri);
-  if (!project) {
+std::vector<SemanticAnalyzer::ImportError> SemanticAnalyzer::validateImports(const std::string& uri) {
+    std::vector<ImportError> errors;
+    
+    auto it = fileScopes.find(uri);
+    if (it == fileScopes.end()) return errors;
+    
+    for (const auto& import : it->second->imports) {
+        if (import.fullPath.find("Std.") == 0 || import.fullPath == "Std") {
+            if (!isStdLibModule(import.fullPath)) {
+                ImportError error;
+                error.modulePath = import.fullPath;
+                error.message = "Unknown stdlib module: " + import.fullPath;
+                errors.push_back(error);
+            }
+        }
+    }
+    
     return errors;
-  }
+}
 
-  auto validationErrors = project->validateImports(uri);
-  for (const auto &error : validationErrors) {
-    ImportError ie;
-    ie.message = error;
-    size_t pos = error.find("Cannot find module: ");
-    if (pos != std::string::npos) {
-      ie.modulePath = error.substr(pos + 20);
+// ============================================================================
+// CompletionProvider Implementation
+// ============================================================================
+
+std::vector<CompletionSnippet> CompletionProvider::getBuiltinSnippets() {
+    return {
+        {"fn", "fn ${1:name}(${2:params}) -> ${3:void} {\n\t${0}\n}", 
+         "Function declaration", "Create a new function"},
+        {"main", "fn main() {\n\t${0}\n}", "Main function", "Entry point"},
+        {"class", "class ${1:Name} {\n\tpub ${2:field}: ${3:int};\n\t\n\tpub fn create() {\n\t\t${0}\n\t}\n}", 
+         "Class definition", "Create a class"},
+        {"if", "if (${1:condition}) {\n\t${0}\n}", "If statement", ""},
+        {"ife", "if (${1:condition}) {\n\t${2}\n} else {\n\t${0}\n}", "If-else", ""},
+        {"while", "while (${1:condition}) {\n\t${0}\n}", "While loop", ""},
+        {"for", "for (${1:item} in ${2:array}) {\n\t${0}\n}", "For loop", ""},
+        {"match", "match ${1:value} {\n\tSome(${2:v}) => {\n\t\t${3}\n\t},\n\tNone => {\n\t\t${0}\n\t}\n}", 
+         "Match expression", "Pattern matching"},
+        {"let", "let ${1:mut }${2:name} = ${0:value};", "Variable", ""},
+        {"lett", "let ${1:mut }${2:name}: ${3:type} = ${0:value};", "Typed variable", ""},
+        {"using", "using ${1:Std.IO};", "Import", ""},
+        {"cpp", "@cpp {\n\t${0}\n}", "C++ block", "Inline C++"},
+        {"pub", "pub fn ${1:name}(${2:params}) -> ${3:void} {\n\t${0}\n}", "Public function", ""},
+        {"test", "test(\"${1:name}\", fn() -> bool {\n\t${0}\n\treturn true;\n});", "Test case", ""},
+    };
+}
+
+std::vector<std::string> CompletionProvider::getKeywords() {
+    return {
+        "fn", "let", "mut", "return", "if", "else", "while", "for", "match",
+        "class", "new", "this", "true", "false", "None", "Some", "using",
+        "pub", "priv", "static", "cimport", "int", "float", "string", "bool", "void"
+    };
+}
+
+bool CompletionProvider::matchesFilter(const std::string& name, const std::string& filter) {
+    if (filter.empty()) return true;
+    if (name.size() < filter.size()) return false;
+    
+    for (size_t i = 0; i < filter.size(); i++) {
+        if (std::tolower(name[i]) != std::tolower(filter[i])) {
+            return false;
+        }
     }
-    errors.push_back(ie);
-  }
-
-  return errors;
+    return true;
 }
 
-SymbolPtr SemanticAnalyzer::parseFunction(const std::string &line, int lineNum,
-                                          const std::string &uri) {
-  size_t fnPos = line.find("fn ");
-  if (fnPos == std::string::npos)
-    return nullptr;
-
-  size_t nameStart = fnPos + 3;
-  size_t nameEnd = line.find('(', nameStart);
-  if (nameEnd == std::string::npos)
-    return nullptr;
-
-  std::string name = line.substr(nameStart, nameEnd - nameStart);
-  name.erase(0, name.find_first_not_of(" \t"));
-  name.erase(name.find_last_not_of(" \t") + 1);
-
-  if (name.empty())
-    return nullptr;
-
-  auto sym = std::make_shared<Symbol>();
-  sym->name = name;
-  sym->kind = SymbolKind::Function;
-  sym->definition.uri = uri;
-  sym->definition.range.start = {lineNum, (int)nameStart};
-  sym->definition.range.end = {lineNum, (int)nameEnd};
-
-  sym->isPublic = line.find("pub ") != std::string::npos;
-  sym->isStatic = line.find("static ") != std::string::npos;
-
-  return sym;
+void CompletionProvider::addStdLibCompletions(JsonValue& items, const std::string& context) {
+    std::string modulePath;
+    
+    if (context.find("Std.") != std::string::npos) {
+        size_t stdPos = context.rfind("Std.");
+        size_t endPos = context.find_first_of(".(: ", stdPos + 4);
+        if (endPos == std::string::npos) endPos = context.length();
+        
+        modulePath = context.substr(stdPos, endPos - stdPos);
+    }
+    
+    if (modulePath == "Std" || (context.find("Std.") != std::string::npos && 
+                                 context.back() == '.')) {
+        auto modules = analyzer.getAvailableStdModules();
+        for (const auto& mod : modules) {
+            std::string shortName = mod.substr(4);
+            
+            JsonValue item = JsonValue::object();
+            item["label"] = shortName;
+            item["kind"] = (int)CompletionItemKind::Module;
+            item["detail"] = mod;
+            item["sortText"] = "0_" + shortName;
+            items.push(item);
+        }
+        return;
+    }
+    
+    if (!modulePath.empty() && analyzer.isStdLibModule(modulePath)) {
+        auto symbols = analyzer.getStdLibSymbols(modulePath);
+        
+        for (const auto& sym : symbols) {
+            JsonValue item = JsonValue::object();
+            item["label"] = sym->name;
+            
+            if (sym->kind == SymbolKind::Constant) {
+                item["kind"] = (int)CompletionItemKind::Constant;
+            } else if (sym->kind == SymbolKind::Function) {
+                item["kind"] = (int)CompletionItemKind::Function;
+            } else if (sym->kind == SymbolKind::Class) {
+                item["kind"] = (int)CompletionItemKind::Class;
+            }
+            
+            if (!sym->detail.empty()) {
+                item["detail"] = sym->detail;
+            }
+            
+            item["documentation"] = "From " + modulePath;
+            item["sortText"] = "1_" + sym->name;
+            
+            items.push(item);
+        }
+    }
 }
 
-SymbolPtr SemanticAnalyzer::parseClass(const std::string &line, int lineNum,
-                                       const std::string &uri) {
-  size_t classPos = line.find("class ");
-  if (classPos == std::string::npos)
-    return nullptr;
-
-  size_t nameStart = classPos + 6;
-  size_t nameEnd = line.find_first_of(" {", nameStart);
-  if (nameEnd == std::string::npos)
-    return nullptr;
-
-  std::string name = line.substr(nameStart, nameEnd - nameStart);
-  name.erase(name.find_last_not_of(" \t") + 1);
-
-  auto sym = std::make_shared<Symbol>();
-  sym->name = name;
-  sym->kind = SymbolKind::Class;
-  sym->definition.uri = uri;
-  sym->definition.range.start = {lineNum, (int)nameStart};
-  sym->definition.range.end = {lineNum, (int)nameEnd};
-  sym->isPublic = line.find("pub ") != std::string::npos;
-
-  return sym;
+void CompletionProvider::addImportedSymbols(JsonValue& items, const std::string& uri, const std::string& filter) {
+    auto symbols = analyzer.resolveImportedSymbols(uri);
+    
+    for (const auto& sym : symbols) {
+        if (!matchesFilter(sym->name, filter)) continue;
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = sym->name;
+        
+        if (sym->isCallable) {
+            item["kind"] = (int)CompletionItemKind::Function;
+            item["insertText"] = sym->name + "($0)";
+            item["insertTextFormat"] = 2;
+        } else if (sym->kind == SymbolKind::Constant) {
+            item["kind"] = (int)CompletionItemKind::Constant;
+        } else if (sym->kind == SymbolKind::Class) {
+            item["kind"] = (int)CompletionItemKind::Class;
+        } else {
+            item["kind"] = (int)CompletionItemKind::Variable;
+        }
+        
+        if (!sym->detail.empty()) {
+            item["detail"] = sym->detail;
+        }
+        
+        if (!sym->modulePath.empty()) {
+            item["documentation"] = "From " + sym->modulePath;
+        }
+        
+        item["sortText"] = "2_" + sym->name;
+        items.push(item);
+    }
 }
 
-SymbolPtr SemanticAnalyzer::parseVariable(const std::string &line, int lineNum,
-                                          const std::string &uri) {
-  size_t letPos = line.find("let ");
-  if (letPos == std::string::npos)
-    return nullptr;
+void CompletionProvider::addModuleCompletions(JsonValue& items, const std::string& uri) {
+    auto modules = analyzer.getAvailableStdModules();
+    
+    for (const auto& mod : modules) {
+        JsonValue item = JsonValue::object();
+        item["label"] = mod;
+        item["kind"] = (int)CompletionItemKind::Module;
+        item["detail"] = "Standard library module";
+        item["sortText"] = "0_" + mod;
+        items.push(item);
+    }
+}
 
-  size_t nameStart = letPos + 4;
+void CompletionProvider::addCallableSymbols(JsonValue& items, const std::string& uri, const std::string& filter) {
+    auto symbols = analyzer.getCallableSymbols(uri);
+    
+    for (const auto& sym : symbols) {
+        if (!matchesFilter(sym->name, filter)) continue;
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = sym->name;
+        item["kind"] = (int)CompletionItemKind::Function;
+        item["insertText"] = sym->name + "($0)";
+        item["insertTextFormat"] = 2;
+        
+        if (!sym->detail.empty()) {
+            item["detail"] = sym->detail;
+        }
+        
+        item["sortText"] = "3_" + sym->name;
+        items.push(item);
+    }
+}
 
-  // Skip 'mut' keyword if present
-  size_t mutPos = line.find("mut ", nameStart);
-  if (mutPos == nameStart) {
-    nameStart += 4;
-  }
-
-  // Skip any leading whitespace after 'let' or 'mut'
-  while (nameStart < line.size() &&
-         (line[nameStart] == ' ' || line[nameStart] == '\t')) {
-    nameStart++;
-  }
-
-  // Find the end of the variable name - it's the first character that's not
-  // alphanumeric or underscore
-  size_t nameEnd = nameStart;
-  while (nameEnd < line.size() &&
-         (std::isalnum(line[nameEnd]) || line[nameEnd] == '_')) {
-    nameEnd++;
-  }
-
-  if (nameEnd == nameStart) {
-    logger.log("parseVariable: no variable name found at line " +
-               std::to_string(lineNum));
-    return nullptr;
-  }
-
-  std::string name = line.substr(nameStart, nameEnd - nameStart);
-
-  // Check if name is empty (shouldn't happen after the check above, but be
-  // safe)
-  if (name.empty()) {
-    logger.log("parseVariable: empty variable name at line " +
-               std::to_string(lineNum));
-    return nullptr;
-  }
-
-  // Skip whitespace after name
-  while (nameEnd < line.size() &&
-         (line[nameEnd] == ' ' || line[nameEnd] == '\t')) {
-    nameEnd++;
-  }
-
-  // Now we should have either : (type annotation) or = (assignment)
-  if (nameEnd >= line.size() ||
-      (line[nameEnd] != ':' && line[nameEnd] != '=')) {
-    logger.log(
-        "parseVariable: expected ':' or '=' after variable name at line " +
-        std::to_string(lineNum));
-    return nullptr;
-  }
-
-  // Check for spaces in the name (indicates C++/Java style: "let Type name")
-  // But be more lenient - only reject if there are MULTIPLE words
-  size_t spaceCount = 0;
-  for (char c : name) {
-    if (c == ' ' || c == '\t')
-      spaceCount++;
-  }
-
-  if (spaceCount > 0) {
-    logger.log("parseVariable: invalid variable declaration syntax at line " +
-               std::to_string(lineNum) +
-               " - possible C++/Java style type before name (name='" + name +
-               "')");
-    return nullptr;
-  }
-
-  auto sym = std::make_shared<Symbol>();
-  sym->name = name;
-  sym->kind = SymbolKind::Variable;
-  sym->definition.uri = uri;
-  sym->definition.range.start = {lineNum - 1, (int)nameStart}; // LSP is 0-based
-  sym->definition.range.end = {lineNum - 1, (int)nameEnd};
-
-  // Try to extract type
-  try {
-    size_t equalPos = line.find('=', nameEnd);
-    size_t colonPos = line.find(':', nameEnd);
-
-    // Check if colon comes before equal sign (explicit type annotation)
-    if (colonPos != std::string::npos &&
-        (equalPos == std::string::npos || colonPos < equalPos)) {
-      // Has explicit type annotation
-      size_t typeEnd = equalPos;
-      if (typeEnd == std::string::npos)
-        typeEnd = line.find(';', colonPos);
-      if (typeEnd == std::string::npos)
-        typeEnd = line.size();
-
-      if (colonPos + 1 < typeEnd) {
-        sym->type = line.substr(colonPos + 1, typeEnd - colonPos - 1);
-        sym->type.erase(0, sym->type.find_first_not_of(" \t"));
+void CompletionProvider::addVariableSymbols(JsonValue& items, const std::string& uri, Position pos, const std::string& filter) {
+    auto symbols = analyzer.getVariablesInScope(uri, pos);
+    
+    for (const auto& sym : symbols) {
+        if (!matchesFilter(sym->name, filter)) continue;
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = sym->name;
+        item["kind"] = (int)CompletionItemKind::Variable;
+        
         if (!sym->type.empty()) {
-          size_t lastNonSpace = sym->type.find_last_not_of(" \t");
-          if (lastNonSpace != std::string::npos) {
-            sym->type = sym->type.substr(0, lastNonSpace + 1);
-          }
+            item["detail"] = sym->type;
         }
-      }
-    } else if (equalPos != std::string::npos) {
-      // Try to infer type from initialization
-      size_t newPos = line.find("new ", equalPos);
-      if (newPos != std::string::npos) {
-        size_t classStart = newPos + 4;
-        if (classStart < line.size()) {
-          size_t classEnd = line.find_first_of("( \t;", classStart);
-          if (classEnd == std::string::npos) {
-            classEnd = line.size();
-          }
-          if (classEnd > classStart) {
-            sym->type = line.substr(classStart, classEnd - classStart);
-          }
-        }
-      } else {
-        // Check for ClassName.new() pattern (like SlateDB.new())
-        size_t dotNewPos = line.find(".new(", equalPos);
-        if (dotNewPos != std::string::npos) {
-          size_t classStart = equalPos + 1;
-          while (classStart < dotNewPos &&
-                 (line[classStart] == ' ' || line[classStart] == '\t')) {
-            classStart++;
-          }
-          if (classStart < dotNewPos) {
-            sym->type = line.substr(classStart, dotNewPos - classStart);
-          }
-        }
-      }
+        
+        item["sortText"] = "4_" + sym->name;
+        items.push(item);
     }
-  } catch (const std::exception &e) {
-    logger.log("parseVariable: exception extracting type - " +
-               std::string(e.what()));
-  } catch (...) {
-    logger.log("parseVariable: unknown exception extracting type");
-  }
-  logger.log("parseVariable: successfully parsed '" + sym->name + "' type='" +
-             (sym->type.empty() ? "<inferred>" : sym->type) + "'");
-
-  return sym;
-}
-std::vector<SymbolPtr>
-SemanticAnalyzer::getCallableSymbols(const std::string &uri) {
-  std::vector<SymbolPtr> result;
-
-  auto it = fileSymbols.find(uri);
-  if (it != fileSymbols.end()) {
-    for (const auto &sym : it->second) {
-      if (sym->isCallable) {
-        result.push_back(sym);
-      }
-    }
-  }
-
-  return result;
 }
 
-std::vector<SymbolPtr>
-SemanticAnalyzer::getVariablesInScope(const std::string &uri, Position pos) {
-  std::vector<SymbolPtr> result;
-
-  auto it = fileSymbols.find(uri);
-  if (it != fileSymbols.end()) {
-    for (const auto &sym : it->second) {
-      if (sym->kind == SymbolKind::Variable ||
-          sym->kind == SymbolKind::Parameter) {
-        if (sym->definition.range.start.line <= pos.line) {
-          result.push_back(sym);
+JsonValue CompletionProvider::provideCompletions(const std::string& uri, Position pos, const std::string& lineText) {
+    JsonValue items = JsonValue::array();
+    
+    size_t cursorCol = (size_t)pos.character;
+    std::string beforeCursor = (cursorCol <= lineText.size()) ? lineText.substr(0, cursorCol) : lineText;
+    
+    std::string prefix;
+    for (int i = (int)beforeCursor.size() - 1; i >= 0; i--) {
+        char c = beforeCursor[i];
+        if (std::isalnum(c) || c == '_') {
+            prefix = c + prefix;
+        } else {
+            break;
         }
-      }
     }
-  }
-
-  return result;
-}
-
-SymbolPtr SemanticAnalyzer::getSymbolAt(const std::string &uri, Position pos) {
-  auto it = fileSymbols.find(uri);
-  if (it == fileSymbols.end())
-    return nullptr;
-
-  for (const auto &sym : it->second) {
-    if (sym->definition.uri == uri) {
-      auto &range = sym->definition.range;
-      if (range.start.line == pos.line &&
-          range.start.character <= pos.character &&
-          pos.character <= range.end.character) {
-        return sym;
-      }
+    
+    if (beforeCursor.find("using ") != std::string::npos && 
+        beforeCursor.find(';') == std::string::npos) {
+        addModuleCompletions(items, uri);
+        return items;
     }
-
-    for (const auto &ref : sym->references) {
-      if (ref.uri == uri) {
-        auto &range = ref.range;
-        if (range.start.line == pos.line &&
-            range.start.character <= pos.character &&
-            pos.character <= range.end.character) {
-          return sym;
+    
+    if (beforeCursor.find("Std.") != std::string::npos) {
+        addStdLibCompletions(items, beforeCursor);
+        return items;
+    }
+    
+    auto keywords = getKeywords();
+    for (const auto& kw : keywords) {
+        if (!matchesFilter(kw, prefix)) continue;
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = kw;
+        item["kind"] = (int)CompletionItemKind::Keyword;
+        item["sortText"] = "9_" + kw;
+        items.push(item);
+    }
+    
+    auto snippets = getBuiltinSnippets();
+    for (const auto& snip : snippets) {
+        if (!matchesFilter(snip.label, prefix)) continue;
+        
+        JsonValue item = JsonValue::object();
+        item["label"] = snip.label;
+        item["kind"] = (int)CompletionItemKind::Snippet;
+        item["insertText"] = snip.insertText;
+        item["insertTextFormat"] = 2;
+        item["detail"] = snip.detail;
+        if (!snip.documentation.empty()) {
+            item["documentation"] = snip.documentation;
         }
-      }
+        item["sortText"] = "8_" + snip.label;
+        items.push(item);
     }
-  }
-
-  return nullptr;
-}
-
-std::vector<SymbolPtr>
-SemanticAnalyzer::getAllSymbolsInFile(const std::string &uri) {
-  auto it = fileSymbols.find(uri);
-  if (it != fileSymbols.end()) {
-    return it->second;
-  }
-  return {};
-}
-
-void SemanticAnalyzer::parseImport(const std::string &line, Scope *scope) {
-  size_t usingPos = line.find("using ");
-  if (usingPos == std::string::npos)
-    return;
-
-  size_t start = usingPos + 6;
-  size_t end = line.find(';', start);
-  if (end == std::string::npos)
-    return;
-
-  std::string importPath = line.substr(start, end - start);
-  importPath.erase(0, importPath.find_first_not_of(" \t"));
-  importPath.erase(importPath.find_last_not_of(" \t") + 1);
-
-  size_t doubleColonPos = importPath.find("::");
-  if (doubleColonPos != std::string::npos) {
-    importPath.replace(doubleColonPos, 2, ".");
-  }
-
-  ImportedModule import;
-  import.fullPath = importPath;
-
-  // Map standard library modules to their symbols
-  if (importPath == "Std.IO") {
-    import.importedSymbols = {"print",     "println",   "eprint",   "eprintln",
-                              "readLine",  "read",      "readChar", "readFile",
-                              "writeFile", "appendFile"};
-  } else if (importPath == "Std.Network") {
-    import.importedSymbols = {
-        "HttpServer",       "HttpRequest",  "HttpResponse",
-        "jsonResponse",     "htmlResponse", "textResponse",
-        "redirectResponse", "urlEncode",    "urlDecode",
-        "parseQuery",       "ping",         "getLocalIP",
-        "httpGet",          "Status",       "serveFile"};
-  } else if (importPath == "Std.Math") {
-    import.importedSymbols = {
-        "sqrt",  "sin", "cos", "tan",   "asin",  "acos", "atan",  "atan2",
-        "abs",   "pow", "exp", "log",   "log10", "log2", "floor", "ceil",
-        "round", "min", "max", "clamp", "PI",    "E"};
-  } else if (importPath == "Std.String") {
-    import.importedSymbols = {"length",   "isEmpty",    "trim",     "toLower",
-                              "toUpper",  "startsWith", "endsWith", "contains",
-                              "replace",  "split",      "join",     "repeat",
-                              "substring"};
-  } else if (importPath == "Std.Array") {
-    import.importedSymbols = {"length", "isEmpty",  "push",
-                              "pop",    "contains", "reverse",
-                              "sort",   "indexOf",  "clear"};
-  } else if (importPath == "Std.Parse") {
-    import.importedSymbols = {"parseInt", "parseFloat", "parseBool"};
-  } else if (importPath == "Std.Option") {
-    import.importedSymbols = {"isSome", "isNone", "unwrap", "unwrapOr"};
-  } else if (importPath == "Std.Map") {
-    import.importedSymbols = {"create",   "insert", "get",   "getOr",
-                              "contains", "remove", "size",  "isEmpty",
-                              "clear",    "keys",   "values"};
-  } else if (importPath == "Std.Set") {
-    import.importedSymbols = {"create", "insert",       "contains",  "remove",
-                              "size",   "isEmpty",      "clear",     "toArray",
-                              "union_", "intersection", "difference"};
-  } else if (importPath == "Std.File") {
-    import.importedSymbols = {// Path / FS utilities
-                              "exists", "isFile", "isDirectory", "createDir",
-                              "remove", "removeAll", "copy", "rename", "size",
-
-                              // File I/O functions
-                              "readFile", "writeFile", "appendFile",
-
-                              // Low-level file operations
-                              "Handle", "Mode", "Seek", "open", "close", "read",
-                              "write", "read_bytes", "write_u32", "write_u64",
-                              "seek", "tell", "flush"};
-  } else if (importPath == "Std.Time") {
-    import.importedSymbols = {"now", "sleep", "timestamp"};
-  } else if (importPath == "Std.Random") {
-    import.importedSymbols = {"randInt", "randFloat", "randBool"};
-  } else if (importPath == "Std.System") {
-    import.importedSymbols = {"exit", "getEnv", "execute"};
-  } else {
-    // User module - search our cached symbols
-    std::string modulePath = importPath;
-
-    // Strip project name prefix (e.g., "MagolorDotDev.models.Package" ->
-    // "models/Package")
-    size_t firstDot = modulePath.find('.');
-    if (firstDot != std::string::npos) {
-      std::string possibleProjectName = modulePath.substr(0, firstDot);
-      if (possibleProjectName != "Std") {
-        modulePath = modulePath.substr(firstDot + 1);
-      }
-    }
-
-    // Convert dots to slashes for path matching
-    std::string pathPattern = modulePath;
-    std::replace(pathPattern.begin(), pathPattern.end(), '.', '/');
-
-    // Search cached files for matching path
-    for (const auto &[uri, symbols] : fileSymbols) {
-      // Check if this file matches the import path
-      if (uri.find(pathPattern + ".mg") != std::string::npos ||
-          uri.find(pathPattern) != std::string::npos) {
-        // Found the module - add all public/function symbols
-        for (const auto &sym : symbols) {
-          if (sym->isPublic || sym->kind == SymbolKind::Function ||
-              sym->kind == SymbolKind::Class) {
-            import.importedSymbols.push_back(sym->name);
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  scope->imports.push_back(import);
-}
-
-std::vector<std::string>
-SemanticAnalyzer::getImportedModules(const std::string &uri) {
-  std::vector<std::string> modules;
-
-  auto it = fileScopes.find(uri);
-  if (it != fileScopes.end()) {
-    Scope *scope = it->second.get();
-    while (scope) {
-      for (const auto &import : scope->imports) {
-        modules.push_back(import.fullPath);
-      }
-      scope = scope->parent;
-    }
-  }
-
-  return modules;
+    
+    addImportedSymbols(items, uri, prefix);
+    addCallableSymbols(items, uri, prefix);
+    addVariableSymbols(items, uri, pos, prefix);
+    
+    return items;
 }
