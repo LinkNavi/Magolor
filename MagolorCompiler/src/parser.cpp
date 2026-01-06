@@ -80,7 +80,17 @@ Program Parser::parse() {
         prog.cimports.push_back(parseCImport());
       } else if (check(TokenType::CLASS)) {
         prog.classes.push_back(parseClass());
-      } else if (check(TokenType::PUB) || check(TokenType::FN)) {
+      } else if (check(TokenType::PUB)) {
+        // Look ahead to see what follows 'pub'
+        if (peek(1).type == TokenType::CLASS) {
+          prog.classes.push_back(parseClass());
+        } else if (peek(1).type == TokenType::FN || peek(1).type == TokenType::STATIC) {
+          prog.functions.push_back(parseFunction());
+        } else {
+          error("Expected 'class' or 'fn' after 'pub'", peek(1));
+          synchronize();
+        }
+      } else if (check(TokenType::FN)) {
         prog.functions.push_back(parseFunction());
       } else {
         error("Unexpected token: " + peek().value, peek());
@@ -91,9 +101,7 @@ Program Parser::parse() {
     }
   }
   return prog;
-}
-
-UsingDecl Parser::parseUsing() {
+}UsingDecl Parser::parseUsing() {
   expect(TokenType::USING, "Expected 'using'");
   UsingDecl decl;
   Token ident = expect(TokenType::IDENT, "Expected module name");

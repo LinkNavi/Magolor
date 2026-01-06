@@ -645,14 +645,13 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
 
           // Regular member access - use -> for pointers, . for values
-          genExpr(e.object);
-
-          // Check if object is 'this' - use -> instead of .
-          if (std::holds_alternative<ThisExpr>(e.object->data)) {
-            emit("->" + e.member);
-          } else {
-            emit("." + e.member);
-          }
+        if (std::holds_alternative<ThisExpr>(e.object->data)) {
+  emit("this->" + e.member);
+} else {
+  // Regular member access
+  genExpr(e.object);
+  emit("." + e.member);
+}
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
           genExpr(e.object);
           emit("[");
@@ -694,7 +693,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("(*this)"); // Dereference for proper return by value
+          emit("this"); // Dereference for proper return by value
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";
