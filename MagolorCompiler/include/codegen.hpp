@@ -13,6 +13,7 @@ public:
 private:
     std::stringstream out;
     int indent = 0;
+std::string currentClassName;
     std::unordered_set<std::string> usedModules;
     std::unordered_set<std::string> capturedVars;
     std::unordered_set<std::string> importedNamespaces;

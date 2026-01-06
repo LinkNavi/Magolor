@@ -33,28 +33,28 @@ std::string CodeGen::typeToString(const TypePtr &type) {
     return "std::optional<" + typeToString(type->innerType) + ">";
   case Type::ARRAY:
     return "std::vector<" + typeToString(type->innerType) + ">";
- case Type::GENERIC: {
+  case Type::GENERIC: {
     // Handle generic types like Map<K,V>
     std::string result = type->className;
     if (!type->genericArgs.empty()) {
       result += "<";
       for (size_t i = 0; i < type->genericArgs.size(); i++) {
-        if (i > 0) result += ", ";
+        if (i > 0)
+          result += ", ";
         result += typeToString(type->genericArgs[i]);
       }
       result += ">";
     }
-    
+
     // Map Magolor generic types to C++ equivalents
     if (type->className == "Map" && type->genericArgs.size() == 2) {
-      return "std::unordered_map<" + 
-             typeToString(type->genericArgs[0]) + ", " + 
+      return "std::unordered_map<" + typeToString(type->genericArgs[0]) + ", " +
              typeToString(type->genericArgs[1]) + ">";
     }
     if (type->className == "Set" && type->genericArgs.size() == 1) {
       return "std::unordered_set<" + typeToString(type->genericArgs[0]) + ">";
     }
-    
+
     return result;
   }
   case Type::FUNCTION: {
@@ -159,19 +159,29 @@ std::string CodeGen::generate(const Program &prog) {
   out << "namespace Array {\n";
   out << "  template<typename T> std::vector<T> create() { return {}; }\n";
   out << "}\n";
-  out << "template<typename T> int length(const std::vector<T>& arr) { return Std::Array::length(arr); }\n";
-  out << "template<typename T> void push(std::vector<T>& arr, const T& val) { Std::Array::push(arr, val); }\n";
-  out << "template<typename T> T pop(std::vector<T>& arr) { return Std::Array::pop(arr); }\n";
+  out << "template<typename T> int length(const std::vector<T>& arr) { return "
+         "Std::Array::length(arr); }\n";
+  out << "template<typename T> void push(std::vector<T>& arr, const T& val) { "
+         "Std::Array::push(arr, val); }\n";
+  out << "template<typename T> T pop(std::vector<T>& arr) { return "
+         "Std::Array::pop(arr); }\n";
   out << "\n";
   out << "// Map helper wrappers\n";
   out << "namespace Map {\n";
-  out << "  template<typename K, typename V> std::unordered_map<K,V> create() { return {}; }\n";
-  out << "  template<typename K, typename V> void insert(std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = v; }\n";
-  out << "  template<typename K, typename V> std::optional<V> get(const std::unordered_map<K,V>& m, const K& k) {\n";
-  out << "    auto it = m.find(k); return it != m.end() ? std::optional<V>(it->second) : std::nullopt;\n";
+  out << "  template<typename K, typename V> std::unordered_map<K,V> create() "
+         "{ return {}; }\n";
+  out << "  template<typename K, typename V> void "
+         "insert(std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = "
+         "v; }\n";
+  out << "  template<typename K, typename V> std::optional<V> get(const "
+         "std::unordered_map<K,V>& m, const K& k) {\n";
+  out << "    auto it = m.find(k); return it != m.end() ? "
+         "std::optional<V>(it->second) : std::nullopt;\n";
   out << "  }\n";
-  out << "  template<typename K, typename V> std::vector<V> values(const std::unordered_map<K,V>& m) {\n";
-  out << "    std::vector<V> r; for(auto& p : m) r.push_back(p.second); return r;\n";
+  out << "  template<typename K, typename V> std::vector<V> values(const "
+         "std::unordered_map<K,V>& m) {\n";
+  out << "    std::vector<V> r; for(auto& p : m) r.push_back(p.second); return "
+         "r;\n";
   out << "  }\n";
   out << "}\n";
   out << "\n";
@@ -219,11 +229,11 @@ std::string CodeGen::generate(const Program &prog) {
 
 void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("class " + cls.name + " {");
-  
+
   // Separate public and private
   bool hasPublic = false;
   bool hasPrivate = false;
-  
+
   // Check what we have
   for (const auto &f : cls.fields) {
     if (f.isPublic)
@@ -237,12 +247,12 @@ void CodeGen::genClass(const ClassDecl &cls) {
     else
       hasPrivate = true;
   }
-  
+
   // Generate public section
   if (hasPublic) {
     emitLine("public:");
     indent++;
-    
+
     // Public static constants
     for (const auto &f : cls.fields) {
       if (f.isPublic && f.isStatic) {
@@ -254,14 +264,14 @@ void CodeGen::genClass(const ClassDecl &cls) {
         emit(";\n");
       }
     }
-    
+
     // Public instance fields
     for (const auto &f : cls.fields) {
       if (f.isPublic && !f.isStatic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
-    
+
     // Public methods
     for (const auto &m : cls.methods) {
       if (m.isPublic) {
@@ -271,35 +281,35 @@ void CodeGen::genClass(const ClassDecl &cls) {
         genFunction(m, cls.name);
       }
     }
-    
+
     indent--;
   }
-  
+
   // Generate private section
   if (hasPrivate) {
     emitLine("private:");
     indent++;
-    
+
     // Private fields
     for (const auto &f : cls.fields) {
       if (!f.isPublic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
-    
+
     // Private methods
     for (const auto &m : cls.methods) {
       if (!m.isPublic) {
         genFunction(m, cls.name);
       }
     }
-    
+
     indent--;
   }
-  
-  emitLine("};");  // Close the class definition
+
+  emitLine("};"); // Close the class definition
   emitLine("");
-  
+
   // Auto-generate operator<< for printing (OUTSIDE the class)
   // Only print simple types, skip Map/Array/complex types
   emitLine("// Auto-generated print support");
@@ -307,27 +317,28 @@ void CodeGen::genClass(const ClassDecl &cls) {
            cls.name + "& obj) {");
   indent++;
   emitLine("os << \"" + cls.name + " { \";");
-  
+
   // Print public fields - only simple types
   bool first = true;
   for (const auto &f : cls.fields) {
     if (f.isPublic && !f.isStatic) {
-      // Skip complex types that don't have operator<< (Map, Array, other classes)
+      // Skip complex types that don't have operator<< (Map, Array, other
+      // classes)
       bool isSimpleType = false;
       if (f.type) {
         switch (f.type->kind) {
-          case Type::INT:
-          case Type::FLOAT:
-          case Type::STRING:
-          case Type::BOOL:
-            isSimpleType = true;
-            break;
-          default:
-            isSimpleType = false;
-            break;
+        case Type::INT:
+        case Type::FLOAT:
+        case Type::STRING:
+        case Type::BOOL:
+          isSimpleType = true;
+          break;
+        default:
+          isSimpleType = false;
+          break;
         }
       }
-      
+
       if (isSimpleType) {
         if (!first) {
           emitLine("os << \", \";");
@@ -337,8 +348,8 @@ void CodeGen::genClass(const ClassDecl &cls) {
       }
     }
   }
-  
-  emitLine("os << \" }\";"); 
+
+  emitLine("os << \" }\";");
   emitLine("return os;");
   indent--;
   emitLine("}");
@@ -346,6 +357,9 @@ void CodeGen::genClass(const ClassDecl &cls) {
 }
 
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
+  // Track current class context for proper 'this' handling in return statements
+  currentClassName = className;
+  
   std::string retType = typeToString(fn.returnType);
   if (fn.name == "main" && className.empty())
     emitLine("int main() {");
@@ -376,6 +390,9 @@ void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
     emitLine("return 0;");
   indent--;
   emitLine("}");
+  
+  // Clear class context after function
+  currentClassName.clear();
 }
 
 void CodeGen::collectCaptures(const std::vector<StmtPtr> &,
@@ -399,7 +416,21 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           emit("return");
           if (s.value) {
             emit(" ");
-            genExpr(s.value);
+            // FIX: If returning 'this' in a method that returns by value,
+            // dereference it
+            if (std::holds_alternative<ThisExpr>(s.value->data)) {
+              // Check if we're returning from a method (not a free function)
+              if (!currentClassName.empty()) {
+                // In a method - return *this
+                emit("*this");
+              } else {
+                // In a free function - just emit this (shouldn't happen, but be
+                // safe)
+                genExpr(s.value);
+              }
+            } else {
+              genExpr(s.value);
+            }
           }
           emit(";\n");
         } else if constexpr (std::is_same_v<T, ExprStmt>) {
@@ -644,14 +675,14 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // Regular member access - use -> for pointers, . for values
-        if (std::holds_alternative<ThisExpr>(e.object->data)) {
-  emit("this->" + e.member);
-} else {
-  // Regular member access
-  genExpr(e.object);
-  emit("." + e.member);
-}
+          // FIX: Use -> for 'this' pointer, . for regular values
+          if (std::holds_alternative<ThisExpr>(e.object->data)) {
+            emit("this->" + e.member);
+          } else {
+            // Regular member access
+            genExpr(e.object);
+            emit("." + e.member);
+          }
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
           genExpr(e.object);
           emit("[");
@@ -693,7 +724,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this"); // Dereference for proper return by value
+          emit("this"); // Just emit pointer - dereferencing happens in ReturnStmt
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";
