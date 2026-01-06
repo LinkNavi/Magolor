@@ -50,50 +50,47 @@ void printUsage() {
 
 Program compileFile(const std::string &filepath, const std::string &packageName,
                     bool &hasErrors, bool verbose = false) {
-  if (verbose) {
-    std::cout << "\033[1;32mCompiling\033[0m " << filepath << "\n";
-  }
+    if (verbose) {
+        std::cout << "\033[1;32mCompiling\033[0m " << filepath << "\n";
+    }
 
-  std::string source = readFile(filepath);
-  ErrorReporter reporter(filepath, source);
+    std::string source = readFile(filepath);
+    ErrorReporter reporter(filepath, source);
 
-  // Lex
-  Lexer lexer(source, filepath, reporter);
-  auto tokens = lexer.tokenize();
+    // Lex
+    Lexer lexer(source, filepath, reporter);
+    auto tokens = lexer.tokenize();
 
-  if (reporter.hasError()) {
-    reporter.printDiagnostics();
-    hasErrors = true;
-    return Program{};
-  }
+    if (reporter.hasError()) {
+        reporter.printDiagnostics();
+        hasErrors = true;
+        return Program{};
+    }
 
-  // Parse
-  Parser parser(std::move(tokens), filepath, reporter);
-  Program prog = parser.parse();
+    // Parse
+    Parser parser(std::move(tokens), filepath, reporter);
+    Program prog = parser.parse();
 
-  if (reporter.hasError()) {
-    reporter.printDiagnostics();
-    hasErrors = true;
-    return Program{};
-  }
+    if (reporter.hasError()) {
+        reporter.printDiagnostics();
+        hasErrors = true;
+        return Program{};
+    }
 
-  // Create module and register it
-  auto module = std::make_shared<Module>();
-  module->name = ModuleResolver::filePathToModuleName(filepath, packageName);
-  module->filepath = filepath;
-  module->packageName = packageName;
-  module->ast = prog;
+    // Create module and register it
+    auto module = std::make_shared<Module>();
+    module->name = ModuleResolver::filePathToModuleName(filepath, packageName);
+    module->filepath = filepath;
+    module->packageName = packageName;
+    module->ast = prog;
 
-  // Mark all top-level functions as public by default
-  for (auto &fn : module->ast.functions) {
-    fn.isPublic = true; // Default to public
-  }
+    // NEW: Build symbol table to track visibility
+    module->buildSymbolTable();
 
-  ModuleRegistry::instance().registerModule(module);
+    ModuleRegistry::instance().registerModule(module);
 
-  return prog;
+    return prog;
 }
-
 Program mergePrograms(const std::vector<Program> &programs) {
   Program merged;
 

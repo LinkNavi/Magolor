@@ -285,12 +285,14 @@ Field Parser::parseField() {
 FnDecl Parser::parseFunction() {
   FnDecl fn;
 
+  // Check for pub modifier
   fn.isPublic = false;
   if (check(TokenType::PUB)) {
     fn.isPublic = true;
     advance();
   }
 
+  // Check for static modifier
   fn.isStatic = false;
   if (check(TokenType::STATIC)) {
     fn.isStatic = true;
@@ -300,6 +302,7 @@ FnDecl Parser::parseFunction() {
   expect(TokenType::FN, "Expected 'fn'");
   Token nameToken = expect(TokenType::IDENT, "Expected function name");
   fn.name = nameToken.value;
+
   expect(TokenType::LPAREN, "Expected '(' after function name");
 
   if (!check(TokenType::RPAREN)) {
@@ -335,8 +338,18 @@ FnDecl Parser::parseFunction() {
 ClassDecl Parser::parseClass() {
   expect(TokenType::CLASS, "Expected 'class'");
   ClassDecl cls;
+
+  // Check for pub modifier
+  cls.isPublic = false;
+  if (check(TokenType::PUB)) {
+    cls.isPublic = true;
+    advance();
+  }
+
+  expect(TokenType::CLASS, "Expected 'class'");
   Token nameToken = expect(TokenType::IDENT, "Expected class name");
   cls.name = nameToken.value;
+
   expect(TokenType::LBRACE, "Expected '{' after class name");
 
   while (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOK)) {

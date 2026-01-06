@@ -17,6 +17,54 @@ struct Module {
     std::string packageName;
     Program ast;
     std::vector<std::string> importedModules;
+    
+    // NEW: Track what symbols are actually exported
+    std::unordered_set<std::string> exportedSymbols;
+    
+    // NEW: Track visibility of each symbol
+    struct SymbolVisibility {
+        std::string name;
+        bool isPublic;
+        std::string type; // "function", "class", "field", "method"
+    };
+    std::vector<SymbolVisibility> symbolTable;
+    
+    // NEW: Build symbol table from AST
+    void buildSymbolTable() {
+        symbolTable.clear();
+        exportedSymbols.clear();
+        
+        // Add functions
+        for (const auto& fn : ast.functions) {
+            SymbolVisibility vis;
+            vis.name = fn.name;
+            vis.isPublic = fn.isPublic;
+            vis.type = "function";
+            symbolTable.push_back(vis);
+            
+            if (fn.isPublic) {
+                exportedSymbols.insert(fn.name);
+            }
+        }
+        
+        // Add classes and their members
+        for (const auto& cls : ast.classes) {
+            SymbolVisibility clsVis;
+            clsVis.name = cls.name;
+            clsVis.isPublic = cls.isPublic;
+            clsVis.type = "class";
+            symbolTable.push_back(clsVis);
+            
+            if (cls.isPublic) {
+                exportedSymbols.insert(cls.name);
+            }
+        }
+    }
+    
+    // Check if a symbol is exported from this module
+    bool isSymbolExported(const std::string& symbolName) const {
+        return exportedSymbols.count(symbolName) > 0;
+    }
 };
 
 using ModulePtr = std::shared_ptr<Module>;
@@ -159,7 +207,74 @@ public:
         
         return pathStr;
     }
+      static bool canAccess(ModulePtr fromModule, ModulePtr toModule, 
+                         const std::string& symbolName) {
+        if (!fromModule || !toModule) return false;
+        
+        // Check if symbol is exported
+        if (!toModule->isSymbolExported(symbolName)) {
+            return false;
+        }
+        
+        // Check if module is imported
+        bool isImported = false;
+        for (const auto& imported : fromModule->importedModules) {
+            if (imported == toModule->name) {
+                isImported = true;
+                break;
+            }
+        }
+        
+        return isImported;
+    }
     
+    // Resolve which module a symbol comes from in a given context
+    static ModulePtr resolveSymbolSource(const std::string& symbolName,
+                                        ModulePtr currentModule) {
+        if (!currentModule) return nullptr;
+        
+        // First check current module
+        if (currentModule->isSymbolExported(symbolName)) {
+            return currentModule;
+        }
+        
+        // Check imported modules
+        for (const auto& importedName : currentModule->importedModules) {
+            auto importedModule = ModuleRegistry::instance().getModule(importedName);
+            if (importedModule && importedModule->isSymbolExported(symbolName)) {
+                return importedModule;
+            }
+        }
+        
+        return nullptr;
+    }
+    
+    // NEW: Support for submodules (e.g., "utils.helpers")
+    static std::vector<ModulePtr> resolveSubmodules(const std::string& modulePath) {
+        std::vector<ModulePtr> result;
+        
+        // Split path by dots
+        std::vector<std::string> parts;
+        std::stringstream ss(modulePath);
+        std::string part;
+        while (std::getline(ss, part, '.')) {
+            parts.push_back(part);
+        }
+        
+        // Try to resolve each level
+        std::string currentPath;
+        for (size_t i = 0; i < parts.size(); i++) {
+            if (i > 0) currentPath += ".";
+            currentPath += parts[i];
+            
+            auto module = ModuleRegistry::instance().getModule(currentPath);
+            if (module) {
+                result.push_back(module);
+            }
+        }
+        
+        return result;
+    }
     static bool isPublic(ModulePtr module, 
                         const std::string& symbolName,
                         bool isClassName = false) {

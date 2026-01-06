@@ -12,7 +12,43 @@ public:
       : reporter(reporter), registry(registry) {}
 
   ~TypeChecker();
-
+TypePtr checkIdentExpr(const IdentExpr& e) {
+        auto resolution = resolveSymbol(e.name);
+        
+        if (!resolution.found) {
+            // Only error if it's not a potential module path
+            if (!isPotentialModulePath(e.name)) {
+                errorAt("Undefined symbol: " + e.name, SourceLoc{});
+            }
+            
+            // Return void type as fallback
+            auto voidType = std::make_shared<Type>();
+            voidType->kind = Type::VOID;
+            return voidType;
+        }
+        
+        return resolution.type;
+    }
+    
+    bool isPotentialModulePath(const std::string& name) {
+        // Check if this looks like a module name
+        if (name == "Std" || name == "Array" || name == "Map" || 
+            name == "String" || name == "File" || name == "Math" ||
+            name == "IO" || name == "Option" || name == "Parse") {
+            return true;
+        }
+        
+        // Check if it's in our imported modules
+        if (currentModule) {
+            for (const auto& imported : currentModule->importedModules) {
+                if (imported == name || imported.find(name + ".") == 0) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
   // Main entry points
   bool checkProgram(Program &prog);
   bool checkModule(ModulePtr module);
@@ -24,6 +60,112 @@ private:
   ErrorReporter &reporter;
   ModuleRegistry &registry;
 
+	  struct SymbolResolutionResult {
+        bool found;
+        TypePtr type;
+        std::string source; // "local", "current_module", module name, or "stdlib"
+    };
+SymbolResolutionResult resolveSymbol(const std::string& symbolName) {
+        SymbolResolutionResult result;
+        result.found = false;
+        
+        // 1. Check local scope (current function/class)
+        TypePtr localVar = lookupVar(symbolName);
+        if (localVar) {
+            result.found = true;
+            result.type = localVar;
+            result.source = "local";
+            return result;
+        }
+        
+        // 2. Check current module's functions/classes
+        if (currentModule) {
+            for (const auto& fn : currentModule->ast.functions) {
+                if (fn.name == symbolName) {
+                    result.found = true;
+                    result.type = functionDeclToType(&fn);
+                    result.source = "current_module";
+                    return result;
+                }
+            }
+            
+            for (const auto& cls : currentModule->ast.classes) {
+                if (cls.name == symbolName) {
+                    result.found = true;
+                    result.type = classDeclToType(&cls);
+                    result.source = "current_module";
+                    return result;
+                }
+            }
+        }
+        
+        // 3. Check imported modules (with proper visibility)
+        if (currentModule) {
+            for (const auto& importedName : currentModule->importedModules) {
+                // Skip built-in modules (handled separately)
+                if (ModuleResolver::isBuiltinModule(importedName)) {
+                    continue;
+                }
+                
+                auto importedModule = ModuleRegistry::instance().getModule(importedName);
+                if (!importedModule) continue;
+                
+                // Check if symbol is exported from imported module
+                if (!importedModule->isSymbolExported(symbolName)) {
+                    continue;
+                }
+                
+                // Found in imported module!
+                for (const auto& fn : importedModule->ast.functions) {
+                    if (fn.name == symbolName && fn.isPublic) {
+                        result.found = true;
+                        result.type = functionDeclToType(&fn);
+                        result.source = importedName;
+                        return result;
+                    }
+                }
+                
+                for (const auto& cls : importedModule->ast.classes) {
+                    if (cls.name == symbolName && cls.isPublic) {
+                        result.found = true;
+                        result.type = classDeclToType(&cls);
+                        result.source = importedName;
+                        return result;
+                    }
+                }
+            }
+        }
+        
+        // 4. Check built-in Std library
+        if (isStdLibFunction(symbolName)) {
+            result.found = true;
+            result.type = getStdLibReturnType(symbolName);
+            result.source = "stdlib";
+            return result;
+        }
+        
+        return result;
+    }
+    
+ 
+    
+    TypePtr functionDeclToType(const FnDecl* fn) {
+        auto fnType = std::make_shared<Type>();
+        fnType->kind = Type::FUNCTION;
+        fnType->returnType = fn->returnType;
+        for (const auto& param : fn->params) {
+            fnType->paramTypes.push_back(param.type);
+        }
+        return fnType;
+    }
+    
+    TypePtr classDeclToType(const ClassDecl* cls) {
+        auto clsType = std::make_shared<Type>();
+        clsType->kind = Type::CLASS;
+        clsType->className = cls->name;
+        return clsType;
+    }
+    
   // Scope management
   struct Scope {
     std::unordered_map<std::string, TypePtr> variables;
