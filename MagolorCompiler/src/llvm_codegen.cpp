@@ -926,8 +926,8 @@ void LLVMCodeGen::genWhileStmt(const WhileStmt& stmt) {
 }
 
 void LLVMCodeGen::genForStmt(const ForStmt& stmt) {
-    // For now, generate a simple loop structure
-    // Full iterator support would require more work
+    // For loops need proper iterator support
+    // For now, we'll generate a simple range-based loop structure
     
     auto condBB = llvm::BasicBlock::Create(*context, "forcond", currentFunction);
     auto loopBB = llvm::BasicBlock::Create(*context, "forloop", currentFunction);
@@ -938,39 +938,62 @@ void LLVMCodeGen::genForStmt(const ForStmt& stmt) {
     if (!iterable) return;
     
     // Create loop counter
-    auto counterAlloca = createEntryBlockAlloca(currentFunction, "__iter_counter", llvm::Type::getInt32Ty(*context));
+    auto counterAlloca = createEntryBlockAlloca(currentFunction, "__iter_counter", 
+                                                llvm::Type::getInt32Ty(*context));
     builder->CreateStore(llvm::ConstantInt::get(*context, llvm::APInt(32, 0)), counterAlloca);
     
+    // FIX: Branch to condition block
     builder->CreateBr(condBB);
+    
     builder->SetInsertPoint(condBB);
     
-    // For now, just create a simple condition (counter < 10 as placeholder)
+    // Load counter and create condition
     auto counter = builder->CreateLoad(llvm::Type::getInt32Ty(*context), counterAlloca, "counter");
-    auto cond = builder->CreateICmpSLT(counter, llvm::ConstantInt::get(*context, llvm::APInt(32, 10)), "forcond");
     
+    // Try to get array length if iterable is an array
+    llvm::Value* arrayLength = nullptr;
+    
+    // Check if we have an array length function
+    auto lengthFunc = getRuntimeFunction("mg_array_length");
+    if (lengthFunc && iterable->getType()->isPointerTy()) {
+        arrayLength = builder->CreateCall(lengthFunc, {iterable}, "arrlen");
+    } else {
+        // Fallback to constant (this is a limitation - should be improved)
+        arrayLength = llvm::ConstantInt::get(*context, llvm::APInt(32, 10));
+    }
+    
+    auto cond = builder->CreateICmpSLT(counter, arrayLength, "forcond");
+    
+    // FIX: Add terminator to condBB
     builder->CreateCondBr(cond, loopBB, afterBB);
     
     builder->SetInsertPoint(loopBB);
     
-    // Store current element (placeholder - would need array indexing)
-    namedValues[stmt.var] = counterAlloca;
+    // Store current element (simplified - would need proper array access)
+    // Create an alloca for the loop variable
+    auto loopVarAlloca = createEntryBlockAlloca(currentFunction, stmt.var, 
+                                                 llvm::Type::getInt32Ty(*context));
+    builder->CreateStore(counter, loopVarAlloca);
+    namedValues[stmt.var] = loopVarAlloca;
     
+    // Generate loop body
     for (const auto& s : stmt.body) {
         genStmt(s);
     }
     
     // Increment counter
-    auto nextCounter = builder->CreateAdd(counter, llvm::ConstantInt::get(*context, llvm::APInt(32, 1)), "nextcounter");
+    auto nextCounter = builder->CreateAdd(counter, 
+                                          llvm::ConstantInt::get(*context, llvm::APInt(32, 1)), 
+                                          "nextcounter");
     builder->CreateStore(nextCounter, counterAlloca);
     
+    // FIX: Only add branch if block doesn't already have terminator
     if (!builder->GetInsertBlock()->getTerminator()) {
         builder->CreateBr(condBB);
     }
     
     builder->SetInsertPoint(afterBB);
-}
-
-void LLVMCodeGen::genMatchStmt(const MatchStmt& stmt) {
+}void LLVMCodeGen::genMatchStmt(const MatchStmt& stmt) {
     auto exprVal = genExpr(stmt.expr);
     if (!exprVal) return;
     

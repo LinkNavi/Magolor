@@ -1,6 +1,6 @@
-// Updated main.cpp with LLVM backend support
+// Updated main.cpp - C++ transpiler with maximum performance
 
-#include "llvm_codegen.hpp"
+#include "codegen.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
 #include "lsp_server.hpp"
@@ -26,14 +26,13 @@ std::string readFile(const std::string &path) {
 }
 
 void printUsage() {
-  std::cout << "\033[1mMagolor Compiler v0.2.0 (LLVM Backend)\033[0m\n\n";
+  std::cout << "\033[1mMagolor Compiler v0.2.0 (C++ Backend)\033[0m\n\n";
   std::cout << "\033[1mUSAGE:\033[0m\n";
   std::cout << "    magolor [COMMAND] [OPTIONS]\n\n";
   std::cout << "\033[1mCOMMANDS:\033[0m\n";
   std::cout << "    build [file.mg]     Compile source file to executable\n";
   std::cout << "    build-project       Build entire project (uses project.toml)\n";
-  std::cout << "    emit-llvm <file>    Output LLVM IR\n";
-  std::cout << "    emit-asm <file>     Output assembly\n";
+  std::cout << "    emit-cpp <file>     Output generated C++ code\n";
   std::cout << "    run <file.mg>       Compile and run immediately\n";
   std::cout << "    check <file.mg>     Check for errors without building\n";
   std::cout << "    lsp                 Start Language Server\n";
@@ -41,7 +40,9 @@ void printUsage() {
   std::cout << "\033[1mOPTIONS:\033[0m\n";
   std::cout << "    -o <file>          Specify output file name\n";
   std::cout << "    --verbose          Show detailed compilation steps\n";
-  std::cout << "    --emit-llvm        Also emit LLVM IR file\n";
+  std::cout << "    --debug            Compile with debug symbols (O0)\n";
+  std::cout << "    --release          Maximum optimization (O3, default)\n";
+  std::cout << "    --emit-cpp         Also save generated C++ file\n";
 }
 
 bool ensureRuntimeBuilt() {
@@ -60,9 +61,9 @@ bool ensureRuntimeBuilt() {
     
     std::cout << "\033[1;32m   Building\033[0m runtime library...\n";
     
-    // Build the runtime
+    // Build the runtime with optimization
     std::string buildCmd = "cd " + runtimeDir + " && "
-                          "gcc -c runtime.c -o runtime.o -O2 -Wall && "
+                          "gcc -c runtime.c -o runtime.o -O3 -march=native -flto -Wall && "
                           "ar rcs libmagolor.a runtime.o && "
                           "rm runtime.o 2>&1";
     
@@ -133,65 +134,71 @@ Program mergePrograms(const std::vector<Program> &programs) {
   return merged;
 }
 
-bool compileWithLLVM(const Program& prog, const std::string& outputFile, bool verbose, bool emitIR) {
+bool compileWithCpp(const Program& prog, const std::string& outputFile, 
+                    bool verbose, bool debug, bool emitCpp) {
     if (verbose) {
-        std::cout << "\033[1;32m   Generating\033[0m LLVM IR\n";
+        std::cout << "\033[1;32m   Generating\033[0m C++ code\n";
     }
 
-if (!ensureRuntimeBuilt()) {
-        return false;
-    }
-
-   
-    // Generate LLVM IR
-    LLVMCodeGen codegen(outputFile);
-    if (!codegen.generate(prog)) {
-        std::cerr << "\033[1;31merror\033[0m: LLVM code generation failed\n";
+    if (!ensureRuntimeBuilt()) {
         return false;
     }
     
-    // Optionally emit LLVM IR
-    if (emitIR) {
-        std::string irFile = outputFile + ".ll";
-        codegen.emitLLVMIR(irFile);
+    // Generate C++ code
+    CodeGen codegen;
+    std::string cppCode = codegen.generate(prog);
+    
+    // Write to temporary C++ file
+    std::string cppFile = outputFile + ".cpp";
+    std::ofstream out(cppFile);
+    if (!out) {
+        std::cerr << "\033[1;31merror\033[0m: Failed to write C++ file\n";
+        return false;
+    }
+    out << cppCode;
+    out.close();
+    
+    if (emitCpp) {
+        std::string savedCpp = outputFile + "_gen.cpp";
+        fs::copy(cppFile, savedCpp, fs::copy_options::overwrite_existing);
         if (verbose) {
-            std::cout << "\033[1;32m       Saved\033[0m " << irFile << "\n";
+            std::cout << "\033[1;32m       Saved\033[0m " << savedCpp << "\n";
         }
     }
     
-    // Emit object file
-    std::string objFile = outputFile + ".o";
-    if (!codegen.emitObjectFile(objFile)) {
-        std::cerr << "\033[1;31merror\033[0m: Failed to emit object file\n";
-        return false;
+    if (verbose) {
+        std::cout << "\033[1;32m    Compiling\033[0m to native code\n";
     }
+    
+    // Get runtime library path
+    std::string runtimeLib = fs::absolute("./runtime/libmagolor.a").string();
+    
+    // Optimization flags
+    std::string optFlags;
+    if (debug) {
+        optFlags = "-O0 -g -DDEBUG";
+    } else {
+        // Maximum performance
+        optFlags = "-O3 -march=native -mtune=native -flto -ffast-math "
+                   "-funroll-loops -finline-functions -DNDEBUG";
+    }
+    
+    // Compile command
+    std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
+                            cppFile + " " + runtimeLib + 
+                            " -o " + outputFile + " -lm -lpthread 2>&1";
     
     if (verbose) {
-        std::cout << "\033[1;32m    Linking\033[0m with runtime library\n";
+        std::cout << "\033[1;36m    Command:\033[0m " << compileCmd << "\n";
     }
     
-    // Compile runtime library
-    std::string runtimeObj = "runtime.o";
-    std::string compileRuntime = "gcc -c runtime/runtime.c -o " + runtimeObj + " 2>&1";
-    if (std::system(compileRuntime.c_str()) != 0) {
-        std::cerr << "\033[1;31merror\033[0m: Failed to compile runtime library\n";
-        return false;
-    }
-    
-    // Link everything together
-
-std::string runtimeLib = fs::absolute("./runtime/libmagolor.a").string();
-    std::string linkCmd = "gcc " + objFile + " " + runtimeLib + 
-                         " -o " + outputFile + " -lm -lstdc++ 2>&1";
-
-    
-    FILE* pipe = popen(linkCmd.c_str(), "r");
+    FILE* pipe = popen(compileCmd.c_str(), "r");
     if (!pipe) {
-        std::cerr << "\033[1;31merror\033[0m: Failed to run linker\n";
+        std::cerr << "\033[1;31merror\033[0m: Failed to run compiler\n";
         return false;
     }
     
-    char buffer[128];
+    char buffer[256];
     std::string result;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result += buffer;
@@ -200,22 +207,31 @@ std::string runtimeLib = fs::absolute("./runtime/libmagolor.a").string();
     
     if (returnCode != 0) {
         std::cerr << result;
-        std::cerr << "\033[1;31merror\033[0m: Linking failed\n";
+        std::cerr << "\033[1;31merror\033[0m: Compilation failed\n";
         return false;
     }
     
-    // Clean up intermediate files
-    fs::remove(objFile);
-    fs::remove(runtimeObj);
+    // Clean up intermediate files unless emitCpp is set
+    if (!emitCpp) {
+        fs::remove(cppFile);
+    }
     
     if (verbose) {
         std::cout << "\033[1;32m   Finished\033[0m " << outputFile << "\n";
+        
+        // Show binary size
+        if (fs::exists(outputFile)) {
+            auto size = fs::file_size(outputFile);
+            double sizeKB = size / 1024.0;
+            std::cout << "\033[1;36m       Size:\033[0m " << std::fixed 
+                      << std::setprecision(1) << sizeKB << " KB\n";
+        }
     }
     
     return true;
 }
 
-int buildProject(bool verbose = false, bool emitIR = false) {
+int buildProject(bool verbose = false, bool debug = false, bool emitCpp = false) {
   try {
     if (!fs::exists("project.toml")) {
       std::cerr << "\033[1;31merror\033[0m: project.toml not found\n";
@@ -326,12 +342,12 @@ int buildProject(bool verbose = false, bool emitIR = false) {
     fs::create_directories("target");
     std::string exePath = "target/" + pkg.name;
 
-    // Compile with LLVM
-    if (!compileWithLLVM(merged, exePath, verbose, emitIR)) {
+    // Compile with C++
+    if (!compileWithCpp(merged, exePath, verbose, debug, emitCpp)) {
       return 1;
     }
 
-    std::cout << "\033[1;32m   Finished\033[0m release target(s)\n";
+    std::cout << "\033[1;32m   Finished\033[0m " << (debug ? "debug" : "release") << " target\n";
     std::cout << "    Binary: " << exePath << "\n";
 
     return 0;
@@ -350,14 +366,23 @@ int main(int argc, char *argv[]) {
 
   std::string cmd = argv[1];
   bool verbose = false;
-  bool emitIR = false;
+  bool debug = false;
+  bool emitCpp = false;
+  std::string outputFile;
 
-  // Check for flags
+  // Parse flags
   for (int i = 2; i < argc; i++) {
-    if (std::string(argv[i]) == "--verbose") {
+    std::string arg = argv[i];
+    if (arg == "--verbose") {
       verbose = true;
-    } else if (std::string(argv[i]) == "--emit-llvm") {
-      emitIR = true;
+    } else if (arg == "--debug") {
+      debug = true;
+    } else if (arg == "--release") {
+      debug = false; // Explicit release mode
+    } else if (arg == "--emit-cpp") {
+      emitCpp = true;
+    } else if (arg == "-o" && i + 1 < argc) {
+      outputFile = argv[++i];
     }
   }
 
@@ -374,7 +399,7 @@ int main(int argc, char *argv[]) {
 
   if (cmd == "build-project" || cmd == "build") {
     if (argc == 2 || fs::exists("project.toml")) {
-      return buildProject(verbose, emitIR);
+      return buildProject(verbose, debug, emitCpp);
     }
   }
 
@@ -412,21 +437,18 @@ int main(int argc, char *argv[]) {
     // Determine output file
     fs::path srcFsPath(srcPath);
     std::string baseName = srcFsPath.stem().string();
-    std::string exePath = baseName;
+    std::string exePath = outputFile.empty() ? baseName : outputFile;
 
-    if (cmd == "emit-llvm") {
-      LLVMCodeGen codegen(baseName);
-      codegen.generate(prog);
-      codegen.emitLLVMIR(baseName + ".ll");
-      std::cout << "\033[1;32m    Finished\033[0m " << baseName << ".ll\n";
-      return 0;
-    }
-
-    if (cmd == "emit-asm") {
-      LLVMCodeGen codegen(baseName);
-      codegen.generate(prog);
-      codegen.emitAssembly(baseName + ".s");
-      std::cout << "\033[1;32m    Finished\033[0m " << baseName << ".s\n";
+    if (cmd == "emit-cpp") {
+      CodeGen codegen;
+      std::string cppCode = codegen.generate(prog);
+      
+      std::string outFile = baseName + "_gen.cpp";
+      std::ofstream out(outFile);
+      out << cppCode;
+      out.close();
+      
+      std::cout << "\033[1;32m    Finished\033[0m " << outFile << "\n";
       return 0;
     }
 
@@ -436,8 +458,8 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    // Compile with LLVM
-    if (!compileWithLLVM(prog, exePath, verbose, emitIR)) {
+    // Compile with C++
+    if (!compileWithCpp(prog, exePath, verbose, debug, emitCpp)) {
       return 1;
     }
 
@@ -448,6 +470,9 @@ int main(int argc, char *argv[]) {
       std::string runCmd = "./" + exePath;
       int result = std::system(runCmd.c_str());
       fs::remove(exePath);
+      if (!emitCpp) {
+        fs::remove(exePath + ".cpp");
+      }
       return result;
     }
 
