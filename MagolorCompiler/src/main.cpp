@@ -264,7 +264,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     
     // Compile command
     std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
-                            cppFile + " -o " + outputFile + " -lm -lpthread 2>&1";
+                            cppFile + " -o " + outputFile + " -lm -lpthread -lssl -lcrypto 2>&1";
     
     if (verbose) {
         std::cout << Color::CYAN << "    Command:" << Color::RESET << " " << compileCmd << "\n";
@@ -307,9 +307,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     }
     
     return true;
-}
-
-// ============================================================================
+}// ============================================================================
 // Project management (kept for gear compatibility)
 // ============================================================================
 Program compileFile(const std::string &filepath, const std::string &packageName,
@@ -694,7 +692,7 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         
         // Compile with C++ (using debug version)
         std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Starting C++ compilation...\n";
-        if (!compileWithCppDebug(merged, exePath, stats, verbose, debug, emitCpp, optLevel)) {
+        if (!compileWithCpp(merged, exePath, stats, verbose, debug, emitCpp, optLevel)) {
             return 1;
         }
         
