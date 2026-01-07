@@ -262,8 +262,28 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
         }
     }
     
-    // Compile command
+ std::unordered_set<std::string> usedModules;
+    for (const auto &usingDecl : prog.usings) {
+        std::string modulePath;
+        for (size_t i = 0; i < usingDecl.path.size(); i++) {
+            if (i > 0) modulePath += ".";
+            modulePath += usingDecl.path[i];
+        }
+        if (modulePath.find("Std.") == 0) {
+            usedModules.insert(modulePath);
+        }
+    }
+    
+    auto linkFlags = StdLibLoader::instance().collectLinkFlags(usedModules);
+    std::string linkFlagsStr;
+    for (const auto& flag : linkFlags) {
+        linkFlagsStr += " " + flag;
+    }
+    
+    // Compile command with link flags
     std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
+                            cppFile + " -o " + outputFile + " -lm -lpthread" +
+                            linkFlagsStr + " 2>&1";
                             cppFile + " -o " + outputFile + " -lm -lpthread -lssl -lcrypto 2>&1";
     
     if (verbose) {

@@ -462,7 +462,7 @@ std::string CodeGen::generateStdModuleImpl(const std::string& modulePath) {
 }
 
 std::string CodeGen::generate(const Program &prog) {
-  out.str("");
+out.str("");
   out.clear();
   importedNamespaces.clear();
   knownClassNames.clear();
@@ -480,6 +480,31 @@ std::string CodeGen::generate(const Program &prog) {
       if (!header.code.empty() && header.code.back() != '\n') {
         out << "\n";
       }
+    }
+    out << "\n";
+  }
+
+  // NEW: Collect and output @include directives
+  std::unordered_set<std::string> allIncludes;
+  for (const auto &usingDecl : prog.usings) {
+    std::string modulePath;
+    for (size_t i = 0; i < usingDecl.path.size(); i++) {
+      if (i > 0) modulePath += ".";
+      modulePath += usingDecl.path[i];
+    }
+    
+    if (modulePath.find("Std.") == 0) {
+      auto includes = StdLibLoader::instance().getCppIncludes(modulePath);
+      for (const auto& inc : includes) {
+        allIncludes.insert(inc);
+      }
+    }
+  }
+  
+  if (!allIncludes.empty()) {
+    out << "// Module-required includes\n";
+    for (const auto& inc : allIncludes) {
+      out << "#include " << inc << "\n";
     }
     out << "\n";
   }

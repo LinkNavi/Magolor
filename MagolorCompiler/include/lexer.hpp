@@ -20,6 +20,8 @@ enum class TokenType {
     COMMA, COLON, SEMICOLON, DOLLAR, AT,
     // Special
     CPP_BLOCK,  // @cpp { ... }
+    LINK_BLOCK,  // NEW: @link { ... }
+    INCLUDE_BLOCK,  // NEW: @include { ... }
     EOF_TOK, NEWLINE
 };
 
@@ -46,7 +48,10 @@ private:
     size_t pos = 0;
     int line = 1, col = 1;
     static std::unordered_map<std::string, TokenType> keywords;
-      Token cppHeaderBlock(); 
+    Token cppHeaderBlock(); 
+    Token linkBlock();  // NEW: Parse @link { ... }
+    Token includeBlock();  // NEW: Parse @include { ... }
+    
     char peek(int offset = 0);
     char advance();
     void skipWhitespace();

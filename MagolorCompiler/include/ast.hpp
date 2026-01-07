@@ -34,9 +34,21 @@ struct Param {
     TypePtr type;
     SourceLoc loc;
 };
+
 struct CppHeaderDecl {
     std::string code;  // Raw C++ code (typically #include statements)
 };
+
+// NEW: Link flags declaration (@link { -lssl -lcrypto })
+struct LinkDecl {
+    std::vector<std::string> flags;  // e.g., {"-lssl", "-lcrypto"}
+};
+
+// NEW: Include directives (@include { <openssl/evp.h> })
+struct IncludeDecl {
+    std::vector<std::string> headers;  // e.g., {"<openssl/evp.h>", "<openssl/rand.h>"}
+};
+
 // Expression nodes
 struct IntLitExpr { int value; };
 struct FloatLitExpr { double value; };
@@ -140,7 +152,9 @@ struct ModuleDecl {
 struct Program {
     std::vector<UsingDecl> usings;
     std::vector<CImportDecl> cimports;  // C/C++ imports
-    std::vector<CppHeaderDecl> cppHeaders;  // NEW: @cpp_header blocks
+    std::vector<CppHeaderDecl> cppHeaders;  // @cpp_header blocks
+    std::vector<LinkDecl> linkDecls;  // NEW: @link blocks
+    std::vector<IncludeDecl> includeDecls;  // NEW: @include blocks
     std::vector<ClassDecl> classes;
     std::vector<FnDecl> functions;
     std::string moduleName;  // Name of this module (from filename)
