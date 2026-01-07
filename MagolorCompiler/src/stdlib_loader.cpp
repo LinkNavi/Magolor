@@ -882,7 +882,7 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
   // Now find @cpp block within the function body
   size_t cppStart = funcBody.find("@cpp");
   if (cppStart == std::string::npos) {
-    // CRITICAL: No @cpp block found - return empty string!
+    // CRITICAL FIX: No @cpp block found - return empty string!
     // This prevents Magolor syntax from appearing in C++ output
     return "";
   }
@@ -934,9 +934,7 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
   }
 
   return code;
-}
-
-// ============================================================================
+}// ============================================================================
 // Metadata extraction (@link, @include, @cimport)
 // ============================================================================
 
