@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
+#include <cctype>
 
 class JsonValue {
 public:
@@ -223,71 +225,112 @@ private:
       }
       pos++;
     }
-    pos++; // skip closing "
+    if (pos < s.size()) pos++; // skip closing "
     return JsonValue(result);
   }
 
   static JsonValue parseNumber(const std::string &s, size_t &pos) {
     size_t start = pos;
     bool isFloat = false;
-    if (s[pos] == '-')
+    bool negative = false;
+    
+    if (pos < s.size() && s[pos] == '-') {
+      negative = true;
       pos++;
+    }
+    
     while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
       pos++;
+      
     if (pos < s.size() && s[pos] == '.') {
       isFloat = true;
       pos++;
+      while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
+        pos++;
     }
-    while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9')
-      pos++;
+    
+    if (pos == start || (negative && pos == start + 1)) {
+      return JsonValue(0);
+    }
+    
     std::string num = s.substr(start, pos - start);
-    if (isFloat)
-      return JsonValue(std::stod(num));
-    return JsonValue(std::stoi(num));
+    
+    if (isFloat) {
+      // Manual float parse to avoid exceptions
+      double result = 0;
+      bool pastDot = false;
+      double decimal = 0.1;
+      size_t i = negative ? 1 : 0;
+      for (; i < num.size(); i++) {
+        if (num[i] == '.') {
+          pastDot = true;
+          continue;
+        }
+        if (pastDot) {
+          result += (num[i] - '0') * decimal;
+          decimal *= 0.1;
+        } else {
+          result = result * 10 + (num[i] - '0');
+        }
+      }
+      return JsonValue(negative ? -result : result);
+    }
+    
+    // Manual int parse to avoid exceptions
+    int result = 0;
+    size_t i = negative ? 1 : 0;
+    for (; i < num.size(); i++) {
+      result = result * 10 + (num[i] - '0');
+    }
+    return JsonValue(negative ? -result : result);
   }
 
   static JsonValue parseArray(const std::string &s, size_t &pos) {
     pos++; // skip [
     JsonValue arr = JsonValue::array();
     skipWhitespace(s, pos);
-    if (s[pos] == ']') {
+    if (pos < s.size() && s[pos] == ']') {
       pos++;
       return arr;
     }
-    while (true) {
+    while (pos < s.size()) {
       arr.push(parseValue(s, pos));
       skipWhitespace(s, pos);
-      if (s[pos] == ']') {
-        pos++;
+      if (pos >= s.size() || s[pos] == ']') {
+        if (pos < s.size()) pos++;
         return arr;
       }
       if (s[pos] == ',')
         pos++;
     }
+    return arr;
   }
 
   static JsonValue parseObject(const std::string &s, size_t &pos) {
     pos++; // skip {
     JsonValue obj = JsonValue::object();
     skipWhitespace(s, pos);
-    if (s[pos] == '}') {
+    if (pos < s.size() && s[pos] == '}') {
       pos++;
       return obj;
     }
-    while (true) {
+    while (pos < s.size()) {
       skipWhitespace(s, pos);
+      if (pos >= s.size() || s[pos] != '"') break;
       std::string key = parseString(s, pos).asString();
       skipWhitespace(s, pos);
-      pos++; // skip :
+      if (pos >= s.size()) break;
+      if (s[pos] == ':') pos++; // skip :
       obj[key] = parseValue(s, pos);
       skipWhitespace(s, pos);
-      if (s[pos] == '}') {
-        pos++;
+      if (pos >= s.size() || s[pos] == '}') {
+        if (pos < s.size()) pos++;
         return obj;
       }
       if (s[pos] == ',')
         pos++;
     }
+    return obj;
   }
 };
 
@@ -307,54 +350,97 @@ struct Message {
 class Transport {
 public:
   std::optional<Message> receive() {
-    std::string header;
     int contentLength = -1;
-
+    
     // Read headers line by line
     while (true) {
-      if (!std::getline(std::cin, header)) {
-        // EOF or error
-        return std::nullopt;
+      std::string line;
+      
+      // Read chars until newline
+      while (true) {
+        int ch = std::cin.get();
+        
+        if (ch == EOF || !std::cin.good()) {
+          return std::nullopt;
+        }
+        if (ch == '\r') {
+          continue;
+        }
+        if (ch == '\n') {
+          break;
+        }
+        line += static_cast<char>(ch);
       }
-
-      // Remove trailing \r if present
-      if (!header.empty() && header.back() == '\r') {
-        header.pop_back();
-      }
-
-      // Empty line means end of headers
-      if (header.empty()) {
+      
+      // Empty line = end of headers
+      if (line.empty()) {
         break;
       }
-
-      // Parse Content-Length header
-      if (header.find("Content-Length:") == 0) {
-        try {
-          contentLength = std::stoi(header.substr(15));
-        } catch (...) {
-          return std::nullopt;
+      
+      // Find colon
+      size_t colonPos = line.find(':');
+      if (colonPos == std::string::npos) {
+        continue;
+      }
+      
+      std::string name = line.substr(0, colonPos);
+      std::string value = line.substr(colonPos + 1);
+      
+      // Lowercase name
+      for (size_t i = 0; i < name.size(); i++) {
+        if (name[i] >= 'A' && name[i] <= 'Z') {
+          name[i] = name[i] - 'A' + 'a';
+        }
+      }
+      
+      // Trim value
+      size_t start = 0;
+      while (start < value.size() && (value[start] == ' ' || value[start] == '\t')) {
+        start++;
+      }
+      size_t end = value.size();
+      while (end > start && (value[end-1] == ' ' || value[end-1] == '\t')) {
+        end--;
+      }
+      value = value.substr(start, end - start);
+      
+      if (name == "content-length" && !value.empty()) {
+        // Manual int parse - NO exceptions
+        contentLength = 0;
+        bool valid = true;
+        for (size_t i = 0; i < value.size(); i++) {
+          char c = value[i];
+          if (c >= '0' && c <= '9') {
+            contentLength = contentLength * 10 + (c - '0');
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) {
+          contentLength = -1;
         }
       }
     }
-
-    if (contentLength < 0) {
+    
+    if (contentLength <= 0) {
       return std::nullopt;
     }
-
-    // Read the JSON body
+    
+    // Read body
     std::string body(contentLength, '\0');
-    if (!std::cin.read(&body[0], contentLength)) {
+    std::cin.read(&body[0], contentLength);
+    
+    if (std::cin.gcount() != contentLength) {
       return std::nullopt;
     }
-
+    
     // Parse JSON
     JsonValue json = JsonParser::parse(body);
     Message msg;
-
-    if (json.has("id")) {
-      if (json["id"].type() == JsonValue::Int) {
-        msg.id = json["id"].asInt();
-      }
+    
+    if (json.has("id") && json["id"].type() == JsonValue::Int) {
+      msg.id = json["id"].asInt();
     }
     if (json.has("method")) {
       msg.method = json["method"].asString();
@@ -368,7 +454,7 @@ public:
     if (json.has("error")) {
       msg.error = json["error"];
     }
-
+    
     return msg;
   }
 

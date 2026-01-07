@@ -239,39 +239,70 @@ void MagolorLanguageServer::handleFormatting(const Message &msg) {
   transport.respond(msg.id.value(), edits);
 }
 void MagolorLanguageServer::run() {
-  logger.log("LSP run() called");
-  running = true;
+    logger.log("LSP run() called");
+    running = true;
 
-  try {
-    while (running) {
-      logger.log("Waiting for message...");
+    // CRITICAL: Disable sync_with_stdio for proper binary I/O
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+    
+    // Make stderr unbuffered for logging
+    std::cerr << std::unitbuf;
 
-      auto msg = transport.receive();
-      if (!msg) {
-        logger.log("No message received - connection closed");
-        break;
-      }
+    logger.log("Stream configuration complete");
 
-      logger.log("Received message: " + msg->method);
+    try {
+        while (running) {
+            logger.log("Waiting for message...");
 
-      try {
-        handleMessage(*msg);
-        logger.log("Message handled successfully");
-      } catch (const std::exception &e) {
-        logger.log("Error handling message: " + std::string(e.what()));
-        // Don't break - continue processing
-      } catch (...) {
-        logger.log("Unknown error handling message");
-        // Don't break - continue processing
-      }
+            // Pre-check stream state
+            if (std::cin.eof()) {
+                logger.log("EOF before receive - exiting");
+                break;
+            }
+
+            auto msg = transport.receive();
+            
+            if (!msg) {
+                if (std::cin.eof()) {
+                    logger.log("EOF after failed receive - exiting");
+                    break;
+                }
+                logger.log("receive() returned nullopt but not EOF, continuing...");
+                std::cin.clear();
+                continue;
+            }
+
+            std::string msgInfo = "Received: " + msg->method;
+            if (msg->id.has_value()) {
+                msgInfo += " (id=" + std::to_string(msg->id.value()) + ")";
+            }
+            logger.log(msgInfo);
+
+            try {
+                handleMessage(*msg);
+                logger.log("Handled successfully");
+            } catch (const std::exception &e) {
+                logger.log("Handler error: " + std::string(e.what()));
+                if (msg->id.has_value()) {
+                    transport.respondError(msg->id.value(), -32603, 
+                        std::string("Internal error: ") + e.what());
+                }
+            } catch (...) {
+                logger.log("Unknown handler error");
+                if (msg->id.has_value()) {
+                    transport.respondError(msg->id.value(), -32603, "Internal error");
+                }
+            }
+        }
+    } catch (const std::exception &e) {
+        logger.log("Fatal: " + std::string(e.what()));
+    } catch (...) {
+        logger.log("Unknown fatal error");
     }
-  } catch (const std::exception &e) {
-    logger.log("Fatal error in run loop: " + std::string(e.what()));
-  }
 
-  logger.log("LSP server exiting run loop");
-}
-std::string MagolorLanguageServer::formatDocument(const std::string &content) {
+    logger.log("LSP server exiting");
+}std::string MagolorLanguageServer::formatDocument(const std::string &content) {
   // Simple formatter implementation
   std::stringstream result;
   std::istringstream input(content);
@@ -369,61 +400,59 @@ void MagolorLanguageServer::handleShutdown(const Message &msg) {
 void MagolorLanguageServer::handleExit(const Message &) { running = false; }
 
 void MagolorLanguageServer::handleDidOpen(const Message &msg) {
-  logger.log("handleDidOpen: START");
-  
-  try {
-    auto &td = msg.params["textDocument"];
-    std::string uri = td["uri"].asString();
-    logger.log("handleDidOpen: uri = " + uri);
+    logger.log("handleDidOpen: START");
     
-    std::string languageId = td["languageId"].asString();
-    logger.log("handleDidOpen: languageId = " + languageId);
-    
-    int version = td["version"].asInt();
-    logger.log("handleDidOpen: version = " + std::to_string(version));
-    
-    std::string text = td["text"].asString();
-    logger.log("handleDidOpen: text length = " + std::to_string(text.length()));
-
-    documents.open(uri, languageId, version, text);
-    logger.log("handleDidOpen: document opened");
-
-    // Analyze and publish diagnostics
-    logger.log("handleDidOpen: starting analysis");
     try {
-      analyzeAndPublishDiagnostics(uri, text);
-      logger.log("handleDidOpen: analysis complete");
-    } catch (const std::exception& e) {
-      logger.log("handleDidOpen: analysis failed - " + std::string(e.what()));
-      // Publish empty diagnostics so editor doesn't hang
-      publishDiagnostics(uri, {});
-    } catch (...) {
-      logger.log("handleDidOpen: analysis failed - unknown error");
-      publishDiagnostics(uri, {});
-    }
+        if (!msg.params.has("textDocument")) {
+            logger.log("handleDidOpen: No textDocument in params");
+            return;
+        }
+        
+        auto &td = msg.params["textDocument"];
+        
+        if (!td.has("uri")) {
+            logger.log("handleDidOpen: No uri in textDocument");
+            return;
+        }
+        
+        std::string uri = td["uri"].asString();
+        logger.log("handleDidOpen: uri = " + uri);
+        
+        std::string languageId = td.has("languageId") ? td["languageId"].asString() : "magolor";
+        int version = td.has("version") ? td["version"].asInt() : 1;
+        std::string text = td.has("text") ? td["text"].asString() : "";
+        
+        logger.log("handleDidOpen: text length = " + std::to_string(text.length()));
 
-    // Also run semantic analysis
-    logger.log("handleDidOpen: starting semantic analysis");
-    try {
-      analyzer.analyze(uri, text);
-      logger.log("handleDidOpen: semantic analysis complete");
+        documents.open(uri, languageId, version, text);
+        logger.log("handleDidOpen: document stored");
+
+        // Analyze with full exception protection
+        try {
+            analyzeAndPublishDiagnostics(uri, text);
+        } catch (const std::exception& e) {
+            logger.log("handleDidOpen: analysis error - " + std::string(e.what()));
+            publishDiagnostics(uri, {});  // Send empty diagnostics
+        } catch (...) {
+            logger.log("handleDidOpen: unknown analysis error");
+            publishDiagnostics(uri, {});
+        }
+
+        // Semantic analysis (optional)
+        try {
+            analyzer.analyze(uri, text);
+        } catch (...) {
+            logger.log("handleDidOpen: semantic analysis failed (non-fatal)");
+        }
+        
     } catch (const std::exception& e) {
-      logger.log("handleDidOpen: semantic analysis failed - " + std::string(e.what()));
-      // Don't crash - semantic analysis is optional for basic LSP features
+        logger.log("handleDidOpen: ERROR - " + std::string(e.what()));
     } catch (...) {
-      logger.log("handleDidOpen: semantic analysis failed - unknown error");
+        logger.log("handleDidOpen: UNKNOWN ERROR");
     }
     
-  } catch (const std::exception& e) {
-    logger.log("handleDidOpen: ERROR - " + std::string(e.what()));
-    // Don't re-throw - LSP must never crash
-  } catch (...) {
-    logger.log("handleDidOpen: UNKNOWN ERROR");
-  }
-  
-  logger.log("handleDidOpen: END");
+    logger.log("handleDidOpen: END");
 }
-
 void MagolorLanguageServer::handleDidChange(const Message &msg) {
   logger.log("handleDidChange: START");
   

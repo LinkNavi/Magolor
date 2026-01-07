@@ -1,4 +1,4 @@
-using Std.IO;
+ feusing Std.IO;
 
 cimport <stdio.h> (printf);
 
@@ -13,7 +13,7 @@ fn demonstrateBasicSharing() {
     Std.print($"Before C++: count={count}, sum={sum}\n");
     
     // Modify in C++
-    @cpp {
+    @cpp { 
         printf("Inside C++: count=%d, sum=%d, multiplier=%d\n", count, sum, multiplier);
         
         // Modify mutable variables
