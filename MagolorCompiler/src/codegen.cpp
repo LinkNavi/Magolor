@@ -145,10 +145,10 @@ std::string CodeGen::generate(const Program &prog) {
   // STEP 1: Generate includes FIRST
   // ============================================================================
   out << "// Auto-generated C++ code from Magolor\n";
-  
-  // NEW: Output @cpp_header blocks BEFORE standard includes
+
+  // NEW: Output @cpp_header blocks FIRST
   if (!prog.cppHeaders.empty()) {
-    out << "// User-provided C++ headers\n";
+    out << "\n// User-provided C++ headers\n";
     for (const auto &header : prog.cppHeaders) {
       out << header.code;
       if (!header.code.empty() && header.code.back() != '\n') {
@@ -157,10 +157,10 @@ std::string CodeGen::generate(const Program &prog) {
     }
     out << "\n";
   }
-  
+
   // Standard includes
   out << "#include <vector>\n";
-  out << "#include <unordered_map>\n"; 
+  out << "#include <unordered_map>\n";
   out << "#include <optional>\n";
   out << "#include <iostream>\n";
   out << "#include <string>\n";
@@ -172,7 +172,9 @@ std::string CodeGen::generate(const Program &prog) {
   out << "#include <random>\n";
   out << "#include <chrono>\n";
   out << "#include <thread>\n";
-  out << "#include <cmath>\n\n";
+  out << "#include <cmath>\n";
+  out << "#include <stdexcept>\n";
+  out << "\n";
   
   // Collect all class names
   for (const auto &cls : prog.classes) {

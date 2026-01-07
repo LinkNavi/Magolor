@@ -75,35 +75,36 @@ Program Parser::parse() {
   while (!check(TokenType::EOF_TOK)) {
     try {
       // NEW: Handle @cpp_header blocks
+      std::cerr << "Parser: Token at pos " << pos
+                << ": type=" << (int)peek().type << " value='" << peek().value
+                << "'\n";
+
+      // NEW: Handle @cpp_header blocks
       if (check(TokenType::CPP_HEADER)) {
+        std::cerr << "Parser: Found CPP_HEADER token!\n";
         CppHeaderDecl header;
         header.code = advance().value;
         prog.cppHeaders.push_back(header);
-      }
-      else if (check(TokenType::USING)) {
+      } else if (check(TokenType::USING)) {
         prog.usings.push_back(parseUsing());
-      } 
-      else if (check(TokenType::CIMPORT)) {
+      } else if (check(TokenType::CIMPORT)) {
         prog.cimports.push_back(parseCImport());
-      } 
-      else if (check(TokenType::CLASS)) {
+      } else if (check(TokenType::CLASS)) {
         prog.classes.push_back(parseClass());
-      } 
-      else if (check(TokenType::PUB)) {
+      } else if (check(TokenType::PUB)) {
         // Look ahead to see what follows 'pub'
         if (peek(1).type == TokenType::CLASS) {
           prog.classes.push_back(parseClass());
-        } else if (peek(1).type == TokenType::FN || peek(1).type == TokenType::STATIC) {
+        } else if (peek(1).type == TokenType::FN ||
+                   peek(1).type == TokenType::STATIC) {
           prog.functions.push_back(parseFunction());
         } else {
           error("Expected 'class' or 'fn' after 'pub'", peek(1));
           synchronize();
         }
-      } 
-      else if (check(TokenType::FN)) {
+      } else if (check(TokenType::FN)) {
         prog.functions.push_back(parseFunction());
-      } 
-      else {
+      } else {
         error("Unexpected token: " + peek().value, peek());
         synchronize();
       }
@@ -113,7 +114,6 @@ Program Parser::parse() {
   }
   return prog;
 }
-
 
 UsingDecl Parser::parseUsing() {
   expect(TokenType::USING, "Expected 'using'");
@@ -358,7 +358,7 @@ FnDecl Parser::parseFunction() {
 }
 
 ClassDecl Parser::parseClass() {
-	
+
   ClassDecl cls;
 
   // Check for pub modifier

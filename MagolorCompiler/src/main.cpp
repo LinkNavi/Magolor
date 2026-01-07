@@ -364,6 +364,8 @@ Program mergePrograms(const std::vector<Program> &programs) {
     Program merged;
     for (const auto &prog : programs) {
         merged.usings.insert(merged.usings.end(), prog.usings.begin(), prog.usings.end());
+        merged.cppHeaders.insert(merged.cppHeaders.end(), prog.cppHeaders.begin(), prog.cppHeaders.end());
+        merged.cimports.insert(merged.cimports.end(), prog.cimports.begin(), prog.cimports.end());
         merged.classes.insert(merged.classes.end(), prog.classes.begin(), prog.classes.end());
         merged.functions.insert(merged.functions.end(), prog.functions.begin(), prog.functions.end());
     }

@@ -207,6 +207,7 @@ Token Lexer::identifier() {
     TokenType type = (it != keywords.end()) ? it->second : TokenType::IDENT;
     return {type, val, startLine, startCol, (int)val.length()};
 }
+
 Token Lexer::cppHeaderBlock() {
     int startLine = line, startCol = col;
     int startPos = pos;
@@ -283,6 +284,7 @@ Token Lexer::cppHeaderBlock() {
     
     return {TokenType::CPP_HEADER, code, startLine, startCol, (int)(pos - startPos)};
 }
+
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
     
@@ -313,7 +315,63 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        // ... rest of tokenization ...
+        // Single character tokens
+        if (c == '(') { tokens.push_back(makeToken(TokenType::LPAREN, "(")); advance(); continue; }
+        if (c == ')') { tokens.push_back(makeToken(TokenType::RPAREN, ")")); advance(); continue; }
+        if (c == '{') { tokens.push_back(makeToken(TokenType::LBRACE, "{")); advance(); continue; }
+        if (c == '}') { tokens.push_back(makeToken(TokenType::RBRACE, "}")); advance(); continue; }
+        if (c == '[') { tokens.push_back(makeToken(TokenType::LBRACKET, "[")); advance(); continue; }
+        if (c == ']') { tokens.push_back(makeToken(TokenType::RBRACKET, "]")); advance(); continue; }
+        if (c == ',') { tokens.push_back(makeToken(TokenType::COMMA, ",")); advance(); continue; }
+        if (c == ';') { tokens.push_back(makeToken(TokenType::SEMICOLON, ";")); advance(); continue; }
+        if (c == '%') { tokens.push_back(makeToken(TokenType::PERCENT, "%")); advance(); continue; }
+        if (c == '$') { tokens.push_back(makeToken(TokenType::DOLLAR, "$")); advance(); continue; }
+        
+        // Two character operators
+        if (c == '=' && peek(1) == '=') { tokens.push_back(makeToken(TokenType::EQ, "==", 2)); advance(); advance(); continue; }
+        if (c == '!' && peek(1) == '=') { tokens.push_back(makeToken(TokenType::NE, "!=", 2)); advance(); advance(); continue; }
+        if (c == '<' && peek(1) == '=') { tokens.push_back(makeToken(TokenType::LE, "<=", 2)); advance(); advance(); continue; }
+        if (c == '>' && peek(1) == '=') { tokens.push_back(makeToken(TokenType::GE, ">=", 2)); advance(); advance(); continue; }
+        if (c == '&' && peek(1) == '&') { tokens.push_back(makeToken(TokenType::AND, "&&", 2)); advance(); advance(); continue; }
+        if (c == '|' && peek(1) == '|') { tokens.push_back(makeToken(TokenType::OR, "||", 2)); advance(); advance(); continue; }
+        if (c == '-' && peek(1) == '>') { tokens.push_back(makeToken(TokenType::ARROW, "->", 2)); advance(); advance(); continue; }
+        if (c == '=' && peek(1) == '>') { tokens.push_back(makeToken(TokenType::FAT_ARROW, "=>", 2)); advance(); advance(); continue; }
+        if (c == ':' && peek(1) == ':') { tokens.push_back(makeToken(TokenType::DOUBLE_COLON, "::", 2)); advance(); advance(); continue; }
+        
+        // Single character that could be operators or alone
+        if (c == '=') { tokens.push_back(makeToken(TokenType::ASSIGN, "=")); advance(); continue; }
+        if (c == '+') { tokens.push_back(makeToken(TokenType::PLUS, "+")); advance(); continue; }
+        if (c == '-') { tokens.push_back(makeToken(TokenType::MINUS, "-")); advance(); continue; }
+        if (c == '*') { tokens.push_back(makeToken(TokenType::STAR, "*")); advance(); continue; }
+        if (c == '/') { tokens.push_back(makeToken(TokenType::SLASH, "/")); advance(); continue; }
+        if (c == '<') { tokens.push_back(makeToken(TokenType::LT, "<")); advance(); continue; }
+        if (c == '>') { tokens.push_back(makeToken(TokenType::GT, ">")); advance(); continue; }
+        if (c == '!') { tokens.push_back(makeToken(TokenType::NOT, "!")); advance(); continue; }
+        if (c == '.') { tokens.push_back(makeToken(TokenType::DOT, ".")); advance(); continue; }
+        if (c == ':') { tokens.push_back(makeToken(TokenType::COLON, ":")); advance(); continue; }
+        if (c == '@') { tokens.push_back(makeToken(TokenType::AT, "@")); advance(); continue; }
+        
+        // String literals
+        if (c == '"') {
+            tokens.push_back(string());
+            continue;
+        }
+        
+        // Numbers
+        if (std::isdigit(c)) {
+            tokens.push_back(number());
+            continue;
+        }
+        
+        // Identifiers and keywords
+        if (std::isalpha(c) || c == '_') {
+            tokens.push_back(identifier());
+            continue;
+        }
+        
+        // Unknown character - error and skip
+        error("Unexpected character: " + std::string(1, c), line, col, 1);
+        advance();
     }
     
     tokens.push_back({TokenType::EOF_TOK, "", line, col, 0});
