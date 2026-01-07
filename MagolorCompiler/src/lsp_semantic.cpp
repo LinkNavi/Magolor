@@ -1,9 +1,9 @@
 #include "lsp_semantic.hpp"
-#include "jsonrpc.hpp"
-#include <algorithm>
-#include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
+#include <filesystem>
+#include <iostream>
 #include <regex>
 
 namespace fs = std::filesystem;
@@ -20,17 +20,23 @@ void SemanticAnalyzer::initStdLib() {
     if (stdlibInitialized) return;
     
     std::vector<std::string> searchPaths = {
-        "./stdlib",  // ← Make sure this path is correct!
+        "./stdlib",
+        "../stdlib",
+        "../../stdlib",
         "/usr/local/share/magolor/stdlib",
-        "/usr/share/magolor/stdlib",
-        std::string(getenv("HOME") ? getenv("HOME") : "") + "/.magolor/stdlib"
+        "/usr/share/magolor/stdlib"
     };
+    
+    const char* home = getenv("HOME");
+    if (home) {
+        searchPaths.push_back(std::string(home) + "/.magolor/stdlib");
+    }
     
     std::string stdlibPath;
     for (const auto& path : searchPaths) {
-        if (fs::exists(path)) {
+        if (fs::exists(path) && fs::is_directory(path)) {
             stdlibPath = path;
-            std::cerr << "Found stdlib at: " << path << std::endl;  // ← Add logging
+            std::cerr << "[SemanticAnalyzer] Found stdlib at: " << path << std::endl;
             break;
         }
     }
@@ -38,7 +44,7 @@ void SemanticAnalyzer::initStdLib() {
     if (!stdlibPath.empty()) {
         StdLibLoader::instance().init(stdlibPath);
     } else {
-        std::cerr << "WARNING: stdlib not found!" << std::endl;  // ← Add warning
+        std::cerr << "[SemanticAnalyzer] WARNING: stdlib not found!" << std::endl;
     }
     
     stdlibInitialized = true;
@@ -56,6 +62,7 @@ std::vector<std::string> SemanticAnalyzer::getAvailableStdModules() const {
 }
 
 std::vector<SymbolPtr> SemanticAnalyzer::getStdLibSymbols(const std::string& modulePath) {
+    // Check cache
     auto it = stdlibSymbolCache.find(modulePath);
     if (it != stdlibSymbolCache.end()) {
         return it->second;
@@ -63,20 +70,41 @@ std::vector<SymbolPtr> SemanticAnalyzer::getStdLibSymbols(const std::string& mod
     
     std::vector<SymbolPtr> symbols;
     
+    // Get functions
     auto functions = StdLibLoader::instance().getFunctions(modulePath);
     for (const auto& func : functions) {
         symbols.push_back(stdFunctionToSymbol(func, modulePath));
     }
     
+    // Get classes
     auto classes = StdLibLoader::instance().getClasses(modulePath);
     for (const auto& cls : classes) {
-        auto sym = std::make_shared<Symbol>();
-        sym->name = cls.name;
-        sym->kind = SymbolKind::Class;
-        sym->isPublic = true;
-        sym->modulePath = modulePath;
-        sym->documentation = cls.documentation;
-        symbols.push_back(sym);
+        symbols.push_back(stdClassToSymbol(cls, modulePath));
+        
+        // Add class methods as separate symbols
+        for (const auto& method : cls.methods) {
+            auto methodSym = stdFunctionToSymbol(method, modulePath);
+            methodSym->containerName = cls.name;
+            methodSym->kind = SymbolKind::Method;
+            symbols.push_back(methodSym);
+        }
+    }
+    
+    // Get enums
+    auto enums = StdLibLoader::instance().getEnums(modulePath);
+    for (const auto& enumDef : enums) {
+        symbols.push_back(stdEnumToSymbol(enumDef, modulePath));
+        
+        // Add enum variants
+        for (const auto& variant : enumDef.variants) {
+            auto variantSym = std::make_shared<Symbol>();
+            variantSym->name = variant;
+            variantSym->kind = SymbolKind::EnumMember;
+            variantSym->containerName = enumDef.name;
+            variantSym->modulePath = modulePath;
+            variantSym->isPublic = true;
+            symbols.push_back(variantSym);
+        }
     }
     
     stdlibSymbolCache[modulePath] = symbols;
@@ -88,12 +116,59 @@ SymbolPtr SemanticAnalyzer::stdFunctionToSymbol(const StdFunction& func, const s
     sym->name = func.name;
     sym->kind = func.isConstant ? SymbolKind::Constant : SymbolKind::Function;
     sym->isPublic = true;
+    sym->isStatic = func.isStatic;
     sym->isCallable = !func.isConstant;
     sym->modulePath = modulePath;
     sym->detail = func.signature;
     sym->returnType = func.returnType;
     sym->paramTypes = func.paramTypes;
     sym->documentation = func.documentation;
+    
+    return sym;
+}
+
+SymbolPtr SemanticAnalyzer::stdClassToSymbol(const StdClass& cls, const std::string& modulePath) {
+    auto sym = std::make_shared<Symbol>();
+    sym->name = cls.name;
+    sym->kind = SymbolKind::Class;
+    sym->isPublic = true;
+    sym->isCallable = false;
+    sym->modulePath = modulePath;
+    sym->documentation = cls.documentation;
+    
+    // Build detail string with fields
+    std::string detail = "class " + cls.name;
+    if (!cls.fields.empty()) {
+        detail += " { ";
+        for (size_t i = 0; i < cls.fields.size() && i < 3; i++) {
+            if (i > 0) detail += ", ";
+            detail += cls.fields[i].first + ": " + cls.fields[i].second;
+        }
+        if (cls.fields.size() > 3) detail += ", ...";
+        detail += " }";
+    }
+    sym->detail = detail;
+    
+    return sym;
+}
+
+SymbolPtr SemanticAnalyzer::stdEnumToSymbol(const StdEnum& enumDef, const std::string& modulePath) {
+    auto sym = std::make_shared<Symbol>();
+    sym->name = enumDef.name;
+    sym->kind = SymbolKind::Enum;
+    sym->isPublic = true;
+    sym->modulePath = modulePath;
+    sym->documentation = enumDef.documentation;
+    
+    // Build detail string with variants
+    std::string detail = "enum " + enumDef.name + " { ";
+    for (size_t i = 0; i < enumDef.variants.size() && i < 5; i++) {
+        if (i > 0) detail += ", ";
+        detail += enumDef.variants[i];
+    }
+    if (enumDef.variants.size() > 5) detail += ", ...";
+    detail += " }";
+    sym->detail = detail;
     
     return sym;
 }
@@ -147,7 +222,9 @@ void SemanticAnalyzer::scanSourceDirectory(const std::string& srcDir) {
                 }
             }
         }
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        std::cerr << "[SemanticAnalyzer] Error scanning: " << e.what() << std::endl;
+    }
 }
 
 void SemanticAnalyzer::reloadProject() {
@@ -162,10 +239,14 @@ void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string&
     std::vector<SymbolPtr> symbols;
     auto scope = std::make_shared<Scope>();
     
+    // First pass: extract metadata directives (@link, @include, @cimport)
+    extractMetadataDirectives(uri, content, scope.get());
+    
     std::istringstream stream(content);
     std::string line;
     int lineNum = 0;
     std::string currentClass;
+    std::string currentEnum;
     
     while (std::getline(stream, line)) {
         lineNum++;
@@ -174,9 +255,29 @@ void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string&
         std::string trimmedLine = (firstNonSpace != std::string::npos) 
                                    ? line.substr(firstNonSpace) : "";
         
+        // Skip directive lines (already processed)
+        if (trimmedLine.find("@link") == 0 || 
+            trimmedLine.find("@include") == 0 ||
+            trimmedLine.find("@cimport") == 0 ||
+            trimmedLine.find("cimport") == 0) {
+            continue;
+        }
+        
+        // Parse imports
         if (trimmedLine.find("using ") == 0) {
             parseImport(line, scope.get());
         }
+        // Parse enums
+        else if (trimmedLine.find("pub enum ") != std::string::npos ||
+                 trimmedLine.find("enum ") == 0) {
+            auto sym = parseEnum(line, lineNum, uri);
+            if (sym) {
+                symbols.push_back(sym);
+                scope->define(sym);
+                currentEnum = sym->name;
+            }
+        }
+        // Parse classes
         else if (trimmedLine.find("class ") != std::string::npos ||
                  (trimmedLine.find("pub ") == 0 && trimmedLine.find("class ") != std::string::npos)) {
             auto sym = parseClass(line, lineNum, uri);
@@ -185,9 +286,13 @@ void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string&
                 symbols.push_back(sym);
                 scope->define(sym);
                 currentClass = sym->name;
+                currentEnum = "";
             }
         }
-        else if (trimmedLine.find("fn ") != std::string::npos) {
+        // Parse functions/methods
+        else if (trimmedLine.find("fn ") != std::string::npos ||
+                 (trimmedLine.find("pub ") == 0 && trimmedLine.find("fn ") != std::string::npos) ||
+                 (trimmedLine.find("pub static ") == 0 && trimmedLine.find("fn ") != std::string::npos)) {
             auto sym = parseFunction(line, lineNum, uri);
             if (sym) {
                 sym->containerName = currentClass;
@@ -197,6 +302,7 @@ void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string&
                 scope->define(sym);
             }
         }
+        // Parse variables
         else if (trimmedLine.find("let ") == 0) {
             auto sym = parseVariable(line, lineNum, uri);
             if (sym) {
@@ -206,9 +312,52 @@ void SemanticAnalyzer::extractSymbols(const std::string& uri, const std::string&
                 scope->define(sym);
             }
         }
+        // Parse static constants
+        else if (trimmedLine.find("pub static ") == 0 && trimmedLine.find("fn ") == std::string::npos) {
+            // pub static NAME: Type = value;
+            std::regex constRegex(R"(pub\s+static\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+)\s*=)");
+            std::smatch match;
+            if (std::regex_search(trimmedLine, match, constRegex)) {
+                auto sym = std::make_shared<Symbol>();
+                sym->name = match[1].str();
+                sym->kind = SymbolKind::Constant;
+                sym->type = match[2].str();
+                sym->isPublic = true;
+                sym->isStatic = true;
+                sym->containerName = currentClass;
+                sym->definition.uri = uri;
+                sym->definition.range.start = {lineNum - 1, 0};
+                sym->definition.range.end = {lineNum - 1, (int)line.size()};
+                symbols.push_back(sym);
+                scope->define(sym);
+            }
+        }
+        // Parse enum variants (inside enum block)
+        else if (!currentEnum.empty() && !trimmedLine.empty() && trimmedLine != "}" && trimmedLine[0] != '/') {
+            // Simple variant detection
+            std::regex variantRegex(R"(([A-Za-z_][A-Za-z0-9_]*))");
+            std::smatch match;
+            if (std::regex_search(trimmedLine, match, variantRegex)) {
+                std::string variantName = match[1].str();
+                if (variantName != "pub" && variantName != "enum") {
+                    auto sym = std::make_shared<Symbol>();
+                    sym->name = variantName;
+                    sym->kind = SymbolKind::EnumMember;
+                    sym->containerName = currentEnum;
+                    sym->definition.uri = uri;
+                    sym->definition.range.start = {lineNum - 1, (int)firstNonSpace};
+                    sym->definition.range.end = {lineNum - 1, (int)(firstNonSpace + variantName.size())};
+                    symbols.push_back(sym);
+                }
+            }
+        }
         
+        // Track scope exit
         if (!currentClass.empty() && trimmedLine == "}") {
             currentClass = "";
+        }
+        if (!currentEnum.empty() && trimmedLine == "}") {
+            currentEnum = "";
         }
     }
     
@@ -226,11 +375,13 @@ void SemanticAnalyzer::parseImport(const std::string& line, Scope* scope) {
     
     std::string importPath = line.substr(start, end - start);
     
+    // Trim
     importPath.erase(0, importPath.find_first_not_of(" \t"));
     importPath.erase(importPath.find_last_not_of(" \t") + 1);
     
-    size_t pos = importPath.find("::");
-    if (pos != std::string::npos) {
+    // Convert :: to . if present
+    size_t pos;
+    while ((pos = importPath.find("::")) != std::string::npos) {
         importPath.replace(pos, 2, ".");
     }
     
@@ -249,111 +400,115 @@ void SemanticAnalyzer::parseImport(const std::string& line, Scope* scope) {
 }
 
 SymbolPtr SemanticAnalyzer::parseFunction(const std::string& line, int lineNum, const std::string& uri) {
-    size_t fnPos = line.find("fn ");
-    if (fnPos == std::string::npos) return nullptr;
+    // Match: [pub] [static] fn name(params) [-> returnType]
+    std::regex funcRegex(R"((?:pub\s+)?(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^\{]+))?)");
+    std::smatch match;
     
-    size_t nameStart = fnPos + 3;
-    size_t nameEnd = line.find('(', nameStart);
-    if (nameEnd == std::string::npos) return nullptr;
-    
-    std::string name = line.substr(nameStart, nameEnd - nameStart);
-    name.erase(0, name.find_first_not_of(" \t"));
-    name.erase(name.find_last_not_of(" \t") + 1);
-    
-    if (name.empty()) return nullptr;
+    if (!std::regex_search(line, match, funcRegex)) return nullptr;
     
     auto sym = std::make_shared<Symbol>();
-    sym->name = name;
+    sym->name = match[1].str();
     sym->kind = SymbolKind::Function;
-    sym->definition.uri = uri;
-    sym->definition.range.start = {lineNum - 1, (int)nameStart};
-    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
     sym->isPublic = line.find("pub ") != std::string::npos;
     sym->isStatic = line.find("static ") != std::string::npos;
     
-    size_t parenEnd = line.find(')', nameEnd);
-    size_t arrowPos = line.find("->", parenEnd != std::string::npos ? parenEnd : 0);
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)line.find(sym->name)};
+    sym->definition.range.end = {lineNum - 1, (int)(line.find(sym->name) + sym->name.size())};
     
-    if (parenEnd != std::string::npos) {
-        std::string params = line.substr(nameEnd, parenEnd - nameEnd + 1);
-        sym->detail = params;
+    // Parse parameters
+    std::string params = match[2].str();
+    std::string sig = "(";
+    
+    if (!params.empty()) {
+        std::regex paramRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^,]+))");
+        auto pBegin = std::sregex_iterator(params.begin(), params.end(), paramRegex);
+        auto pEnd = std::sregex_iterator();
         
-        if (arrowPos != std::string::npos) {
-            size_t typeStart = arrowPos + 2;
-            size_t typeEnd = line.find_first_of(" {", typeStart);
-            if (typeEnd == std::string::npos) typeEnd = line.size();
-            sym->returnType = line.substr(typeStart, typeEnd - typeStart);
-            sym->returnType.erase(0, sym->returnType.find_first_not_of(" \t"));
-            sym->returnType.erase(sym->returnType.find_last_not_of(" \t") + 1);
-            sym->detail += " -> " + sym->returnType;
+        bool first = true;
+        for (auto pit = pBegin; pit != pEnd; ++pit) {
+            std::string ptype = (*pit)[2].str();
+            ptype.erase(0, ptype.find_first_not_of(" \t"));
+            ptype.erase(ptype.find_last_not_of(" \t") + 1);
+            sym->paramTypes.push_back(ptype);
+            
+            if (!first) sig += ", ";
+            first = false;
+            sig += (*pit)[1].str() + ": " + ptype;
         }
     }
+    
+    // Return type
+    if (match[3].matched) {
+        sym->returnType = match[3].str();
+        sym->returnType.erase(0, sym->returnType.find_first_not_of(" \t"));
+        sym->returnType.erase(sym->returnType.find_last_not_of(" \t") + 1);
+    } else {
+        sym->returnType = "void";
+    }
+    
+    sig += ") -> " + sym->returnType;
+    sym->detail = sig;
     
     return sym;
 }
 
 SymbolPtr SemanticAnalyzer::parseClass(const std::string& line, int lineNum, const std::string& uri) {
-    size_t classPos = line.find("class ");
-    if (classPos == std::string::npos) return nullptr;
+    std::regex classRegex(R"((?:pub\s+)?class\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+    std::smatch match;
     
-    size_t nameStart = classPos + 6;
-    size_t nameEnd = line.find_first_of(" {<", nameStart);
-    if (nameEnd == std::string::npos) return nullptr;
-    
-    std::string name = line.substr(nameStart, nameEnd - nameStart);
-    name.erase(name.find_last_not_of(" \t") + 1);
+    if (!std::regex_search(line, match, classRegex)) return nullptr;
     
     auto sym = std::make_shared<Symbol>();
-    sym->name = name;
+    sym->name = match[1].str();
     sym->kind = SymbolKind::Class;
-    sym->definition.uri = uri;
-    sym->definition.range.start = {lineNum - 1, (int)nameStart};
-    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
     sym->isPublic = line.find("pub ") != std::string::npos;
+    
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)line.find(sym->name)};
+    sym->definition.range.end = {lineNum - 1, (int)(line.find(sym->name) + sym->name.size())};
     
     return sym;
 }
 
 SymbolPtr SemanticAnalyzer::parseVariable(const std::string& line, int lineNum, const std::string& uri) {
-    size_t letPos = line.find("let ");
-    if (letPos == std::string::npos) return nullptr;
+    // Match: let [mut] name [: type] = ...
+    std::regex varRegex(R"(let\s+(?:mut\s+)?([a-zA-Z_][a-zA-Z0-9_]*)(?:\s*:\s*([^=]+))?)");
+    std::smatch match;
     
-    size_t nameStart = letPos + 4;
-    
-    if (line.find("mut ", nameStart) == nameStart) {
-        nameStart += 4;
-    }
-    
-    while (nameStart < line.size() && (line[nameStart] == ' ' || line[nameStart] == '\t')) {
-        nameStart++;
-    }
-    
-    size_t nameEnd = nameStart;
-    while (nameEnd < line.size() && (std::isalnum(line[nameEnd]) || line[nameEnd] == '_')) {
-        nameEnd++;
-    }
-    
-    if (nameEnd == nameStart) return nullptr;
-    
-    std::string name = line.substr(nameStart, nameEnd - nameStart);
+    if (!std::regex_search(line, match, varRegex)) return nullptr;
     
     auto sym = std::make_shared<Symbol>();
-    sym->name = name;
+    sym->name = match[1].str();
     sym->kind = SymbolKind::Variable;
-    sym->definition.uri = uri;
-    sym->definition.range.start = {lineNum - 1, (int)nameStart};
-    sym->definition.range.end = {lineNum - 1, (int)nameEnd};
     
-    size_t colonPos = line.find(':', nameEnd);
-    size_t equalPos = line.find('=', nameEnd);
-    
-    if (colonPos != std::string::npos && (equalPos == std::string::npos || colonPos < equalPos)) {
-        size_t typeEnd = (equalPos != std::string::npos) ? equalPos : line.find(';', colonPos);
-        if (typeEnd == std::string::npos) typeEnd = line.size();
-        sym->type = line.substr(colonPos + 1, typeEnd - colonPos - 1);
+    if (match[2].matched) {
+        sym->type = match[2].str();
         sym->type.erase(0, sym->type.find_first_not_of(" \t"));
         sym->type.erase(sym->type.find_last_not_of(" \t") + 1);
     }
+    
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)line.find(sym->name)};
+    sym->definition.range.end = {lineNum - 1, (int)(line.find(sym->name) + sym->name.size())};
+    
+    return sym;
+}
+
+SymbolPtr SemanticAnalyzer::parseEnum(const std::string& line, int lineNum, const std::string& uri) {
+    std::regex enumRegex(R"((?:pub\s+)?enum\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+    std::smatch match;
+    
+    if (!std::regex_search(line, match, enumRegex)) return nullptr;
+    
+    auto sym = std::make_shared<Symbol>();
+    sym->name = match[1].str();
+    sym->kind = SymbolKind::Enum;
+    sym->isPublic = line.find("pub ") != std::string::npos;
+    
+    sym->definition.uri = uri;
+    sym->definition.range.start = {lineNum - 1, (int)line.find(sym->name)};
+    sym->definition.range.end = {lineNum - 1, (int)(line.find(sym->name) + sym->name.size())};
     
     return sym;
 }
@@ -497,4 +652,66 @@ std::vector<SemanticAnalyzer::ImportError> SemanticAnalyzer::validateImports(con
     return errors;
 }
 
+void SemanticAnalyzer::extractMetadataDirectives(const std::string& uri, const std::string& content, Scope* scope) {
+    auto& cHeaderParser = CHeaderParser::instance();
+    
+    // Extract @cimport directives
+    std::regex cimportBraceRegex(R"(@cimport\s*\{\s*([^}]+)\})");
+    std::regex cimportQuoteRegex(R"(cimport\s*\"([^\"]+)\")");
+    std::regex cimportAngleRegex(R"(cimport\s*<([^>]+)>)");
+    
+    std::smatch match;
+    std::string::const_iterator searchStart = content.cbegin();
+    
+    // Match @cimport { header1.h header2.h }
+    while (std::regex_search(searchStart, content.cend(), match, cimportBraceRegex)) {
+        std::string headers = match[1].str();
+        std::istringstream iss(headers);
+        std::string header;
+        while (iss >> header) {
+            // Trim and clean header path
+            size_t start = header.find_first_not_of(" \t\n\r<\"");
+            size_t end = header.find_last_not_of(" \t\n\r>\"");
+            if (start != std::string::npos && end != std::string::npos) {
+                header = header.substr(start, end - start + 1);
+            }
+            
+            if (!header.empty()) {
+                std::cerr << "[SemanticAnalyzer] Processing cimport: " << header << std::endl;
+                cHeaderParser.parseHeader(header);
+                
+                // Store in file's cimport list
+                fileCImports[uri].push_back(header);
+            }
+        }
+        searchStart = match.suffix().first;
+    }
+    
+    // Match cimport "header.h"
+    searchStart = content.cbegin();
+    while (std::regex_search(searchStart, content.cend(), match, cimportQuoteRegex)) {
+        std::string header = match[1].str();
+        std::cerr << "[SemanticAnalyzer] Processing cimport: " << header << std::endl;
+        cHeaderParser.parseHeader(header);
+        fileCImports[uri].push_back(header);
+        searchStart = match.suffix().first;
+    }
+    
+    // Match cimport <header.h>
+    searchStart = content.cbegin();
+    while (std::regex_search(searchStart, content.cend(), match, cimportAngleRegex)) {
+        std::string header = match[1].str();
+        std::cerr << "[SemanticAnalyzer] Processing cimport: " << header << std::endl;
+        cHeaderParser.parseHeader(header);
+        fileCImports[uri].push_back(header);
+        searchStart = match.suffix().first;
+    }
+}
 
+std::vector<std::string> SemanticAnalyzer::getCImports(const std::string& uri) const {
+    auto it = fileCImports.find(uri);
+    if (it != fileCImports.end()) {
+        return it->second;
+    }
+    return {};
+}
