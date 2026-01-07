@@ -134,6 +134,7 @@ bool CodeGen::isClassName(const std::string &name) const {
 }
 
 
+
 std::string CodeGen::generate(const Program &prog) {
   out.str("");
   out.clear();
@@ -259,6 +260,24 @@ std::string CodeGen::generate(const Program &prog) {
   out << "\n";
   
   // ============================================================================
+  // CRITICAL FIX: Global I/O functions (must be at top level for user code)
+  // ============================================================================
+  out << "// Global I/O functions\n";
+  out << "inline void print(const std::string& s) { std::cout << s; }\n";
+  out << "inline void println(const std::string& s) { std::cout << s << std::endl; }\n";
+  out << "inline void println() { std::cout << std::endl; }\n";
+  out << "inline void eprint(const std::string& s) { std::cerr << s; }\n";
+  out << "inline void eprintln(const std::string& s) { std::cerr << s << std::endl; }\n";
+  out << "inline std::string readLine() { std::string line; std::getline(std::cin, line); return line; }\n";
+  out << "\n";
+  out << "// Overloads for common types\n";
+  out << "template<typename T>\n";
+  out << "inline void print(const T& val) { std::cout << val; }\n";
+  out << "template<typename T>\n";
+  out << "inline void println(const T& val) { std::cout << val << std::endl; }\n";
+  out << "\n";
+  
+  // ============================================================================
   // STEP 4: Forward declarations for classes
   // ============================================================================
   for (const auto &cls : prog.classes) {
@@ -299,7 +318,6 @@ std::string CodeGen::generate(const Program &prog) {
   
   return out.str();
 }
-
 
 
 
