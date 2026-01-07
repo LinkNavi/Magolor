@@ -3,48 +3,64 @@
 
 @link { -lssl -lcrypto }
 @include { <openssl/evp.h> <openssl/rand.h> }
-@cimport { openssl/evp.h openssl/rand.h }
-
-using Std.Array;
 
 // Encryption result containing ciphertext + metadata
 pub class CryptoResult {
     pub success: bool;
-    pub data: Array<int>;      // Encrypted/decrypted bytes
+    pub data: Array<int>;
     pub error: string;
-    pub iv: Array<int>;        // Initialization vector (12 bytes for GCM)
-    pub tag: Array<int>;       // Auth tag (16 bytes for GCM)
-    pub salt: Array<int>;      // Salt for key derivation (16 bytes)
+    pub iv: Array<int>;
+    pub tag: Array<int>;
+    pub salt: Array<int>;
     
     pub fn create() {
-        this.success = false;
-        this.error = "";
+        @cpp {
+            this->success = false;
+            this->error = "";
+            this->data = std::vector<int64_t>();
+            this->iv = std::vector<int64_t>();
+            this->tag = std::vector<int64_t>();
+            this->salt = std::vector<int64_t>();
+        }
     }
 }
 
 // Key derivation config
 pub class KeyConfig {
-    pub iterations: int;       // PBKDF2 iterations (default 100000)
-    pub keyLength: int;        // Key length in bytes (32 for AES-256)
+    pub iterations: int;
+    pub keyLength: int;
     
     pub fn create() {
-        this.iterations = 100000;
-        this.keyLength = 32;
+        @cpp {
+            this->iterations = 100000;
+            this->keyLength = 32;
+        }
     }
-    
-    pub static fn standard() -> KeyConfig {
-        return new KeyConfig();
-    }
-    
-    pub static fn fast() -> KeyConfig {
-        let cfg = new KeyConfig();
-        cfg.iterations = 10000;
+}
+
+pub fn standardConfig() -> KeyConfig {
+    @cpp {
+        KeyConfig cfg;
+        cfg.iterations = 100000;
+        cfg.keyLength = 32;
         return cfg;
     }
-    
-    pub static fn paranoid() -> KeyConfig {
-        let cfg = new KeyConfig();
+}
+
+pub fn fastConfig() -> KeyConfig {
+    @cpp {
+        KeyConfig cfg;
+        cfg.iterations = 10000;
+        cfg.keyLength = 32;
+        return cfg;
+    }
+}
+
+pub fn paranoidConfig() -> KeyConfig {
+    @cpp {
+        KeyConfig cfg;
         cfg.iterations = 500000;
+        cfg.keyLength = 32;
         return cfg;
     }
 }
@@ -52,9 +68,6 @@ pub class KeyConfig {
 // Derive key from password using PBKDF2-SHA256
 pub fn deriveKey(password: string, salt: Array<int>, config: KeyConfig) -> Array<int> {
     @cpp {
-        #include <openssl/evp.h>
-        #include <openssl/rand.h>
-        
         std::vector<int64_t> key(config.keyLength);
         std::vector<unsigned char> saltBytes(salt.size());
         for (size_t i = 0; i < salt.size(); i++) {
@@ -70,7 +83,7 @@ pub fn deriveKey(password: string, salt: Array<int>, config: KeyConfig) -> Array
             config.keyLength, keyBytes.data()
         );
         
-        for (int i = 0; i < config.keyLength; i++) {
+        for (int64_t i = 0; i < config.keyLength; i++) {
             key[i] = keyBytes[i];
         }
         return key;
@@ -80,13 +93,11 @@ pub fn deriveKey(password: string, salt: Array<int>, config: KeyConfig) -> Array
 // Generate cryptographically secure random bytes
 pub fn randomBytes(count: int) -> Array<int> {
     @cpp {
-        #include <openssl/rand.h>
-        
         std::vector<unsigned char> bytes(count);
         RAND_bytes(bytes.data(), count);
         
         std::vector<int64_t> result(count);
-        for (int i = 0; i < count; i++) {
+        for (int64_t i = 0; i < count; i++) {
             result[i] = bytes[i];
         }
         return result;
@@ -95,22 +106,39 @@ pub fn randomBytes(count: int) -> Array<int> {
 
 // Generate random salt (16 bytes)
 pub fn generateSalt() -> Array<int> {
-    return randomBytes(16);
+    @cpp {
+        std::vector<unsigned char> bytes(16);
+        RAND_bytes(bytes.data(), 16);
+        std::vector<int64_t> result(16);
+        for (int64_t i = 0; i < 16; i++) {
+            result[i] = bytes[i];
+        }
+        return result;
+    }
 }
 
 // Generate random IV for AES-GCM (12 bytes)
 pub fn generateIV() -> Array<int> {
-    return randomBytes(12);
+    @cpp {
+        std::vector<unsigned char> bytes(12);
+        RAND_bytes(bytes.data(), 12);
+        std::vector<int64_t> result(12);
+        for (int64_t i = 0; i < 12; i++) {
+            result[i] = bytes[i];
+        }
+        return result;
+    }
 }
 
 // Encrypt data using AES-256-GCM
 pub fn encrypt(plaintext: Array<int>, password: string) -> CryptoResult {
     @cpp {
-        #include <openssl/evp.h>
-        #include <openssl/rand.h>
-        
         CryptoResult result;
         result.success = false;
+        result.data = std::vector<int64_t>();
+        result.iv = std::vector<int64_t>();
+        result.tag = std::vector<int64_t>();
+        result.salt = std::vector<int64_t>();
         
         // Generate salt and IV
         std::vector<unsigned char> salt(16);
@@ -191,10 +219,12 @@ pub fn encrypt(plaintext: Array<int>, password: string) -> CryptoResult {
 // Decrypt data using AES-256-GCM
 pub fn decrypt(encrypted: CryptoResult, password: string) -> CryptoResult {
     @cpp {
-        #include <openssl/evp.h>
-        
         CryptoResult result;
         result.success = false;
+        result.data = std::vector<int64_t>();
+        result.iv = std::vector<int64_t>();
+        result.tag = std::vector<int64_t>();
+        result.salt = std::vector<int64_t>();
         
         if (!encrypted.success || encrypted.data.empty()) {
             result.error = "Invalid encrypted data";
@@ -275,21 +305,69 @@ pub fn encryptString(text: string, password: string) -> CryptoResult {
         for (size_t i = 0; i < text.size(); i++) {
             bytes[i] = static_cast<unsigned char>(text[i]);
         }
+        return Crypto::encrypt(bytes, password);
     }
-    return encrypt(bytes, password);
 }
 
 // Decrypt binary to string
 pub fn decryptToString(encrypted: CryptoResult, password: string) -> string {
-    let result = decrypt(encrypted, password);
-    if (!result.success) {
-        return "";
-    }
     @cpp {
+        if (!encrypted.success || encrypted.data.empty()) {
+            return "";
+        }
+        
+        // Convert arrays
+        std::vector<unsigned char> salt(encrypted.salt.size());
+        std::vector<unsigned char> iv(encrypted.iv.size());
+        std::vector<unsigned char> tag(encrypted.tag.size());
+        std::vector<unsigned char> cipher(encrypted.data.size());
+        
+        for (size_t i = 0; i < encrypted.salt.size(); i++) salt[i] = encrypted.salt[i];
+        for (size_t i = 0; i < encrypted.iv.size(); i++) iv[i] = encrypted.iv[i];
+        for (size_t i = 0; i < encrypted.tag.size(); i++) tag[i] = encrypted.tag[i];
+        for (size_t i = 0; i < encrypted.data.size(); i++) cipher[i] = encrypted.data[i];
+        
+        // Derive key
+        std::vector<unsigned char> key(32);
+        PKCS5_PBKDF2_HMAC(
+            password.c_str(), password.length(),
+            salt.data(), salt.size(),
+            100000, EVP_sha256(),
+            32, key.data()
+        );
+        
+        // Setup decryption
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        if (!ctx) return "";
+        
+        if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, key.data(), iv.data()) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return "";
+        }
+        
+        // Decrypt
+        std::vector<unsigned char> plain(cipher.size());
+        int len = 0, plainLen = 0;
+        
+        if (EVP_DecryptUpdate(ctx, plain.data(), &len, cipher.data(), cipher.size()) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return "";
+        }
+        plainLen = len;
+        
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag.data());
+        
+        if (EVP_DecryptFinal_ex(ctx, plain.data() + len, &len) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return "";
+        }
+        plainLen += len;
+        EVP_CIPHER_CTX_free(ctx);
+        
         std::string text;
-        text.reserve(result.data.size());
-        for (auto b : result.data) {
-            text += static_cast<char>(b);
+        text.reserve(plainLen);
+        for (int i = 0; i < plainLen; i++) {
+            text += static_cast<char>(plain[i]);
         }
         return text;
     }
@@ -298,11 +376,6 @@ pub fn decryptToString(encrypted: CryptoResult, password: string) -> string {
 // Hash password (for storage, not encryption)
 pub fn hashPassword(password: string) -> string {
     @cpp {
-        #include <openssl/evp.h>
-        #include <openssl/rand.h>
-        #include <sstream>
-        #include <iomanip>
-        
         // Generate salt
         std::vector<unsigned char> salt(16);
         RAND_bytes(salt.data(), 16);
@@ -328,8 +401,6 @@ pub fn hashPassword(password: string) -> string {
 // Verify password against hash
 pub fn verifyPassword(password: string, hash: string) -> bool {
     @cpp {
-        #include <openssl/evp.h>
-        
         // Parse hash format: salt$hash
         size_t delim = hash.find('$');
         if (delim == std::string::npos || delim != 32) return false;

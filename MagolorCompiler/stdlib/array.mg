@@ -1,363 +1,329 @@
 // Std.Array - Array/Vector operations
-// Dynamic array operations and utilities
 
-using Std.Core.Prelude;
-
-// ============================================================================
-// Basic operations
-// ============================================================================
-
-pub fn length(arr: Array<any>) -> int {
-    @cpp { return arr.size(); }
-}
-
-pub fn isEmpty(arr: Array<any>) -> bool {
-    @cpp { return arr.empty(); }
-}
-
-pub fn capacity(arr: Array<any>) -> int {
-    @cpp { return arr.capacity(); }
-}
-
-// ============================================================================
-// Element access
-// ============================================================================
-
-pub fn get(arr: Array<any>, index: int) -> Option<any> {
+pub fn lengthInt(arr: Array<int>) -> int {
     @cpp {
-        if (index >= 0 && index < static_cast<int>(arr.size())) {
-            return std::make_optional(arr[index]);
-        }
-        return std::nullopt;
+        return static_cast<int64_t>(arr.size());
     }
 }
 
-pub fn first(arr: Array<any>) -> Option<any> {
-    if (isEmpty(arr)) { return None; }
-    return Some(arr[0]);
+pub fn lengthStr(arr: Array<string>) -> int {
+    @cpp {
+        return static_cast<int64_t>(arr.size());
+    }
 }
 
-pub fn last(arr: Array<any>) -> Option<any> {
-    if (isEmpty(arr)) { return None; }
-    return Some(arr[length(arr) - 1]);
+pub fn isEmptyInt(arr: Array<int>) -> bool {
+    @cpp {
+        return arr.empty();
+    }
 }
 
-// ============================================================================
-// Modification
-// ============================================================================
-
-pub fn push(arr: Array<any>, item: any) {
-    @cpp { arr.push_back(item); }
+pub fn isEmptyStr(arr: Array<string>) -> bool {
+    @cpp {
+        return arr.empty();
+    }
 }
 
-pub fn pop(arr: Array<any>) -> Option<any> {
+// FIX: Return new array with value appended
+pub fn pushInt(arr: Array<int>, value: int) -> Array<int> {
+    @cpp {
+        auto result = arr;
+        result.push_back(value);
+        return result;
+    }
+}
+
+pub fn pushStr(arr: Array<string>, value: string) -> Array<string> {
+    @cpp {
+        auto result = arr;
+        result.push_back(value);
+        return result;
+    }
+}
+
+// FIX: Return pair-like struct with popped value and new array
+pub fn popInt(arr: Array<int>) -> int {
+    @cpp {
+        if (arr.empty()) return 0;
+        return arr.back();
+    }
+}
+
+pub fn popStr(arr: Array<string>) -> string {
+    @cpp {
+        if (arr.empty()) return "";
+        return arr.back();
+    }
+}
+
+// Helper to get array without last element
+pub fn popArrayInt(arr: Array<int>) -> Array<int> {
+    @cpp {
+        if (arr.empty()) return arr;
+        auto result = arr;
+        result.pop_back();
+        return result;
+    }
+}
+
+pub fn popArrayStr(arr: Array<string>) -> Array<string> {
+    @cpp {
+        if (arr.empty()) return arr;
+        auto result = arr;
+        result.pop_back();
+        return result;
+    }
+}
+
+pub fn firstInt(arr: Array<int>) -> Option<int> {
     @cpp {
         if (arr.empty()) return std::nullopt;
-        auto item = arr.back();
-        arr.pop_back();
-        return std::make_optional(item);
+        return arr.front();
     }
 }
 
-pub fn insert(arr: Array<any>, index: int, item: any) {
-    @cpp { arr.insert(arr.begin() + index, item); }
+pub fn firstStr(arr: Array<string>) -> Option<string> {
+    @cpp {
+        if (arr.empty()) return std::nullopt;
+        return arr.front();
+    }
 }
 
-pub fn removeAt(arr: Array<any>, index: int) -> Option<any> {
+pub fn lastInt(arr: Array<int>) -> Option<int> {
     @cpp {
-        if (index < 0 || index >= static_cast<int>(arr.size())) {
-            return std::nullopt;
+        if (arr.empty()) return std::nullopt;
+        return arr.back();
+    }
+}
+
+pub fn lastStr(arr: Array<string>) -> Option<string> {
+    @cpp {
+        if (arr.empty()) return std::nullopt;
+        return arr.back();
+    }
+}
+
+pub fn getInt(arr: Array<int>, index: int) -> Option<int> {
+    @cpp {
+        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return std::nullopt;
+        return arr[static_cast<size_t>(index)];
+    }
+}
+
+pub fn getStr(arr: Array<string>, index: int) -> Option<string> {
+    @cpp {
+        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return std::nullopt;
+        return arr[static_cast<size_t>(index)];
+    }
+}
+
+// FIX: Return new array with value set at index
+pub fn setInt(arr: Array<int>, index: int, value: int) -> Array<int> {
+    @cpp {
+        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return arr;
+        auto result = arr;
+        result[static_cast<size_t>(index)] = value;
+        return result;
+    }
+}
+
+pub fn setStr(arr: Array<string>, index: int, value: string) -> Array<string> {
+    @cpp {
+        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return arr;
+        auto result = arr;
+        result[static_cast<size_t>(index)] = value;
+        return result;
+    }
+}
+
+pub fn sliceInt(arr: Array<int>, start: int, end: int) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result;
+        int64_t s = start < 0 ? 0 : start;
+        int64_t e = end > static_cast<int64_t>(arr.size()) ? arr.size() : end;
+        for (int64_t i = s; i < e; i++) {
+            result.push_back(arr[i]);
         }
-        auto item = arr[index];
-        arr.erase(arr.begin() + index);
-        return std::make_optional(item);
+        return result;
     }
 }
 
-pub fn clear(arr: Array<any>) {
-    @cpp { arr.clear(); }
-}
-
-pub fn resize(arr: Array<any>, newSize: int) {
-    @cpp { arr.resize(newSize); }
-}
-
-pub fn reserve(arr: Array<any>, capacity: int) {
-    @cpp { arr.reserve(capacity); }
-}
-
-// ============================================================================
-// Search
-// ============================================================================
-
-pub fn contains(arr: Array<any>, item: any) -> bool {
+pub fn sliceStr(arr: Array<string>, start: int, end: int) -> Array<string> {
     @cpp {
-        return std::find(arr.begin(), arr.end(), item) != arr.end();
-    }
-}
-
-pub fn indexOf(arr: Array<any>, item: any) -> Option<int> {
-    @cpp {
-        auto it = std::find(arr.begin(), arr.end(), item);
-        if (it != arr.end()) {
-            return std::make_optional(static_cast<int>(std::distance(arr.begin(), it)));
+        std::vector<std::string> result;
+        int64_t s = start < 0 ? 0 : start;
+        int64_t e = end > static_cast<int64_t>(arr.size()) ? arr.size() : end;
+        for (int64_t i = s; i < e; i++) {
+            result.push_back(arr[i]);
         }
-        return std::nullopt;
+        return result;
     }
 }
 
-pub fn lastIndexOf(arr: Array<any>, item: any) -> Option<int> {
+pub fn concatInt(a: Array<int>, b: Array<int>) -> Array<int> {
     @cpp {
-        for (int i = arr.size() - 1; i >= 0; i--) {
-            if (arr[i] == item) {
-                return std::make_optional(i);
-            }
-        }
-        return std::nullopt;
-    }
-}
-
-pub fn count(arr: Array<any>, item: any) -> int {
-    @cpp {
-        return std::count(arr.begin(), arr.end(), item);
-    }
-}
-
-// ============================================================================
-// Ordering
-// ============================================================================
-
-pub fn reverse(arr: Array<any>) {
-    @cpp { std::reverse(arr.begin(), arr.end()); }
-}
-
-pub fn sort(arr: Array<any>) {
-    @cpp { std::sort(arr.begin(), arr.end()); }
-}
-
-pub fn sortDesc(arr: Array<any>) {
-    @cpp { std::sort(arr.begin(), arr.end(), std::greater<>()); }
-}
-
-pub fn shuffle(arr: Array<any>) {
-    @cpp {
-        static std::random_device rd;
-        static std::mt19937 g(rd());
-        std::shuffle(arr.begin(), arr.end(), g);
-    }
-}
-
-// ============================================================================
-// Transformation
-// ============================================================================
-
-pub fn slice(arr: Array<any>, start: int, endIdx: int) -> Array<any> {
-    @cpp {
-        if (start < 0) start = 0;
-        if (endIdx > static_cast<int>(arr.size())) endIdx = arr.size();
-        return std::vector<decltype(arr)::value_type>(arr.begin() + start, arr.begin() + endIdx);
-    }
-}
-
-pub fn concat(a: Array<any>, b: Array<any>) -> Array<any> {
-    @cpp {
-        auto result = a;
+        std::vector<int64_t> result = a;
         result.insert(result.end(), b.begin(), b.end());
         return result;
     }
 }
 
-pub fn flatten(arr: Array<Array<any>>) -> Array<any> {
+pub fn concatStr(a: Array<string>, b: Array<string>) -> Array<string> {
     @cpp {
-        std::vector<typename decltype(arr)::value_type::value_type> result;
-        for (const auto& inner : arr) {
-            result.insert(result.end(), inner.begin(), inner.end());
+        std::vector<std::string> result = a;
+        result.insert(result.end(), b.begin(), b.end());
+        return result;
+    }
+}
+
+pub fn reverseInt(arr: Array<int>) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result = arr;
+        std::reverse(result.begin(), result.end());
+        return result;
+    }
+}
+
+pub fn reverseStr(arr: Array<string>) -> Array<string> {
+    @cpp {
+        std::vector<std::string> result = arr;
+        std::reverse(result.begin(), result.end());
+        return result;
+    }
+}
+
+pub fn containsInt(arr: Array<int>, value: int) -> bool {
+    @cpp {
+        return std::find(arr.begin(), arr.end(), value) != arr.end();
+    }
+}
+
+pub fn containsStr(arr: Array<string>, value: string) -> bool {
+    @cpp {
+        return std::find(arr.begin(), arr.end(), value) != arr.end();
+    }
+}
+
+pub fn indexOfInt(arr: Array<int>, value: int) -> Option<int> {
+    @cpp {
+        auto it = std::find(arr.begin(), arr.end(), value);
+        if (it == arr.end()) return std::nullopt;
+        return static_cast<int64_t>(std::distance(arr.begin(), it));
+    }
+}
+
+pub fn indexOfStr(arr: Array<string>, value: string) -> Option<int> {
+    @cpp {
+        auto it = std::find(arr.begin(), arr.end(), value);
+        if (it == arr.end()) return std::nullopt;
+        return static_cast<int64_t>(std::distance(arr.begin(), it));
+    }
+}
+
+// FIX: Return new empty array
+pub fn clearInt(arr: Array<int>) -> Array<int> {
+    @cpp {
+        return std::vector<int64_t>();
+    }
+}
+
+pub fn clearStr(arr: Array<string>) -> Array<string> {
+    @cpp {
+        return std::vector<std::string>();
+    }
+}
+
+// Creates array filled with value
+pub fn filled(size: int, value: int) -> Array<int> {
+    @cpp {
+        return std::vector<int64_t>(static_cast<size_t>(size), static_cast<int64_t>(value));
+    }
+}
+
+// Creates array of zeros
+pub fn zeros(size: int) -> Array<int> {
+    @cpp {
+        return std::vector<int64_t>(static_cast<size_t>(size), 0);
+    }
+}
+
+// Creates array of ones
+pub fn ones(size: int) -> Array<int> {
+    @cpp {
+        return std::vector<int64_t>(static_cast<size_t>(size), 1);
+    }
+}
+
+pub fn range(start: int, end: int) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result;
+        for (int64_t i = start; i < end; i++) {
+            result.push_back(i);
         }
         return result;
     }
 }
 
-pub fn dedupe(arr: Array<any>) -> Array<any> {
+pub fn sum(arr: Array<int>) -> int {
     @cpp {
-        auto result = arr;
+        int64_t total = 0;
+        for (auto v : arr) total += v;
+        return total;
+    }
+}
+
+pub fn min(arr: Array<int>) -> Option<int> {
+    @cpp {
+        if (arr.empty()) return std::nullopt;
+        return *std::min_element(arr.begin(), arr.end());
+    }
+}
+
+pub fn max(arr: Array<int>) -> Option<int> {
+    @cpp {
+        if (arr.empty()) return std::nullopt;
+        return *std::max_element(arr.begin(), arr.end());
+    }
+}
+
+pub fn sort(arr: Array<int>) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result = arr;
+        std::sort(result.begin(), result.end());
+        return result;
+    }
+}
+
+pub fn sortDesc(arr: Array<int>) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result = arr;
+        std::sort(result.begin(), result.end(), std::greater<int64_t>());
+        return result;
+    }
+}
+
+pub fn unique(arr: Array<int>) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result = arr;
         std::sort(result.begin(), result.end());
         result.erase(std::unique(result.begin(), result.end()), result.end());
         return result;
     }
 }
 
-// ============================================================================
-// Higher-order functions
-// ============================================================================
-
-pub fn map(arr: Array<any>, f: fn(any) -> any) -> Array<any> {
+pub fn sortStr(arr: Array<string>) -> Array<string> {
     @cpp {
-        std::vector<decltype(f(arr[0]))> result;
-        result.reserve(arr.size());
-        for (const auto& item : arr) {
-            result.push_back(f(item));
-        }
+        std::vector<std::string> result = arr;
+        std::sort(result.begin(), result.end());
         return result;
     }
 }
 
-pub fn filter(arr: Array<any>, predicate: fn(any) -> bool) -> Array<any> {
+pub fn uniqueStr(arr: Array<string>) -> Array<string> {
     @cpp {
-        std::vector<decltype(arr)::value_type> result;
-        for (const auto& item : arr) {
-            if (predicate(item)) {
-                result.push_back(item);
-            }
-        }
-        return result;
-    }
-}
-
-pub fn reduce(arr: Array<any>, initial: any, f: fn(any, any) -> any) -> any {
-    @cpp {
-        auto acc = initial;
-        for (const auto& item : arr) {
-            acc = f(acc, item);
-        }
-        return acc;
-    }
-}
-
-pub fn forEach(arr: Array<any>, f: fn(any)) {
-    for (item in arr) {
-        f(item);
-    }
-}
-
-pub fn find(arr: Array<any>, predicate: fn(any) -> bool) -> Option<any> {
-    @cpp {
-        for (const auto& item : arr) {
-            if (predicate(item)) {
-                return std::make_optional(item);
-            }
-        }
-        return std::nullopt;
-    }
-}
-
-pub fn findIndex(arr: Array<any>, predicate: fn(any) -> bool) -> Option<int> {
-    @cpp {
-        for (size_t i = 0; i < arr.size(); i++) {
-            if (predicate(arr[i])) {
-                return std::make_optional(static_cast<int>(i));
-            }
-        }
-        return std::nullopt;
-    }
-}
-
-pub fn any(arr: Array<any>, predicate: fn(any) -> bool) -> bool {
-    @cpp {
-        return std::any_of(arr.begin(), arr.end(), predicate);
-    }
-}
-
-pub fn all(arr: Array<any>, predicate: fn(any) -> bool) -> bool {
-    @cpp {
-        return std::all_of(arr.begin(), arr.end(), predicate);
-    }
-}
-
-pub fn none(arr: Array<any>, predicate: fn(any) -> bool) -> bool {
-    @cpp {
-        return std::none_of(arr.begin(), arr.end(), predicate);
-    }
-}
-
-// ============================================================================
-// Aggregation
-// ============================================================================
-
-pub fn sum(arr: Array<int>) -> int {
-    @cpp {
-        return std::accumulate(arr.begin(), arr.end(), 0);
-    }
-}
-
-pub fn sumf(arr: Array<float>) -> float {
-    @cpp {
-        return std::accumulate(arr.begin(), arr.end(), 0.0);
-    }
-}
-
-pub fn minVal(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return std::make_optional(*std::min_element(arr.begin(), arr.end()));
-    }
-}
-
-pub fn maxVal(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return std::make_optional(*std::max_element(arr.begin(), arr.end()));
-    }
-}
-
-// ============================================================================
-// Creation helpers
-// ============================================================================
-
-pub fn range(start: int, endVal: int) -> Array<int> {
-    @cpp {
-        std::vector<int> result;
-        for (int i = start; i < endVal; i++) {
-            result.push_back(i);
-        }
-        return result;
-    }
-}
-
-pub fn rangeStep(start: int, endVal: int, step: int) -> Array<int> {
-    @cpp {
-        std::vector<int> result;
-        for (int i = start; i < endVal; i += step) {
-            result.push_back(i);
-        }
-        return result;
-    }
-}
-
-pub fn filled(size: int, value: any) -> Array<any> {
-    @cpp {
-        return std::vector<decltype(value)>(size, value);
-    }
-}
-
-pub fn zeros(size: int) -> Array<int> {
-    @cpp { return std::vector<int>(size, 0); }
-}
-
-pub fn ones(size: int) -> Array<int> {
-    @cpp { return std::vector<int>(size, 1); }
-}
-
-// ============================================================================
-// Zip operations
-// ============================================================================
-
-pub fn zip(a: Array<any>, b: Array<any>) -> Array<Array<any>> {
-    @cpp {
-        std::vector<std::vector<decltype(a)::value_type>> result;
-        size_t len = std::min(a.size(), b.size());
-        for (size_t i = 0; i < len; i++) {
-            result.push_back({a[i], b[i]});
-        }
-        return result;
-    }
-}
-
-pub fn enumerate(arr: Array<any>) -> Array<Array<any>> {
-    @cpp {
-        std::vector<std::pair<int, decltype(arr)::value_type>> result;
-        for (size_t i = 0; i < arr.size(); i++) {
-            result.push_back({static_cast<int>(i), arr[i]});
-        }
+        std::vector<std::string> result = arr;
+        std::sort(result.begin(), result.end());
+        result.erase(std::unique(result.begin(), result.end()), result.end());
         return result;
     }
 }

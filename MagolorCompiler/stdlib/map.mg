@@ -1,29 +1,23 @@
 // Std.Map - HashMap/Dictionary operations
 // Key-value storage with O(1) average access
 
-using Std.Core.Prelude;
-
 // ============================================================================
-// Basic operations
+// String-String Map operations (most common use case)
 // ============================================================================
 
-pub fn size(map: Map<any, any>) -> int {
-    @cpp { return map.size(); }
+pub fn sizeStrStr(map: Map<string, string>) -> int {
+    @cpp { return static_cast<int64_t>(map.size()); }
 }
 
-pub fn isEmpty(map: Map<any, any>) -> bool {
+pub fn isEmptyStrStr(map: Map<string, string>) -> bool {
     @cpp { return map.empty(); }
 }
 
-pub fn clear(map: Map<any, any>) {
-    @cpp { map.clear(); }
+pub fn clearStrStr(map: Map<string, string>) -> Map<string, string> {
+    @cpp { return std::unordered_map<std::string, std::string>(); }
 }
 
-// ============================================================================
-// Element access
-// ============================================================================
-
-pub fn get(map: Map<any, any>, key: any) -> Option<any> {
+pub fn getStrStr(map: Map<string, string>, key: string) -> Option<string> {
     @cpp {
         auto it = map.find(key);
         if (it != map.end()) {
@@ -33,7 +27,7 @@ pub fn get(map: Map<any, any>, key: any) -> Option<any> {
     }
 }
 
-pub fn getOr(map: Map<any, any>, key: any, defaultVal: any) -> any {
+pub fn getOrStrStr(map: Map<string, string>, key: string, defaultVal: string) -> string {
     @cpp {
         auto it = map.find(key);
         if (it != map.end()) {
@@ -43,59 +37,37 @@ pub fn getOr(map: Map<any, any>, key: any, defaultVal: any) -> any {
     }
 }
 
-pub fn contains(map: Map<any, any>, key: any) -> bool {
+pub fn containsStrStr(map: Map<string, string>, key: string) -> bool {
     @cpp { return map.find(key) != map.end(); }
 }
 
-// ============================================================================
-// Modification
-// ============================================================================
-
-pub fn insert(map: Map<any, any>, key: any, value: any) {
-    @cpp { map[key] = value; }
-}
-
-pub fn set(map: Map<any, any>, key: any, value: any) {
-    @cpp { map[key] = value; }
-}
-
-pub fn remove(map: Map<any, any>, key: any) -> bool {
+pub fn insertStrStr(map: Map<string, string>, key: string, value: string) -> Map<string, string> {
     @cpp {
-        auto it = map.find(key);
-        if (it != map.end()) {
-            map.erase(it);
-            return true;
-        }
-        return false;
+        auto result = map;
+        result[key] = value;
+        return result;
     }
 }
 
-pub fn update(map: Map<any, any>, key: any, f: fn(any) -> any) {
+pub fn setStrStr(map: Map<string, string>, key: string, value: string) -> Map<string, string> {
     @cpp {
-        auto it = map.find(key);
-        if (it != map.end()) {
-            it->second = f(it->second);
-        }
+        auto result = map;
+        result[key] = value;
+        return result;
     }
 }
 
-pub fn insertIfAbsent(map: Map<any, any>, key: any, value: any) -> bool {
+pub fn removeStrStr(map: Map<string, string>, key: string) -> Map<string, string> {
     @cpp {
-        if (map.find(key) == map.end()) {
-            map[key] = value;
-            return true;
-        }
-        return false;
+        auto result = map;
+        result.erase(key);
+        return result;
     }
 }
 
-// ============================================================================
-// Keys and values
-// ============================================================================
-
-pub fn keys(map: Map<any, any>) -> Array<any> {
+pub fn keysStrStr(map: Map<string, string>) -> Array<string> {
     @cpp {
-        std::vector<decltype(map)::key_type> result;
+        std::vector<std::string> result;
         result.reserve(map.size());
         for (const auto& pair : map) {
             result.push_back(pair.first);
@@ -104,9 +76,9 @@ pub fn keys(map: Map<any, any>) -> Array<any> {
     }
 }
 
-pub fn values(map: Map<any, any>) -> Array<any> {
+pub fn valuesStrStr(map: Map<string, string>) -> Array<string> {
     @cpp {
-        std::vector<decltype(map)::mapped_type> result;
+        std::vector<std::string> result;
         result.reserve(map.size());
         for (const auto& pair : map) {
             result.push_back(pair.second);
@@ -115,126 +87,226 @@ pub fn values(map: Map<any, any>) -> Array<any> {
     }
 }
 
-pub fn entries(map: Map<any, any>) -> Array<Array<any>> {
+// ============================================================================
+// String-Int Map operations - FIXED: Use int64_t consistently
+// ============================================================================
+
+pub fn sizeStrInt(map: Map<string, int>) -> int {
+    @cpp { return static_cast<int64_t>(map.size()); }
+}
+
+pub fn isEmptyStrInt(map: Map<string, int>) -> bool {
+    @cpp { return map.empty(); }
+}
+
+pub fn clearStrInt(map: Map<string, int>) -> Map<string, int> {
+    @cpp { return std::unordered_map<std::string, int64_t>(); }
+}
+
+pub fn getStrInt(map: Map<string, int>, key: string) -> Option<int> {
     @cpp {
-        std::vector<std::pair<decltype(map)::key_type, decltype(map)::mapped_type>> result;
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return std::make_optional(it->second);
+        }
+        return std::nullopt;
+    }
+}
+
+pub fn getOrStrInt(map: Map<string, int>, key: string, defaultVal: int) -> int {
+    @cpp {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return it->second;
+        }
+        return defaultVal;
+    }
+}
+
+pub fn containsStrInt(map: Map<string, int>, key: string) -> bool {
+    @cpp { return map.find(key) != map.end(); }
+}
+
+pub fn insertStrInt(map: Map<string, int>, key: string, value: int) -> Map<string, int> {
+    @cpp {
+        std::unordered_map<std::string, int64_t> result = map;
+        result[key] = value;
+        return result;
+    }
+}
+
+pub fn setStrInt(map: Map<string, int>, key: string, value: int) -> Map<string, int> {
+    @cpp {
+        std::unordered_map<std::string, int64_t> result = map;
+        result[key] = value;
+        return result;
+    }
+}
+
+pub fn removeStrInt(map: Map<string, int>, key: string) -> Map<string, int> {
+    @cpp {
+        std::unordered_map<std::string, int64_t> result = map;
+        result.erase(key);
+        return result;
+    }
+}
+
+pub fn keysStrInt(map: Map<string, int>) -> Array<string> {
+    @cpp {
+        std::vector<std::string> result;
         result.reserve(map.size());
         for (const auto& pair : map) {
-            result.push_back(pair);
+            result.push_back(pair.first);
         }
         return result;
     }
 }
 
-// ============================================================================
-// Iteration
-// ============================================================================
-
-pub fn forEach(map: Map<any, any>, f: fn(any, any)) {
+pub fn valuesStrInt(map: Map<string, int>) -> Array<int> {
     @cpp {
+        std::vector<int64_t> result;
+        result.reserve(map.size());
         for (const auto& pair : map) {
-            f(pair.first, pair.second);
+            result.push_back(pair.second);
         }
+        return result;
     }
 }
 
-pub fn mapValues(map: Map<any, any>, f: fn(any) -> any) -> Map<any, any> {
+pub fn incrementStrInt(map: Map<string, int>, key: string) -> Map<string, int> {
     @cpp {
-        std::unordered_map<decltype(map)::key_type, decltype(f(map.begin()->second))> result;
+        std::unordered_map<std::string, int64_t> result = map;
+        result[key]++;
+        return result;
+    }
+}
+
+pub fn decrementStrInt(map: Map<string, int>, key: string) -> Map<string, int> {
+    @cpp {
+        std::unordered_map<std::string, int64_t> result = map;
+        result[key]--;
+        return result;
+    }
+}
+
+// ============================================================================
+// Int-Int Map operations - FIXED: Use int64_t consistently
+// ============================================================================
+
+pub fn sizeIntInt(map: Map<int, int>) -> int {
+    @cpp { return static_cast<int64_t>(map.size()); }
+}
+
+pub fn isEmptyIntInt(map: Map<int, int>) -> bool {
+    @cpp { return map.empty(); }
+}
+
+pub fn getIntInt(map: Map<int, int>, key: int) -> Option<int> {
+    @cpp {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return std::make_optional(it->second);
+        }
+        return std::nullopt;
+    }
+}
+
+pub fn getOrIntInt(map: Map<int, int>, key: int, defaultVal: int) -> int {
+    @cpp {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return it->second;
+        }
+        return defaultVal;
+    }
+}
+
+pub fn containsIntInt(map: Map<int, int>, key: int) -> bool {
+    @cpp { return map.find(key) != map.end(); }
+}
+
+pub fn insertIntInt(map: Map<int, int>, key: int, value: int) -> Map<int, int> {
+    @cpp {
+        std::unordered_map<int64_t, int64_t> result = map;
+        result[key] = value;
+        return result;
+    }
+}
+
+pub fn removeIntInt(map: Map<int, int>, key: int) -> Map<int, int> {
+    @cpp {
+        std::unordered_map<int64_t, int64_t> result = map;
+        result.erase(key);
+        return result;
+    }
+}
+
+pub fn keysIntInt(map: Map<int, int>) -> Array<int> {
+    @cpp {
+        std::vector<int64_t> result;
+        result.reserve(map.size());
         for (const auto& pair : map) {
-            result[pair.first] = f(pair.second);
+            result.push_back(pair.first);
         }
         return result;
     }
 }
 
-pub fn filterMap(map: Map<any, any>, predicate: fn(any, any) -> bool) -> Map<any, any> {
+pub fn valuesIntInt(map: Map<int, int>) -> Array<int> {
     @cpp {
-        decltype(map) result;
+        std::vector<int64_t> result;
+        result.reserve(map.size());
         for (const auto& pair : map) {
-            if (predicate(pair.first, pair.second)) {
-                result[pair.first] = pair.second;
-            }
+            result.push_back(pair.second);
         }
         return result;
     }
 }
 
 // ============================================================================
-// Merging
+// Int-String Map operations - FIXED: Use int64_t consistently
 // ============================================================================
 
-pub fn merge(a: Map<any, any>, b: Map<any, any>) -> Map<any, any> {
+pub fn sizeIntStr(map: Map<int, string>) -> int {
+    @cpp { return static_cast<int64_t>(map.size()); }
+}
+
+pub fn getIntStr(map: Map<int, string>, key: int) -> Option<string> {
     @cpp {
-        auto result = a;
-        for (const auto& pair : b) {
-            result[pair.first] = pair.second;
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return std::make_optional(it->second);
         }
+        return std::nullopt;
+    }
+}
+
+pub fn getOrIntStr(map: Map<int, string>, key: int, defaultVal: string) -> string {
+    @cpp {
+        auto it = map.find(key);
+        if (it != map.end()) {
+            return it->second;
+        }
+        return defaultVal;
+    }
+}
+
+pub fn containsIntStr(map: Map<int, string>, key: int) -> bool {
+    @cpp { return map.find(key) != map.end(); }
+}
+
+pub fn insertIntStr(map: Map<int, string>, key: int, value: string) -> Map<int, string> {
+    @cpp {
+        std::unordered_map<int64_t, std::string> result = map;
+        result[key] = value;
         return result;
     }
 }
 
-pub fn mergeWith(a: Map<any, any>, b: Map<any, any>, f: fn(any, any) -> any) -> Map<any, any> {
+pub fn removeIntStr(map: Map<int, string>, key: int) -> Map<int, string> {
     @cpp {
-        auto result = a;
-        for (const auto& pair : b) {
-            auto it = result.find(pair.first);
-            if (it != result.end()) {
-                it->second = f(it->second, pair.second);
-            } else {
-                result[pair.first] = pair.second;
-            }
-        }
-        return result;
-    }
-}
-
-// ============================================================================
-// Creation helpers
-// ============================================================================
-
-pub fn fromEntries(entries: Array<Array<any>>) -> Map<any, any> {
-    @cpp {
-        std::unordered_map<decltype(entries[0][0]), decltype(entries[0][1])> result;
-        for (const auto& entry : entries) {
-            if (entry.size() >= 2) {
-                result[entry[0]] = entry[1];
-            }
-        }
-        return result;
-    }
-}
-
-pub fn invert(map: Map<any, any>) -> Map<any, any> {
-    @cpp {
-        std::unordered_map<decltype(map)::mapped_type, decltype(map)::key_type> result;
-        for (const auto& pair : map) {
-            result[pair.second] = pair.first;
-        }
-        return result;
-    }
-}
-
-// ============================================================================
-// Counting and grouping
-// ============================================================================
-
-pub fn countBy(arr: Array<any>, keyFn: fn(any) -> any) -> Map<any, int> {
-    @cpp {
-        std::unordered_map<decltype(keyFn(arr[0])), int> result;
-        for (const auto& item : arr) {
-            result[keyFn(item)]++;
-        }
-        return result;
-    }
-}
-
-pub fn groupBy(arr: Array<any>, keyFn: fn(any) -> any) -> Map<any, Array<any>> {
-    @cpp {
-        std::unordered_map<decltype(keyFn(arr[0])), std::vector<decltype(arr)::value_type>> result;
-        for (const auto& item : arr) {
-            result[keyFn(item)].push_back(item);
-        }
+        std::unordered_map<int64_t, std::string> result = map;
+        result.erase(key);
         return result;
     }
 }

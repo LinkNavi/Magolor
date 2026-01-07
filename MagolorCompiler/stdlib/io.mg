@@ -1,54 +1,72 @@
 // Std.IO - Input/Output operations
-// Provides console I/O and basic file operations
-
-using Std.Core.Prelude;
 
 // ============================================================================
 // Console Output
 // ============================================================================
 
-// Print without newline
 pub fn print(s: string) {
     @cpp {
         std::cout << s;
     }
 }
 
-// Print with newline
 pub fn println(s: string) {
     @cpp {
         std::cout << s << std::endl;
     }
 }
 
-// Print to stderr
+pub fn printlnEmpty() {
+    @cpp {
+        std::cout << std::endl;
+    }
+}
+
 pub fn eprint(s: string) {
     @cpp {
         std::cerr << s;
     }
 }
 
-// Print to stderr with newline
 pub fn eprintln(s: string) {
     @cpp {
         std::cerr << s << std::endl;
     }
 }
 
-// Formatted print (uses string interpolation internally)
-pub fn printf(format: string, args: Array<string>) {
-    let mut result = format;
-    for (i in 0..args.length()) {
-        let placeholder = "{" + toString(i) + "}";
-        result = result.replace(placeholder, args[i]);
+pub fn printInt(n: int) {
+    @cpp {
+        std::cout << n;
     }
-    print(result);
 }
 
-// Debug print - includes type info
-pub fn dbg(value: any, label: string) {
+pub fn printlnInt(n: int) {
     @cpp {
-        std::cerr << "[DEBUG " << label << "] " << value << std::endl;
+        std::cout << n << std::endl;
+    }
+}
+
+pub fn printFloat(n: float) {
+    @cpp {
+        std::cout << n;
+    }
+}
+
+pub fn printlnFloat(n: float) {
+    @cpp {
+        std::cout << n << std::endl;
+    }
+}
+
+pub fn printBool(b: bool) {
+    @cpp {
+        std::cout << (b ? "true" : "false");
+    }
+}
+
+pub fn printlnBool(b: bool) {
+    @cpp {
+        std::cout << (b ? "true" : "false") << std::endl;
     }
 }
 
@@ -56,7 +74,6 @@ pub fn dbg(value: any, label: string) {
 // Console Input
 // ============================================================================
 
-// Read a line from stdin
 pub fn readLine() -> string {
     @cpp {
         std::string line;
@@ -65,13 +82,15 @@ pub fn readLine() -> string {
     }
 }
 
-// Read a line with prompt
 pub fn prompt(message: string) -> string {
-    print(message);
-    return readLine();
+    @cpp {
+        std::cout << message;
+        std::string line;
+        std::getline(std::cin, line);
+        return line;
+    }
 }
 
-// Read all input until EOF
 pub fn readAll() -> string {
     @cpp {
         std::string content, line;
@@ -82,7 +101,6 @@ pub fn readAll() -> string {
     }
 }
 
-// Read a single character
 pub fn readChar() -> string {
     @cpp {
         char c;
@@ -91,10 +109,33 @@ pub fn readChar() -> string {
     }
 }
 
-// Check if stdin has data available
 pub fn hasInput() -> bool {
     @cpp {
         return std::cin.peek() != EOF;
+    }
+}
+
+pub fn readInt() -> Option<int> {
+    @cpp {
+        std::string line;
+        std::getline(std::cin, line);
+        try {
+            return std::stoll(line);
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+}
+
+pub fn readFloat() -> Option<float> {
+    @cpp {
+        std::string line;
+        std::getline(std::cin, line);
+        try {
+            return std::stod(line);
+        } catch (...) {
+            return std::nullopt;
+        }
     }
 }
 
@@ -102,44 +143,45 @@ pub fn hasInput() -> bool {
 // Formatting helpers
 // ============================================================================
 
-// Pad string on left
 pub fn padLeft(s: string, width: int, padChar: string) -> string {
-    let len = s.length();
-    if (len >= width) { return s; }
-    let padding = "";
-    for (i in 0..(width - len)) {
-        padding = padding + padChar;
+    @cpp {
+        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
+        std::string padding;
+        int64_t needed = width - s.length();
+        for (int64_t i = 0; i < needed; i++) {
+            padding += padChar[0];
+        }
+        return padding + s;
     }
-    return padding + s;
 }
 
-// Pad string on right
 pub fn padRight(s: string, width: int, padChar: string) -> string {
-    let len = s.length();
-    if (len >= width) { return s; }
-    let padding = "";
-    for (i in 0..(width - len)) {
-        padding = padding + padChar;
+    @cpp {
+        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
+        std::string result = s;
+        int64_t needed = width - s.length();
+        for (int64_t i = 0; i < needed; i++) {
+            result += padChar[0];
+        }
+        return result;
     }
-    return s + padding;
 }
 
-// Center string
 pub fn center(s: string, width: int, padChar: string) -> string {
-    let len = s.length();
-    if (len >= width) { return s; }
-    let totalPad = width - len;
-    let leftPad = totalPad / 2;
-    let rightPad = totalPad - leftPad;
-    let left = "";
-    let right = "";
-    for (i in 0..leftPad) { left = left + padChar; }
-    for (i in 0..rightPad) { right = right + padChar; }
-    return left + s + right;
+    @cpp {
+        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
+        int64_t totalPad = width - s.length();
+        int64_t leftPad = totalPad / 2;
+        int64_t rightPad = totalPad - leftPad;
+        std::string left, right;
+        for (int64_t i = 0; i < leftPad; i++) left += padChar[0];
+        for (int64_t i = 0; i < rightPad; i++) right += padChar[0];
+        return left + s + right;
+    }
 }
 
 // ============================================================================
-// Output stream abstraction
+// Output stream abstraction - FIXED: Class methods need proper @cpp blocks
 // ============================================================================
 
 pub class Writer {
@@ -147,39 +189,57 @@ pub class Writer {
     pub autoFlush: bool;
     
     pub fn create() {
-        this.buffer = "";
-        this.autoFlush = false;
+        @cpp {
+            this->buffer = "";
+            this->autoFlush = false;
+        }
     }
     
     pub fn write(s: string) {
-        this.buffer = this.buffer + s;
-        if (this.autoFlush) {
-            this.flush();
+        @cpp {
+            this->buffer = this->buffer + s;
+            if (this->autoFlush) {
+                std::cout << this->buffer;
+                this->buffer = "";
+            }
         }
     }
     
     pub fn writeLine(s: string) {
-        this.write(s + "\n");
+        @cpp {
+            this->buffer = this->buffer + s + "\n";
+            if (this->autoFlush) {
+                std::cout << this->buffer;
+                this->buffer = "";
+            }
+        }
     }
     
     pub fn flush() {
-        print(this.buffer);
-        this.buffer = "";
+        @cpp {
+            std::cout << this->buffer;
+            this->buffer = "";
+        }
     }
     
     pub fn toString() -> string {
-        return this.buffer;
+        @cpp {
+            return this->buffer;
+        }
+    }
+    
+    pub fn clear() {
+        @cpp {
+            this->buffer = "";
+        }
     }
 }
 
-// Create a buffered writer
 pub fn newWriter() -> Writer {
-    return new Writer();
-}
-
-// Create an auto-flushing writer
-pub fn newAutoWriter() -> Writer {
-    let mut w = new Writer();
-    w.autoFlush = true;
-    return w;
+    @cpp {
+        Writer w;
+        w.buffer = "";
+        w.autoFlush = false;
+        return w;
+    }
 }
