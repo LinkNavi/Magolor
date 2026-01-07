@@ -44,6 +44,38 @@ void printUsage() {
   std::cout << "    --emit-llvm        Also emit LLVM IR file\n";
 }
 
+bool ensureRuntimeBuilt() {
+    std::string runtimeDir = "./runtime";
+    std::string runtimeLib = runtimeDir + "/libmagolor.a";
+    std::string runtimeSrc = runtimeDir + "/runtime.c";
+    
+    // Check if library exists and is newer than source
+    if (fs::exists(runtimeLib) && fs::exists(runtimeSrc)) {
+        auto libTime = fs::last_write_time(runtimeLib);
+        auto srcTime = fs::last_write_time(runtimeSrc);
+        if (libTime >= srcTime) {
+            return true; // Already built and up to date
+        }
+    }
+    
+    std::cout << "\033[1;32m   Building\033[0m runtime library...\n";
+    
+    // Build the runtime
+    std::string buildCmd = "cd " + runtimeDir + " && "
+                          "gcc -c runtime.c -o runtime.o -O2 -Wall && "
+                          "ar rcs libmagolor.a runtime.o && "
+                          "rm runtime.o 2>&1";
+    
+    int result = std::system(buildCmd.c_str());
+    if (result != 0) {
+        std::cerr << "\033[1;31merror\033[0m: Failed to build runtime library\n";
+        return false;
+    }
+    
+    std::cout << "\033[1;32m   Finished\033[0m runtime library\n";
+    return true;
+}
+
 Program compileFile(const std::string &filepath, const std::string &packageName,
                     bool &hasErrors, bool verbose = false) {
     if (verbose) {
@@ -105,7 +137,12 @@ bool compileWithLLVM(const Program& prog, const std::string& outputFile, bool ve
     if (verbose) {
         std::cout << "\033[1;32m   Generating\033[0m LLVM IR\n";
     }
-    
+
+if (!ensureRuntimeBuilt()) {
+        return false;
+    }
+
+   
     // Generate LLVM IR
     LLVMCodeGen codegen(outputFile);
     if (!codegen.generate(prog)) {
@@ -135,15 +172,18 @@ bool compileWithLLVM(const Program& prog, const std::string& outputFile, bool ve
     
     // Compile runtime library
     std::string runtimeObj = "runtime.o";
-    std::string compileRuntime = "gcc -c runtime.c -o " + runtimeObj + " 2>&1";
+    std::string compileRuntime = "gcc -c runtime/runtime.c -o " + runtimeObj + " 2>&1";
     if (std::system(compileRuntime.c_str()) != 0) {
         std::cerr << "\033[1;31merror\033[0m: Failed to compile runtime library\n";
         return false;
     }
     
     // Link everything together
-    std::string linkCmd = "gcc " + objFile + " " + runtimeObj + 
-                         " -o " + outputFile + " -lm 2>&1";
+
+std::string runtimeLib = fs::absolute("./runtime/libmagolor.a").string();
+    std::string linkCmd = "gcc " + objFile + " " + runtimeLib + 
+                         " -o " + outputFile + " -lm -lstdc++ 2>&1";
+
     
     FILE* pipe = popen(linkCmd.c_str(), "r");
     if (!pipe) {
