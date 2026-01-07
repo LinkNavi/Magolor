@@ -736,7 +736,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
     if (func.isConstant) {
       ss << "    constexpr ";
       if (func.returnType == "int")
-        ss << "int";
+        ss << "int64_t";
       else if (func.returnType == "float")
         ss << "double";
       else
@@ -747,7 +747,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
 
       // Return type
       if (func.returnType == "int")
-        ss << "int";
+        ss << "int64_t";
       else if (func.returnType == "float")
         ss << "double";
       else if (func.returnType == "string")
@@ -761,7 +761,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
             func.returnType.substr(7, func.returnType.size() - 8);
         ss << "std::optional<";
         if (inner == "int")
-          ss << "int";
+          ss << "int64_t";
         else if (inner == "string")
           ss << "std::string";
         else if (inner == "float")
@@ -774,7 +774,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
             func.returnType.substr(6, func.returnType.size() - 7);
         ss << "std::vector<";
         if (inner == "int")
-          ss << "int";
+          ss << "int64_t";
         else if (inner == "string")
           ss << "std::string";
         else
@@ -792,7 +792,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
 
         const std::string &ptype = func.paramTypes[i];
         if (ptype == "int")
-          ss << "int";
+          ss << "int64_t";
         else if (ptype == "float")
           ss << "double";
         else if (ptype == "string")
@@ -803,7 +803,7 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
           std::string inner = ptype.substr(6, ptype.size() - 7);
           ss << "std::vector<";
           if (inner == "int")
-            ss << "int";
+            ss << "int64_t";
           else if (inner == "string")
             ss << "std::string";
           else
@@ -825,11 +825,12 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
   return ss.str();
 }
 
+
 std::string StdLibCodeGen::extractCppCode(const std::string &source,
                                           const std::string &funcName) {
-  // Find the function
-  std::regex funcStartRegex("pub\\s+(?:static\\s+)?fn\\s+" + funcName +
-                            "\\s*\\(");
+  // Build pattern to find the function
+  std::string funcPattern = "pub\\s+(?:static\\s+)?fn\\s+" + funcName + "\\s*\\(";
+  std::regex funcStartRegex(funcPattern);
   std::smatch match;
 
   if (!std::regex_search(source, match, funcStartRegex)) {
@@ -837,45 +838,94 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
   }
 
   size_t funcStart = match.position();
-
-  // Find @cpp block after this function
-  size_t cppStart = source.find("@cpp", funcStart);
-  if (cppStart == std::string::npos)
-    return "";
-
-  // Make sure @cpp is within this function
-  size_t nextFunc = source.find("pub fn", funcStart + 10);
-  size_t nextStaticFunc = source.find("pub static fn", funcStart + 10);
-  size_t nextBoundary = std::min(
-      nextFunc != std::string::npos ? nextFunc : source.size(),
-      nextStaticFunc != std::string::npos ? nextStaticFunc : source.size());
-
-  if (cppStart > nextBoundary) {
+  
+  // Find the opening brace of the function body
+  size_t funcBodyStart = source.find('{', funcStart);
+  if (funcBodyStart == std::string::npos) {
     return "";
   }
-
-  // Find opening brace after @cpp
-  size_t braceStart = source.find('{', cppStart);
-  if (braceStart == std::string::npos)
-    return "";
-
-  // Find matching closing brace
+  
+  // Find the matching closing brace of the function using proper brace counting
   int depth = 1;
-  size_t pos = braceStart + 1;
+  size_t pos = funcBodyStart + 1;
+  bool inString = false;
+  char stringChar = 0;
+  
   while (pos < source.size() && depth > 0) {
-    if (source[pos] == '{')
-      depth++;
-    else if (source[pos] == '}')
-      depth--;
+    char c = source[pos];
+    char prev = (pos > 0) ? source[pos - 1] : 0;
+    
+    // Handle string literals - don't count braces inside strings
+    if ((c == '"' || c == '\'') && prev != '\\') {
+      if (!inString) {
+        inString = true;
+        stringChar = c;
+      } else if (c == stringChar) {
+        inString = false;
+      }
+    }
+    
+    if (!inString) {
+      if (c == '{') depth++;
+      else if (c == '}') depth--;
+    }
     pos++;
   }
-
-  if (depth != 0)
+  
+  if (depth != 0) {
     return "";
+  }
+  
+  size_t funcBodyEnd = pos - 1;
+  std::string funcBody = source.substr(funcBodyStart + 1, funcBodyEnd - funcBodyStart - 1);
+  
+  // Now find @cpp block within the function body
+  size_t cppStart = funcBody.find("@cpp");
+  if (cppStart == std::string::npos) {
+    // CRITICAL: No @cpp block found - return empty string!
+    // This prevents Magolor syntax from appearing in C++ output
+    return "";
+  }
+  
+  // Find opening brace after @cpp
+  size_t cppBraceStart = funcBody.find('{', cppStart);
+  if (cppBraceStart == std::string::npos) {
+    return "";
+  }
+  
+  // Find matching closing brace for @cpp block
+  depth = 1;
+  pos = cppBraceStart + 1;
+  inString = false;
+  stringChar = 0;
+  
+  while (pos < funcBody.size() && depth > 0) {
+    char c = funcBody[pos];
+    char prev = (pos > 0) ? funcBody[pos - 1] : 0;
+    
+    if ((c == '"' || c == '\'') && prev != '\\') {
+      if (!inString) {
+        inString = true;
+        stringChar = c;
+      } else if (c == stringChar) {
+        inString = false;
+      }
+    }
+    
+    if (!inString) {
+      if (c == '{') depth++;
+      else if (c == '}') depth--;
+    }
+    pos++;
+  }
+  
+  if (depth != 0) {
+    return "";
+  }
+  
+  std::string code = funcBody.substr(cppBraceStart + 1, pos - cppBraceStart - 2);
 
-  std::string code = source.substr(braceStart + 1, pos - braceStart - 2);
-
-  // Trim
+  // Trim whitespace
   size_t start = code.find_first_not_of(" \t\n\r");
   size_t end = code.find_last_not_of(" \t\n\r");
 
