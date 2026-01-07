@@ -133,19 +133,31 @@ bool CodeGen::isClassName(const std::string &name) const {
   return knownClassNames.count(name) > 0;
 }
 
+
 std::string CodeGen::generate(const Program &prog) {
   out.str("");
   out.clear();
   importedNamespaces.clear();
   knownClassNames.clear();
   
-  // Generate includes FIRST (before any namespaces)
-  out << "// Force stdlib generation\n";
+  // ============================================================================
+  // STEP 1: Generate includes FIRST (before any namespaces)
+  // ============================================================================
+  out << "// Auto-generated C++ code from Magolor\n";
   out << "#include <vector>\n";
   out << "#include <unordered_map>\n"; 
   out << "#include <optional>\n";
   out << "#include <iostream>\n";
-  out << "#include <string>\n\n";
+  out << "#include <string>\n";
+  out << "#include <algorithm>\n";
+  out << "#include <functional>\n";
+  out << "#include <sstream>\n";
+  out << "#include <fstream>\n";
+  out << "#include <filesystem>\n";
+  out << "#include <random>\n";
+  out << "#include <chrono>\n";
+  out << "#include <thread>\n";
+  out << "#include <cmath>\n\n";
   
   // Collect all class names
   for (const auto &cls : prog.classes) {
@@ -155,27 +167,60 @@ std::string CodeGen::generate(const Program &prog) {
   // Generate C/C++ imports
   genCImports(prog.cimports);
   
-  // Generate standard library helper functions
-  // These will be in the global namespace, not in "Std"
-  std::string stdlibCode = StdLibGenerator::generateAll();
+  // ============================================================================
+  // STEP 2: Generate stdlib helpers ONCE - using header guards
+  // ============================================================================
+  out << "// ============================================================================\n";
+  out << "// Standard Library Helpers (generated once)\n";
+  out << "// ============================================================================\n";
+  out << "#ifndef MAGOLOR_STDLIB_HELPERS_H\n";
+  out << "#define MAGOLOR_STDLIB_HELPERS_H\n\n";
   
-  // Remove any "namespace Std {" wrappers if they exist
-  size_t nsPos = stdlibCode.find("namespace Std {");
-  if (nsPos != std::string::npos) {
-    // Remove the namespace declaration
-    stdlibCode.erase(nsPos, 15); // Length of "namespace Std {"
-    
-    // Find and remove the closing brace
-    size_t closePos = stdlibCode.rfind("}");
-    if (closePos != std::string::npos) {
-      stdlibCode.erase(closePos, 1);
-    }
-  }
+  // String conversion helpers
+  out << "// Template helpers for string conversion\n";
+  out << "template<typename T>\n";
+  out << "inline std::string mg_to_string(const T& val) { \n";
+  out << "    std::ostringstream oss; \n";
+  out << "    oss << val; \n";
+  out << "    return oss.str(); \n";
+  out << "}\n\n";
   
-  out << stdlibCode;
-  out << "\n";
+  out << "template<>\n";
+  out << "inline std::string mg_to_string(const bool& val) {\n";
+  out << "    return val ? \"true\" : \"false\";\n";
+  out << "}\n\n";
   
-  // Array helper wrappers - USE ::std:: prefix
+  out << "template<>\n";
+  out << "inline std::string mg_to_string(const std::string& val) {\n";
+  out << "    return val;\n";
+  out << "}\n\n";
+  
+  // Option helpers
+  out << "// Global Option helpers\n";
+  out << "template<typename T>\n";
+  out << "inline bool isSome(const std::optional<T>& opt) { return opt.has_value(); }\n\n";
+  
+  out << "template<typename T>\n";
+  out << "inline bool isNone(const std::optional<T>& opt) { return !opt.has_value(); }\n\n";
+  
+  out << "template<typename T>\n";
+  out << "inline T unwrap(const std::optional<T>& opt) {\n";
+  out << "    if (!opt.has_value()) {\n";
+  out << "        throw std::runtime_error(\"Called unwrap on None value\");\n";
+  out << "    }\n";
+  out << "    return opt.value();\n";
+  out << "}\n\n";
+  
+  out << "template<typename T>\n";
+  out << "inline T unwrapOr(const std::optional<T>& opt, const T& defaultValue) {\n";
+  out << "    return opt.value_or(defaultValue);\n";
+  out << "}\n\n";
+  
+  out << "#endif // MAGOLOR_STDLIB_HELPERS_H\n\n";
+  
+  // ============================================================================
+  // STEP 3: Generate standard helper wrappers
+  // ============================================================================
   out << "// Array helper wrappers\n";
   out << "template<typename T> int length(const ::std::vector<T>& arr) { return "
          "arr.size(); }\n";
@@ -185,7 +230,6 @@ std::string CodeGen::generate(const Program &prog) {
          "arr.back(); arr.pop_back(); return v; }\n";
   out << "\n";
   
-  // Map helper wrappers - USE ::std:: prefix
   out << "// Map helper wrappers\n";
   out << "namespace Map {\n";
   out << "  template<typename K, typename V> ::std::unordered_map<K,V> create() "
@@ -206,7 +250,6 @@ std::string CodeGen::generate(const Program &prog) {
   out << "}\n";
   out << "\n";
   
-  // File helper - USE ::std:: prefix
   out << "// File helper\n";
   out << "namespace File {\n";
   out << "  inline bool exists(const ::std::string& path) {\n";
@@ -215,18 +258,24 @@ std::string CodeGen::generate(const Program &prog) {
   out << "}\n";
   out << "\n";
   
-  // Forward declarations for classes
+  // ============================================================================
+  // STEP 4: Forward declarations for classes
+  // ============================================================================
   for (const auto &cls : prog.classes) {
     emitLine("class " + cls.name + ";");
   }
   emitLine("");
   
-  // Generate classes
+  // ============================================================================
+  // STEP 5: Generate classes
+  // ============================================================================
   for (const auto &cls : prog.classes) {
     genClass(cls);
   }
   
-  // Forward declarations for functions
+  // ============================================================================
+  // STEP 6: Forward declarations for functions
+  // ============================================================================
   for (const auto &fn : prog.functions) {
     if (fn.name != "main") {
       emit(typeToString(fn.returnType) + " " + fn.name + "(");
@@ -240,7 +289,9 @@ std::string CodeGen::generate(const Program &prog) {
   }
   emitLine("");
   
-  // Generate function definitions
+  // ============================================================================
+  // STEP 7: Generate function definitions
+  // ============================================================================
   for (const auto &fn : prog.functions) {
     genFunction(fn);
     emitLine("");
@@ -248,6 +299,10 @@ std::string CodeGen::generate(const Program &prog) {
   
   return out.str();
 }
+
+
+
+
 
 void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("class " + cls.name + " {");
