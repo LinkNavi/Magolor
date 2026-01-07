@@ -332,6 +332,45 @@ std::string CodeGen::generate(const Program &prog) {
 }
 
 
+void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
+  currentClassName = className;
+
+  std::string retType = typeToString(fn.returnType);
+  if (fn.name == "main" && className.empty())
+    emitLine("int main() {");
+  else if (fn.name == "create" && !className.empty()) {
+    emitIndent();
+    emit("void create(");
+    for (size_t i = 0; i < fn.params.size(); i++) {
+      if (i > 0)
+        emit(", ");
+      emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
+    }
+    emit(") {\n");
+  } else {
+    emitIndent();
+    // CRITICAL: Add static keyword for static methods
+    if (fn.isStatic && !className.empty()) {
+      emit("static ");
+    }
+    emit(retType + " " + fn.name + "(");
+    for (size_t i = 0; i < fn.params.size(); i++) {
+      if (i > 0)
+        emit(", ");
+      emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
+    }
+    emit(") {\n");
+  }
+  indent++;
+  for (const auto &stmt : fn.body)
+    genStmt(stmt);
+  if (fn.name == "main" && className.empty())
+    emitLine("return 0;");
+  indent--;
+  emitLine("}");
+
+  currentClassName.clear();
+}
 
 
 void CodeGen::genClass(const ClassDecl &cls) {
@@ -383,7 +422,7 @@ void CodeGen::genClass(const ClassDecl &cls) {
     for (const auto &m : cls.methods) {
       if (m.isPublic) {
         if (m.isStatic) {
-          emit("    static ");
+
         }
         genFunction(m, cls.name);
       }
@@ -463,44 +502,6 @@ void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("");
 }
 
-void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
-  // Track current class context for proper 'this' handling in return statements
-  currentClassName = className;
-
-  std::string retType = typeToString(fn.returnType);
-  if (fn.name == "main" && className.empty())
-    emitLine("int main() {");
-  else if (fn.name == "create" && !className.empty()) {
-    // Constructor - special handling
-    emitIndent();
-    emit("void create(");
-    for (size_t i = 0; i < fn.params.size(); i++) {
-      if (i > 0)
-        emit(", ");
-      emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
-    }
-    emit(") {\n");
-  } else {
-    emitIndent();
-    emit(retType + " " + fn.name + "(");
-    for (size_t i = 0; i < fn.params.size(); i++) {
-      if (i > 0)
-        emit(", ");
-      emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
-    }
-    emit(") {\n");
-  }
-  indent++;
-  for (const auto &stmt : fn.body)
-    genStmt(stmt);
-  if (fn.name == "main" && className.empty())
-    emitLine("return 0;");
-  indent--;
-  emitLine("}");
-
-  // Clear class context after function
-  currentClassName.clear();
-}
 
 void CodeGen::collectCaptures(const std::vector<StmtPtr> &,
                               const std::vector<Param> &params) {
