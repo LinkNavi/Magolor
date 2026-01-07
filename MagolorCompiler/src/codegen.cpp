@@ -180,6 +180,8 @@ std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
   return cppCode.str();
 }
 
+
+
 std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
   auto &loader = StdLibLoader::instance();
   auto *module = loader.loadModule(modulePath);
@@ -209,7 +211,9 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
   out << "// =======================================================================\n";
   out << "namespace " << moduleName << " {\n\n";
 
-  // Extract classes
+  // =========================================================================
+  // Extract classes WITH their methods inside
+  // =========================================================================
   std::regex classRegex(R"(pub\s+class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{)");
   auto classBegin = std::sregex_iterator(source.begin(), source.end(), classRegex);
   auto classEnd = std::sregex_iterator();
@@ -222,17 +226,17 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
     int depth = 1;
     size_t pos = braceStart + 1;
     while (pos < source.size() && depth > 0) {
-      if (source[pos] == '{')
-        depth++;
-      else if (source[pos] == '}')
-        depth--;
+      if (source[pos] == '{') depth++;
+      else if (source[pos] == '}') depth--;
       pos++;
     }
 
     std::string classBody = source.substr(braceStart + 1, pos - braceStart - 2);
-    out << "    class " << className << " {\n";
-    out << "    public:\n";
+    
+    // Use struct so all members are public by default
+    out << "    struct " << className << " {\n";
 
+    // Extract fields
     std::regex fieldRegex(R"(pub\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^;]+);)");
     auto fBegin = std::sregex_iterator(classBody.begin(), classBody.end(), fieldRegex);
     auto fEnd = std::sregex_iterator();
@@ -241,11 +245,9 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
       std::string fieldName = (*fit)[1].str();
       std::string fieldType = (*fit)[2].str();
       
-      // Trim whitespace
       while (!fieldType.empty() && std::isspace(fieldType.front())) fieldType.erase(0, 1);
       while (!fieldType.empty() && std::isspace(fieldType.back())) fieldType.pop_back();
 
-      // Convert Magolor types to C++ types
       std::string cppType;
       std::string defaultVal;
       
@@ -269,7 +271,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
         else if (inner == "float") inner = "double";
         else if (inner == "string") inner = "std::string";
         cppType = "std::vector<" + inner + ">";
-        defaultVal = ""; // vectors default-construct to empty
       } else if (fieldType.find("Option<") == 0) {
         size_t start = fieldType.find('<') + 1;
         size_t end = fieldType.rfind('>');
@@ -277,7 +278,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
         if (inner == "int") inner = "int64_t";
         else if (inner == "string") inner = "std::string";
         cppType = "std::optional<" + inner + ">";
-        defaultVal = "";
       } else if (fieldType.find("Map<") == 0) {
         size_t start = fieldType.find('<') + 1;
         size_t end = fieldType.rfind('>');
@@ -296,26 +296,187 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
         } else {
           cppType = fieldType;
         }
-        defaultVal = "";
       } else {
         cppType = fieldType;
-        defaultVal = "";
       }
 
       out << "        " << cppType << " " << fieldName << defaultVal << ";\n";
     }
 
+    // Extract methods INSIDE the class
+    std::regex methodRegex(
+        R"(pub\s+(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^\{]+))?\s*\{)");
+    auto mBegin = std::sregex_iterator(classBody.begin(), classBody.end(), methodRegex);
+    auto mEnd = std::sregex_iterator();
+
+    for (auto mit = mBegin; mit != mEnd; ++mit) {
+      std::string methodName = (*mit)[1].str();
+      std::string params = (*mit)[2].str();
+      std::string returnType = (*mit)[3].matched ? (*mit)[3].str() : "void";
+
+      // Trim return type
+      size_t rtStart = returnType.find_first_not_of(" \t\n");
+      if (rtStart != std::string::npos) {
+        returnType = returnType.substr(rtStart);
+        size_t rtEnd = returnType.find_last_not_of(" \t\n");
+        returnType = returnType.substr(0, rtEnd + 1);
+      }
+      if (returnType.empty()) returnType = "void";
+
+      // Convert return type
+      if (returnType == "int") returnType = "int64_t";
+      else if (returnType == "float") returnType = "double";
+      else if (returnType == "string") returnType = "std::string";
+      else if (returnType == "Self" || returnType == className) returnType = className + "&";
+
+      // Find method body and @cpp block
+      size_t methodStart = (*mit).position();
+      size_t methodBodyStart = classBody.find('{', methodStart) + 1;
+      
+      int mdepth = 1;
+      size_t mpos = methodBodyStart;
+      while (mpos < classBody.size() && mdepth > 0) {
+        if (classBody[mpos] == '{') mdepth++;
+        else if (classBody[mpos] == '}') mdepth--;
+        mpos++;
+      }
+      
+      std::string methodBody = classBody.substr(methodBodyStart, mpos - methodBodyStart - 1);
+      
+      // Find @cpp block
+      size_t cppPos = methodBody.find("@cpp");
+      std::string cppImpl;
+      
+      if (cppPos != std::string::npos) {
+        size_t cppBraceStart = methodBody.find('{', cppPos);
+        if (cppBraceStart != std::string::npos) {
+          int cdepth = 1;
+          size_t cpos = cppBraceStart + 1;
+          bool inStr = false;
+          while (cpos < methodBody.size() && cdepth > 0) {
+            if (methodBody[cpos] == '"' && (cpos == 0 || methodBody[cpos-1] != '\\')) {
+              inStr = !inStr;
+            } else if (!inStr) {
+              if (methodBody[cpos] == '{') cdepth++;
+              else if (methodBody[cpos] == '}') cdepth--;
+            }
+            cpos++;
+          }
+          
+          if (cdepth == 0) {
+            cppImpl = methodBody.substr(cppBraceStart + 1, cpos - cppBraceStart - 2);
+            size_t s = cppImpl.find_first_not_of(" \t\n\r");
+            size_t e = cppImpl.find_last_not_of(" \t\n\r");
+            if (s != std::string::npos && e != std::string::npos) {
+              cppImpl = cppImpl.substr(s, e - s + 1);
+            }
+          }
+        }
+      }
+
+      // CRITICAL: Skip methods without @cpp implementation
+      if (cppImpl.empty()) continue;
+
+      // Parse method parameters
+      std::vector<std::pair<std::string, std::string>> methodParams;
+      if (!params.empty()) {
+        std::vector<std::string> paramParts;
+        int pdepth = 0;
+        std::string current;
+        for (char c : params) {
+          if (c == '<') pdepth++;
+          else if (c == '>') pdepth--;
+          if (c == ',' && pdepth == 0) {
+            paramParts.push_back(current);
+            current.clear();
+          } else {
+            current += c;
+          }
+        }
+        if (!current.empty()) paramParts.push_back(current);
+        
+        for (auto& param : paramParts) {
+          size_t ps = param.find_first_not_of(" \t");
+          if (ps != std::string::npos) param = param.substr(ps);
+          
+          size_t colon = param.find(':');
+          if (colon != std::string::npos) {
+            std::string pname = param.substr(0, colon);
+            std::string ptype = param.substr(colon + 1);
+            
+            ps = pname.find_last_not_of(" \t");
+            if (ps != std::string::npos) pname = pname.substr(0, ps + 1);
+            ps = ptype.find_first_not_of(" \t");
+            if (ps != std::string::npos) ptype = ptype.substr(ps);
+            size_t pe = ptype.find_last_not_of(" \t");
+            if (pe != std::string::npos) ptype = ptype.substr(0, pe + 1);
+            
+            // Convert types
+            if (ptype == "int") ptype = "int64_t";
+            else if (ptype == "float") ptype = "double";
+            else if (ptype == "string") ptype = "const std::string&";
+            else if (ptype == "bool") ptype = "bool";
+            
+            methodParams.push_back({pname, ptype});
+          }
+        }
+      }
+
+      out << "\n        inline " << returnType << " " << methodName << "(";
+      for (size_t pi = 0; pi < methodParams.size(); pi++) {
+        if (pi > 0) out << ", ";
+        out << methodParams[pi].second << " " << methodParams[pi].first;
+      }
+      out << ") {\n";
+      
+      std::istringstream implStream(cppImpl);
+      std::string line;
+      while (std::getline(implStream, line)) {
+        out << "            " << line << "\n";
+      }
+      
+      out << "        }\n";
+    }
+
     out << "    };\n\n";
   }
 
-  // Extract functions
+  // =========================================================================
+  // Extract standalone functions (not class methods)
+  // =========================================================================
   std::regex funcRegex(
       R"(pub\s+(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^\{]+))?\s*\{)");
   auto funcBegin = std::sregex_iterator(source.begin(), source.end(), funcRegex);
   auto funcEnd = std::sregex_iterator();
 
+  // Track class method names to skip them as standalone functions
+  std::unordered_set<std::string> classMethodNames;
+  for (auto it = classBegin; it != classEnd; ++it) {
+    size_t classStart = (*it).position();
+    size_t braceStart = source.find('{', classStart);
+    int depth = 1;
+    size_t pos = braceStart + 1;
+    while (pos < source.size() && depth > 0) {
+      if (source[pos] == '{') depth++;
+      else if (source[pos] == '}') depth--;
+      pos++;
+    }
+    std::string classBody = source.substr(braceStart + 1, pos - braceStart - 2);
+    
+    std::regex methodRegex(R"(pub\s+(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+    auto mBegin = std::sregex_iterator(classBody.begin(), classBody.end(), methodRegex);
+    auto mEnd = std::sregex_iterator();
+    for (auto mit = mBegin; mit != mEnd; ++mit) {
+      classMethodNames.insert((*mit)[1].str());
+    }
+  }
+
   for (auto it = funcBegin; it != funcEnd; ++it) {
     std::string funcName = (*it)[1].str();
+    
+    // Skip if this is a class method
+    if (classMethodNames.count(funcName) > 0) continue;
+    
     std::string params = (*it)[2].str();
     std::string returnType = (*it)[3].matched ? (*it)[3].str() : "void";
 
@@ -327,10 +488,9 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
       returnType = returnType.substr(0, end + 1);
     }
 
-    // Convert types - comprehensive type mapping
+    // Convert types with FULL int->int64_t support
     auto convertType = [](const std::string& type) -> std::string {
       std::string t = type;
-      // Trim
       size_t s = t.find_first_not_of(" \t\n");
       size_t e = t.find_last_not_of(" \t\n");
       if (s != std::string::npos && e != std::string::npos) t = t.substr(s, e - s + 1);
@@ -342,7 +502,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
       if (t == "void") return "void";
       if (t == "any") return "auto";
       
-      // Handle Array<T>
       if (t.find("Array<") == 0) {
         size_t start = t.find('<') + 1;
         size_t end = t.rfind('>');
@@ -351,12 +510,10 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
           if (inner == "int") inner = "int64_t";
           else if (inner == "float") inner = "double";
           else if (inner == "string") inner = "std::string";
-          else if (inner == "any") inner = "auto";
           return "std::vector<" + inner + ">";
         }
       }
       
-      // Handle Option<T>
       if (t.find("Option<") == 0) {
         size_t start = t.find('<') + 1;
         size_t end = t.rfind('>');
@@ -369,22 +526,22 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
         }
       }
       
-      // Handle Map<K,V>
+      // FIX: Handle Map<K,V> with int->int64_t conversion
       if (t.find("Map<") == 0) {
         size_t start = t.find('<') + 1;
         size_t end = t.rfind('>');
         if (end != std::string::npos) {
           std::string inner = t.substr(start, end - start);
-          // Split by comma for key,value
           size_t comma = inner.find(',');
           if (comma != std::string::npos) {
             std::string key = inner.substr(0, comma);
             std::string val = inner.substr(comma + 1);
-            // Trim
             while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
             while (!val.empty() && val.front() == ' ') val = val.substr(1);
             if (key == "string") key = "std::string";
             if (val == "string") val = "std::string";
+            if (key == "int") key = "int64_t";      // CRITICAL FIX
+            if (val == "int") val = "int64_t";      // CRITICAL FIX
             return "std::unordered_map<" + key + ", " + val + ">";
           }
         }
@@ -413,17 +570,13 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
         if (cppBraceStart != std::string::npos) {
           int depth = 1;
           size_t pos = cppBraceStart + 1;
+          bool inStr = false;
           while (pos < source.size() && depth > 0) {
-            if (source[pos] == '"') {
-              pos++;
-              while (pos < source.size() && source[pos] != '"') {
-                if (source[pos] == '\\') pos++;
-                pos++;
-              }
-            } else if (source[pos] == '{') {
-              depth++;
-            } else if (source[pos] == '}') {
-              depth--;
+            if (source[pos] == '"' && (pos == 0 || source[pos-1] != '\\')) {
+              inStr = !inStr;
+            } else if (!inStr) {
+              if (source[pos] == '{') depth++;
+              else if (source[pos] == '}') depth--;
             }
             pos++;
           }
@@ -435,22 +588,19 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
             if (s != std::string::npos && e != std::string::npos) {
               cppImpl = cppImpl.substr(s, e - s + 1);
             }
-            
-            // FIX: Replace .addString() with .string()
-            size_t replacePos = 0;
-            while ((replacePos = cppImpl.find(".addString()", replacePos)) != std::string::npos) {
-              cppImpl.replace(replacePos, 12, ".string()");
-              replacePos += 9;
-            }
           }
         }
       }
     }
 
-    // Parse parameters - handle nested generics properly
+    // CRITICAL: Skip functions without @cpp implementation
+    if (cppImpl.empty()) {
+      continue;
+    }
+
+    // Parse parameters
     std::vector<std::pair<std::string, std::string>> paramList;
     if (!params.empty()) {
-      // Split params respecting angle brackets
       std::vector<std::string> paramParts;
       int depth = 0;
       std::string current;
@@ -469,9 +619,7 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
       
       for (auto& param : paramParts) {
         size_t s = param.find_first_not_of(" \t");
-        if (s != std::string::npos) {
-          param = param.substr(s);
-        }
+        if (s != std::string::npos) param = param.substr(s);
 
         size_t colon = param.find(':');
         if (colon != std::string::npos) {
@@ -486,12 +634,11 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
           size_t e = ptype.find_last_not_of(" \t");
           if (e != std::string::npos) ptype = ptype.substr(0, e + 1);
 
-          // Convert parameter types
+          // Convert parameter types with full Map support
           if (ptype == "int") ptype = "int64_t";
           else if (ptype == "float") ptype = "double";
           else if (ptype == "string") ptype = "const std::string&";
           else if (ptype == "bool") ptype = "bool";
-          else if (ptype == "any") ptype = "auto";
           else if (ptype.find("Array<") == 0) {
             size_t start = ptype.find('<') + 1;
             size_t end = ptype.rfind('>');
@@ -500,19 +647,7 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
               if (inner == "int") inner = "int64_t";
               else if (inner == "float") inner = "double";
               else if (inner == "string") inner = "std::string";
-              else if (inner == "any") inner = "auto";
               ptype = "const std::vector<" + inner + ">&";
-            }
-          }
-          else if (ptype.find("Option<") == 0) {
-            size_t start = ptype.find('<') + 1;
-            size_t end = ptype.rfind('>');
-            if (end != std::string::npos) {
-              std::string inner = ptype.substr(start, end - start);
-              if (inner == "int") inner = "int64_t";
-              else if (inner == "float") inner = "double";
-              else if (inner == "string") inner = "std::string";
-              ptype = "const std::optional<" + inner + ">&";
             }
           }
           else if (ptype.find("Map<") == 0) {
@@ -547,14 +682,10 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
     }
     out << ") {\n";
 
-    if (!cppImpl.empty()) {
-      std::istringstream implStream(cppImpl);
-      std::string line;
-      while (std::getline(implStream, line)) {
-        out << "        " << line << "\n";
-      }
-    } else {
-      out << "        // Implementation not found\n";
+    std::istringstream implStream(cppImpl);
+    std::string line;
+    while (std::getline(implStream, line)) {
+      out << "        " << line << "\n";
     }
 
     out << "    }\n\n";
@@ -564,7 +695,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
 
   return out.str();
 }
-
 std::string CodeGen::generate(const Program &prog) {
   out.str("");
   out.clear();

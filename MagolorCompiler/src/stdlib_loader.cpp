@@ -825,11 +825,11 @@ std::string StdLibCodeGen::generateModuleCode(const std::string &modulePath) {
   return ss.str();
 }
 
-
 std::string StdLibCodeGen::extractCppCode(const std::string &source,
                                           const std::string &funcName) {
   // Build pattern to find the function
-  std::string funcPattern = "pub\\s+(?:static\\s+)?fn\\s+" + funcName + "\\s*\\(";
+  std::string funcPattern =
+      "pub\\s+(?:static\\s+)?fn\\s+" + funcName + "\\s*\\(";
   std::regex funcStartRegex(funcPattern);
   std::smatch match;
 
@@ -838,23 +838,23 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
   }
 
   size_t funcStart = match.position();
-  
+
   // Find the opening brace of the function body
   size_t funcBodyStart = source.find('{', funcStart);
   if (funcBodyStart == std::string::npos) {
     return "";
   }
-  
+
   // Find the matching closing brace of the function using proper brace counting
   int depth = 1;
   size_t pos = funcBodyStart + 1;
   bool inString = false;
   char stringChar = 0;
-  
+
   while (pos < source.size() && depth > 0) {
     char c = source[pos];
     char prev = (pos > 0) ? source[pos - 1] : 0;
-    
+
     // Handle string literals - don't count braces inside strings
     if ((c == '"' || c == '\'') && prev != '\\') {
       if (!inString) {
@@ -864,21 +864,24 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
         inString = false;
       }
     }
-    
+
     if (!inString) {
-      if (c == '{') depth++;
-      else if (c == '}') depth--;
+      if (c == '{')
+        depth++;
+      else if (c == '}')
+        depth--;
     }
     pos++;
   }
-  
+
   if (depth != 0) {
     return "";
   }
-  
+
   size_t funcBodyEnd = pos - 1;
-  std::string funcBody = source.substr(funcBodyStart + 1, funcBodyEnd - funcBodyStart - 1);
-  
+  std::string funcBody =
+      source.substr(funcBodyStart + 1, funcBodyEnd - funcBodyStart - 1);
+
   // Now find @cpp block within the function body
   size_t cppStart = funcBody.find("@cpp");
   if (cppStart == std::string::npos) {
@@ -886,23 +889,23 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
     // This prevents Magolor syntax from appearing in C++ output
     return "";
   }
-  
+
   // Find opening brace after @cpp
   size_t cppBraceStart = funcBody.find('{', cppStart);
   if (cppBraceStart == std::string::npos) {
     return "";
   }
-  
+
   // Find matching closing brace for @cpp block
   depth = 1;
   pos = cppBraceStart + 1;
   inString = false;
   stringChar = 0;
-  
+
   while (pos < funcBody.size() && depth > 0) {
     char c = funcBody[pos];
     char prev = (pos > 0) ? funcBody[pos - 1] : 0;
-    
+
     if ((c == '"' || c == '\'') && prev != '\\') {
       if (!inString) {
         inString = true;
@@ -911,19 +914,22 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
         inString = false;
       }
     }
-    
+
     if (!inString) {
-      if (c == '{') depth++;
-      else if (c == '}') depth--;
+      if (c == '{')
+        depth++;
+      else if (c == '}')
+        depth--;
     }
     pos++;
   }
-  
+
   if (depth != 0) {
     return "";
   }
-  
-  std::string code = funcBody.substr(cppBraceStart + 1, pos - cppBraceStart - 2);
+
+  std::string code =
+      funcBody.substr(cppBraceStart + 1, pos - cppBraceStart - 2);
 
   // Trim whitespace
   size_t start = code.find_first_not_of(" \t\n\r");
@@ -934,12 +940,13 @@ std::string StdLibCodeGen::extractCppCode(const std::string &source,
   }
 
   return code;
-}// ============================================================================
-// Metadata extraction (@link, @include, @cimport)
-// ============================================================================
+}
+// == == == == == == == == == == == == == == == == == == == == == == == == == ==
+    // Metadata extraction (@link, @include, @cimport)
+    // ============================================================================
 
-void StdLibLoader::extractMetadata(const std::string &source,
-                                   StdModule &module) {
+    void StdLibLoader::extractMetadata(const std::string &source,
+                                       StdModule &module) {
   // Extract @link { ... }
   std::regex linkRegex(R"(@link\s*\{\s*([^}]+)\})");
   std::smatch match;
