@@ -23,11 +23,11 @@ std::string CodeGen::typeToString(const TypePtr &type) {
     return "auto";
   switch (type->kind) {
   case Type::INT:
-    return "int";
+    return "int64_t";
   case Type::FLOAT:
     return "double";
   case Type::STRING:
-    return "std::string"; // ALWAYS fully qualified
+    return "std::string";
   case Type::BOOL:
     return "bool";
   case Type::VOID:
@@ -39,14 +39,9 @@ std::string CodeGen::typeToString(const TypePtr &type) {
   case Type::ARRAY:
     return "std::vector<" + typeToString(type->innerType) + ">";
   case Type::GENERIC: {
-    // Handle generic types like Map<K,V>, Array<T>
-
-    // CRITICAL FIX: Handle Array specially
     if (type->className == "Array" && type->genericArgs.size() == 1) {
       return "std::vector<" + typeToString(type->genericArgs[0]) + ">";
     }
-
-    // Map Magolor generic types to C++ equivalents
     if (type->className == "Map" && type->genericArgs.size() == 2) {
       return "std::unordered_map<" + typeToString(type->genericArgs[0]) + ", " +
              typeToString(type->genericArgs[1]) + ">";
@@ -54,8 +49,9 @@ std::string CodeGen::typeToString(const TypePtr &type) {
     if (type->className == "Set" && type->genericArgs.size() == 1) {
       return "std::unordered_set<" + typeToString(type->genericArgs[0]) + ">";
     }
-
-    // Generic fallback
+    if (type->className == "Option" && type->genericArgs.size() == 1) {
+      return "std::optional<" + typeToString(type->genericArgs[0]) + ">";
+    }
     std::string result = type->className;
     if (!type->genericArgs.empty()) {
       result += "<";
@@ -66,7 +62,6 @@ std::string CodeGen::typeToString(const TypePtr &type) {
       }
       result += ">";
     }
-
     return result;
   }
   case Type::FUNCTION: {
@@ -81,61 +76,39 @@ std::string CodeGen::typeToString(const TypePtr &type) {
   }
   return "auto";
 }
+
 void CodeGen::genStdLib() { out << StdLibGenerator::generateAll(); }
 
 void CodeGen::genCImports(const std::vector<CImportDecl> &cimports) {
   if (cimports.empty())
     return;
 
-  out << "// "
-         "==================================================================="
-         "\n";
+  out << "// ===================================================================\n";
   out << "// C/C++ Imports\n";
-  out << "// "
-         "==================================================================="
-         "\n";
+  out << "// ===================================================================\n";
 
   for (const auto &imp : cimports) {
-    // Generate include directive
     if (imp.isSystemHeader) {
       out << "#include <" << imp.header << ">\n";
     } else {
       out << "#include \"" << imp.header << "\"\n";
     }
 
-    // If namespace alias is provided, create it
     if (!imp.asNamespace.empty()) {
       out << "namespace " << imp.asNamespace << " {\n";
-
       if (!imp.symbols.empty()) {
-        // Import specific symbols
         for (const auto &sym : imp.symbols) {
           out << "    using ::" << sym << ";\n";
         }
-      } else {
-        // No specific symbols - import common std:: functions
-        out << "    // Common C++ standard library functions\n";
-        out << "    using std::sqrt; using std::sin; using std::cos; using "
-               "std::tan;\n";
-        out << "    using std::asin; using std::acos; using std::atan; using "
-               "std::atan2;\n";
-        out << "    using std::pow; using std::exp; using std::log; using "
-               "std::log10;\n";
-        out << "    using std::abs; using std::fabs; using std::floor; using "
-               "std::ceil;\n";
-        out << "    using std::round; using std::fmod; using std::cbrt;\n";
       }
-
       out << "}\n";
       importedNamespaces.insert(imp.asNamespace);
     } else if (!imp.symbols.empty()) {
-      // Import specific symbols into global namespace
       for (const auto &sym : imp.symbols) {
         out << "using ::" << sym << ";\n";
       }
     }
   }
-
   out << "\n";
 }
 
@@ -143,17 +116,13 @@ bool CodeGen::isClassName(const std::string &name) const {
   return knownClassNames.count(name) > 0;
 }
 
-// NEW: Extract @cpp blocks from a stdlib .mg file
 std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
   auto &loader = StdLibLoader::instance();
-
-  // Load the module
   auto *module = loader.loadModule(modulePath);
   if (!module || module->filePath.empty()) {
     return "";
   }
 
-  // Read the .mg file
   std::ifstream file(module->filePath);
   if (!file) {
     return "";
@@ -163,10 +132,7 @@ std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
   buffer << file.rdbuf();
   std::string source = buffer.str();
 
-  // Extract all @cpp blocks
   std::stringstream cppCode;
-
-  // Find @cpp { ... } blocks
   std::regex cppBlockRegex(R"(@cpp\s*\{)");
   std::smatch match;
 
@@ -180,12 +146,10 @@ std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
       continue;
     }
 
-    // Find matching closing brace
     int depth = 1;
     size_t pos = braceStart + 1;
     while (pos < source.size() && depth > 0) {
       if (source[pos] == '"') {
-        // Skip string literals
         pos++;
         while (pos < source.size() && source[pos] != '"') {
           if (source[pos] == '\\')
@@ -201,16 +165,12 @@ std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
     }
 
     if (depth == 0) {
-      // Extract the code inside the braces
       std::string code = source.substr(braceStart + 1, pos - braceStart - 2);
-
-      // Trim leading/trailing whitespace
       size_t start = code.find_first_not_of(" \t\n\r");
       size_t end = code.find_last_not_of(" \t\n\r");
       if (start != std::string::npos && end != std::string::npos) {
         code = code.substr(start, end - start + 1);
       }
-
       cppCode << "    " << code << "\n\n";
     }
 
@@ -220,11 +180,8 @@ std::string CodeGen::extractStdLibCppCode(const std::string &modulePath) {
   return cppCode.str();
 }
 
-// NEW: Generate complete Std module implementation from .mg file
 std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
   auto &loader = StdLibLoader::instance();
-
-  // Load the module
   auto *module = loader.loadModule(modulePath);
   if (!module || module->filePath.empty()) {
     return "";
@@ -232,7 +189,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
 
   std::stringstream out;
 
-  // Read the .mg file
   std::ifstream file(module->filePath);
   if (!file) {
     return "";
@@ -242,29 +198,20 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
   buffer << file.rdbuf();
   std::string source = buffer.str();
 
-  // Get module name (e.g., "Crypto" from "Std.Crypto")
   std::string moduleName = modulePath;
   size_t lastDot = moduleName.rfind('.');
   if (lastDot != std::string::npos) {
     moduleName = moduleName.substr(lastDot + 1);
   }
 
-  out << "// "
-         "====================================================================="
-         "=======\n";
+  out << "// =======================================================================\n";
   out << "// " << modulePath << " (Auto-generated from stdlib)\n";
-  out << "// "
-         "====================================================================="
-         "=======\n";
-
-  // CRITICAL FIX: Generate as top-level namespace, NOT nested in std
-  // So Std.Crypto becomes namespace Crypto { ... }
-  // and is accessed as Crypto::encrypt(), not std::Crypto::encrypt()
+  out << "// =======================================================================\n";
   out << "namespace " << moduleName << " {\n\n";
-  // Extract classes with @cpp blocks
+
+  // Extract classes
   std::regex classRegex(R"(pub\s+class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{)");
-  auto classBegin =
-      std::sregex_iterator(source.begin(), source.end(), classRegex);
+  auto classBegin = std::sregex_iterator(source.begin(), source.end(), classRegex);
   auto classEnd = std::sregex_iterator();
 
   for (auto it = classBegin; it != classEnd; ++it) {
@@ -272,7 +219,6 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
     size_t classStart = (*it).position();
     size_t braceStart = source.find('{', classStart);
 
-    // Find class body
     int depth = 1;
     size_t pos = braceStart + 1;
     while (pos < source.size() && depth > 0) {
@@ -284,77 +230,88 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
     }
 
     std::string classBody = source.substr(braceStart + 1, pos - braceStart - 2);
-
-    // Generate class structure
     out << "    class " << className << " {\n";
     out << "    public:\n";
 
-    // Extract public fields
     std::regex fieldRegex(R"(pub\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^;]+);)");
-    auto fBegin =
-        std::sregex_iterator(classBody.begin(), classBody.end(), fieldRegex);
+    auto fBegin = std::sregex_iterator(classBody.begin(), classBody.end(), fieldRegex);
     auto fEnd = std::sregex_iterator();
 
     for (auto fit = fBegin; fit != fEnd; ++fit) {
       std::string fieldName = (*fit)[1].str();
       std::string fieldType = (*fit)[2].str();
+      
+      // Trim whitespace
+      while (!fieldType.empty() && std::isspace(fieldType.front())) fieldType.erase(0, 1);
+      while (!fieldType.empty() && std::isspace(fieldType.back())) fieldType.pop_back();
 
-      // Convert Magolor types to C++
-      if (fieldType == "int")
-        fieldType = "int64_t";
-      else if (fieldType == "float")
-        fieldType = "double";
-      else if (fieldType == "string")
-        fieldType = "std::string";
-      else if (fieldType.find("Array<int>") == 0)
-        fieldType = "std::vector<int64_t>";
-      else if (fieldType.find("Array<") == 0) {
-        // Keep as is for now
-      }
-
-      out << "        " << fieldType << " " << fieldName;
-
-      // Check for default value
-      size_t assignPos = (*fit).position() + (*fit).length();
-      if (assignPos < classBody.size() && classBody[assignPos] == '=') {
-        // Extract default value
-        size_t valueStart = assignPos + 1;
-        size_t valueEnd = classBody.find(';', valueStart);
-        std::string defaultValue =
-            classBody.substr(valueStart, valueEnd - valueStart);
-
-        // Trim
-        size_t start = defaultValue.find_first_not_of(" \t\n");
-        if (start != std::string::npos) {
-          defaultValue = defaultValue.substr(start);
-          size_t end = defaultValue.find_last_not_of(" \t\n");
-          defaultValue = defaultValue.substr(0, end + 1);
+      // Convert Magolor types to C++ types
+      std::string cppType;
+      std::string defaultVal;
+      
+      if (fieldType == "int") {
+        cppType = "int64_t";
+        defaultVal = " = 0";
+      } else if (fieldType == "float") {
+        cppType = "double";
+        defaultVal = " = 0.0";
+      } else if (fieldType == "string") {
+        cppType = "std::string";
+        defaultVal = "";
+      } else if (fieldType == "bool") {
+        cppType = "bool";
+        defaultVal = " = false";
+      } else if (fieldType.find("Array<") == 0) {
+        size_t start = fieldType.find('<') + 1;
+        size_t end = fieldType.rfind('>');
+        std::string inner = fieldType.substr(start, end - start);
+        if (inner == "int") inner = "int64_t";
+        else if (inner == "float") inner = "double";
+        else if (inner == "string") inner = "std::string";
+        cppType = "std::vector<" + inner + ">";
+        defaultVal = ""; // vectors default-construct to empty
+      } else if (fieldType.find("Option<") == 0) {
+        size_t start = fieldType.find('<') + 1;
+        size_t end = fieldType.rfind('>');
+        std::string inner = fieldType.substr(start, end - start);
+        if (inner == "int") inner = "int64_t";
+        else if (inner == "string") inner = "std::string";
+        cppType = "std::optional<" + inner + ">";
+        defaultVal = "";
+      } else if (fieldType.find("Map<") == 0) {
+        size_t start = fieldType.find('<') + 1;
+        size_t end = fieldType.rfind('>');
+        std::string inner = fieldType.substr(start, end - start);
+        size_t comma = inner.find(',');
+        if (comma != std::string::npos) {
+          std::string key = inner.substr(0, comma);
+          std::string val = inner.substr(comma + 1);
+          while (!key.empty() && std::isspace(key.back())) key.pop_back();
+          while (!val.empty() && std::isspace(val.front())) val.erase(0, 1);
+          if (key == "string") key = "std::string";
+          if (val == "string") val = "std::string";
+          if (key == "int") key = "int64_t";
+          if (val == "int") val = "int64_t";
+          cppType = "std::unordered_map<" + key + ", " + val + ">";
+        } else {
+          cppType = fieldType;
         }
-
-        out << " = " << defaultValue;
+        defaultVal = "";
       } else {
-        // Add default initialization
-        if (fieldType == "bool")
-          out << " = false";
-        else if (fieldType.find("int") != std::string::npos)
-          out << " = 0";
-        else if (fieldType.find("double") != std::string::npos)
-          out << " = 0.0";
-        else if (fieldType.find("std::string") != std::string::npos)
-          out << " = \"\"";
+        cppType = fieldType;
+        defaultVal = "";
       }
 
-      out << ";\n";
+      out << "        " << cppType << " " << fieldName << defaultVal << ";\n";
     }
 
     out << "    };\n\n";
   }
 
-  // Extract and generate functions
+  // Extract functions
   std::regex funcRegex(
       R"(pub\s+(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^\{]+))?\s*\{)");
-  auto funcBegin =
-      std::sregex_iterator(source.begin(), source.end(), funcRegex);
+  auto funcBegin = std::sregex_iterator(source.begin(), source.end(), funcRegex);
   auto funcEnd = std::sregex_iterator();
 
   for (auto it = funcBegin; it != funcEnd; ++it) {
@@ -370,21 +327,77 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
       returnType = returnType.substr(0, end + 1);
     }
 
-    // Convert types
-    if (returnType == "int")
-      returnType = "int64_t";
-    else if (returnType == "float")
-      returnType = "double";
-    else if (returnType == "string")
-      returnType = "std::string";
-    else if (returnType.find("Array<int>") == 0)
-      returnType = "std::vector<int64_t>";
-
-    // Find the @cpp block for this function
-    size_t funcStart = (*it).position();
-    size_t funcBodyStart = source.find('{', funcStart) + 1;
+    // Convert types - comprehensive type mapping
+    auto convertType = [](const std::string& type) -> std::string {
+      std::string t = type;
+      // Trim
+      size_t s = t.find_first_not_of(" \t\n");
+      size_t e = t.find_last_not_of(" \t\n");
+      if (s != std::string::npos && e != std::string::npos) t = t.substr(s, e - s + 1);
+      
+      if (t == "int") return "int64_t";
+      if (t == "float") return "double";
+      if (t == "string") return "std::string";
+      if (t == "bool") return "bool";
+      if (t == "void") return "void";
+      if (t == "any") return "auto";
+      
+      // Handle Array<T>
+      if (t.find("Array<") == 0) {
+        size_t start = t.find('<') + 1;
+        size_t end = t.rfind('>');
+        if (end != std::string::npos) {
+          std::string inner = t.substr(start, end - start);
+          if (inner == "int") inner = "int64_t";
+          else if (inner == "float") inner = "double";
+          else if (inner == "string") inner = "std::string";
+          else if (inner == "any") inner = "auto";
+          return "std::vector<" + inner + ">";
+        }
+      }
+      
+      // Handle Option<T>
+      if (t.find("Option<") == 0) {
+        size_t start = t.find('<') + 1;
+        size_t end = t.rfind('>');
+        if (end != std::string::npos) {
+          std::string inner = t.substr(start, end - start);
+          if (inner == "int") inner = "int64_t";
+          else if (inner == "float") inner = "double";
+          else if (inner == "string") inner = "std::string";
+          return "std::optional<" + inner + ">";
+        }
+      }
+      
+      // Handle Map<K,V>
+      if (t.find("Map<") == 0) {
+        size_t start = t.find('<') + 1;
+        size_t end = t.rfind('>');
+        if (end != std::string::npos) {
+          std::string inner = t.substr(start, end - start);
+          // Split by comma for key,value
+          size_t comma = inner.find(',');
+          if (comma != std::string::npos) {
+            std::string key = inner.substr(0, comma);
+            std::string val = inner.substr(comma + 1);
+            // Trim
+            while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+            while (!val.empty() && val.front() == ' ') val = val.substr(1);
+            if (key == "string") key = "std::string";
+            if (val == "string") val = "std::string";
+            return "std::unordered_map<" + key + ", " + val + ">";
+          }
+        }
+      }
+      
+      return t;
+    };
+    
+    returnType = convertType(returnType);
 
     // Find @cpp block
+    size_t funcStart = (*it).position();
+    size_t funcBodyStart = source.find('{', funcStart) + 1;
     size_t cppPos = source.find("@cpp", funcBodyStart);
     std::string cppImpl;
 
@@ -404,8 +417,7 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
             if (source[pos] == '"') {
               pos++;
               while (pos < source.size() && source[pos] != '"') {
-                if (source[pos] == '\\')
-                  pos++;
+                if (source[pos] == '\\') pos++;
                 pos++;
               }
             } else if (source[pos] == '{') {
@@ -418,72 +430,124 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
 
           if (depth == 0) {
             cppImpl = source.substr(cppBraceStart + 1, pos - cppBraceStart - 2);
-
-            // Trim
             size_t s = cppImpl.find_first_not_of(" \t\n\r");
             size_t e = cppImpl.find_last_not_of(" \t\n\r");
             if (s != std::string::npos && e != std::string::npos) {
               cppImpl = cppImpl.substr(s, e - s + 1);
+            }
+            
+            // FIX: Replace .addString() with .string()
+            size_t replacePos = 0;
+            while ((replacePos = cppImpl.find(".addString()", replacePos)) != std::string::npos) {
+              cppImpl.replace(replacePos, 12, ".string()");
+              replacePos += 9;
             }
           }
         }
       }
     }
 
-    // Convert parameters
+    // Parse parameters - handle nested generics properly
     std::vector<std::pair<std::string, std::string>> paramList;
     if (!params.empty()) {
-      std::istringstream paramStream(params);
-      std::string param;
-      while (std::getline(paramStream, param, ',')) {
-        // Trim
+      // Split params respecting angle brackets
+      std::vector<std::string> paramParts;
+      int depth = 0;
+      std::string current;
+      for (char c : params) {
+        if (c == '<') depth++;
+        else if (c == '>') depth--;
+        
+        if (c == ',' && depth == 0) {
+          paramParts.push_back(current);
+          current.clear();
+        } else {
+          current += c;
+        }
+      }
+      if (!current.empty()) paramParts.push_back(current);
+      
+      for (auto& param : paramParts) {
         size_t s = param.find_first_not_of(" \t");
         if (s != std::string::npos) {
           param = param.substr(s);
         }
 
-        // Parse name: type
         size_t colon = param.find(':');
         if (colon != std::string::npos) {
           std::string pname = param.substr(0, colon);
           std::string ptype = param.substr(colon + 1);
 
-          // Trim both
           s = pname.find_last_not_of(" \t");
-          if (s != std::string::npos)
-            pname = pname.substr(0, s + 1);
+          if (s != std::string::npos) pname = pname.substr(0, s + 1);
 
           s = ptype.find_first_not_of(" \t");
-          if (s != std::string::npos)
-            ptype = ptype.substr(s);
+          if (s != std::string::npos) ptype = ptype.substr(s);
+          size_t e = ptype.find_last_not_of(" \t");
+          if (e != std::string::npos) ptype = ptype.substr(0, e + 1);
 
-          // Convert type
-          if (ptype == "int")
-            ptype = "int64_t";
-          else if (ptype == "float")
-            ptype = "double";
-          else if (ptype == "string")
-            ptype = "const std::string&";
-          else if (ptype.find("Array<int>") == 0)
-            ptype = "const std::vector<int64_t>&";
+          // Convert parameter types
+          if (ptype == "int") ptype = "int64_t";
+          else if (ptype == "float") ptype = "double";
+          else if (ptype == "string") ptype = "const std::string&";
+          else if (ptype == "bool") ptype = "bool";
+          else if (ptype == "any") ptype = "auto";
+          else if (ptype.find("Array<") == 0) {
+            size_t start = ptype.find('<') + 1;
+            size_t end = ptype.rfind('>');
+            if (end != std::string::npos) {
+              std::string inner = ptype.substr(start, end - start);
+              if (inner == "int") inner = "int64_t";
+              else if (inner == "float") inner = "double";
+              else if (inner == "string") inner = "std::string";
+              else if (inner == "any") inner = "auto";
+              ptype = "const std::vector<" + inner + ">&";
+            }
+          }
+          else if (ptype.find("Option<") == 0) {
+            size_t start = ptype.find('<') + 1;
+            size_t end = ptype.rfind('>');
+            if (end != std::string::npos) {
+              std::string inner = ptype.substr(start, end - start);
+              if (inner == "int") inner = "int64_t";
+              else if (inner == "float") inner = "double";
+              else if (inner == "string") inner = "std::string";
+              ptype = "const std::optional<" + inner + ">&";
+            }
+          }
+          else if (ptype.find("Map<") == 0) {
+            size_t start = ptype.find('<') + 1;
+            size_t end = ptype.rfind('>');
+            if (end != std::string::npos) {
+              std::string inner = ptype.substr(start, end - start);
+              size_t comma = inner.find(',');
+              if (comma != std::string::npos) {
+                std::string key = inner.substr(0, comma);
+                std::string val = inner.substr(comma + 1);
+                while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
+                while (!val.empty() && val.front() == ' ') val = val.substr(1);
+                if (key == "string") key = "std::string";
+                else if (key == "int") key = "int64_t";
+                if (val == "string") val = "std::string";
+                else if (val == "int") val = "int64_t";
+                ptype = "const std::unordered_map<" + key + ", " + val + ">&";
+              }
+            }
+          }
 
           paramList.push_back({pname, ptype});
         }
       }
     }
 
-    // Generate function signature
     out << "    inline " << returnType << " " << funcName << "(";
     for (size_t i = 0; i < paramList.size(); i++) {
-      if (i > 0)
-        out << ", ";
+      if (i > 0) out << ", ";
       out << paramList[i].second << " " << paramList[i].first;
     }
     out << ") {\n";
 
-    // Output implementation
     if (!cppImpl.empty()) {
-      // Indent the implementation
       std::istringstream implStream(cppImpl);
       std::string line;
       while (std::getline(implStream, line)) {
@@ -507,12 +571,12 @@ std::string CodeGen::generate(const Program &prog) {
   importedNamespaces.clear();
   knownClassNames.clear();
 
-  // ============================================================================
-  // STEP 1: Generate includes FIRST
-  // ============================================================================
+  // Track generated namespaces to avoid duplicates
+  std::unordered_set<std::string> generatedNamespaces;
+
   out << "// Auto-generated C++ code from Magolor\n";
 
-  // NEW: Output @cpp_header blocks FIRST
+  // @cpp_header blocks first
   if (!prog.cppHeaders.empty()) {
     out << "\n// User-provided C++ headers\n";
     for (const auto &header : prog.cppHeaders) {
@@ -524,13 +588,12 @@ std::string CodeGen::generate(const Program &prog) {
     out << "\n";
   }
 
-  // NEW: Collect and output @include directives
+  // Collect includes from modules
   std::unordered_set<std::string> allIncludes;
   for (const auto &usingDecl : prog.usings) {
     std::string modulePath;
     for (size_t i = 0; i < usingDecl.path.size(); i++) {
-      if (i > 0)
-        modulePath += ".";
+      if (i > 0) modulePath += ".";
       modulePath += usingDecl.path[i];
     }
 
@@ -553,6 +616,7 @@ std::string CodeGen::generate(const Program &prog) {
   // Standard includes
   out << "#include <vector>\n";
   out << "#include <unordered_map>\n";
+  out << "#include <unordered_set>\n";
   out << "#include <optional>\n";
   out << "#include <iostream>\n";
   out << "#include <string>\n";
@@ -566,38 +630,43 @@ std::string CodeGen::generate(const Program &prog) {
   out << "#include <thread>\n";
   out << "#include <cmath>\n";
   out << "#include <stdexcept>\n";
+  out << "#include <cstring>\n";
+  out << "#include <unistd.h>\n";
   out << "\n";
 
-  // ============================================================================
-  // SOLUTION 2: AUTO-GENERATE STDLIB MODULE CODE
-  // ============================================================================
-  // Track which Std modules are imported
+  // Track imported Std modules
   std::unordered_set<std::string> importedStdModules;
   for (const auto &usingDecl : prog.usings) {
     std::string modulePath;
     for (size_t i = 0; i < usingDecl.path.size(); i++) {
-      if (i > 0)
-        modulePath += ".";
+      if (i > 0) modulePath += ".";
       modulePath += usingDecl.path[i];
     }
 
-    // Check if this is a Std module
     if (modulePath.find("Std.") == 0) {
       importedStdModules.insert(modulePath);
     }
   }
 
-  // Generate code for each imported stdlib module BEFORE user code
+  // Generate stdlib implementations - with duplicate prevention
   if (!importedStdModules.empty()) {
-    out << "// "
-           "==================================================================="
-           "=========\n";
+    out << "// =======================================================================\n";
     out << "// Auto-generated Standard Library Implementations\n";
-    out << "// "
-           "==================================================================="
-           "=========\n\n";
+    out << "// =======================================================================\n\n";
 
     for (const auto &modulePath : importedStdModules) {
+      std::string moduleName = modulePath;
+      size_t lastDot = moduleName.rfind('.');
+      if (lastDot != std::string::npos) {
+        moduleName = moduleName.substr(lastDot + 1);
+      }
+
+      // Skip if already generated
+      if (generatedNamespaces.count(moduleName) > 0) {
+        continue;
+      }
+      generatedNamespaces.insert(moduleName);
+
       std::string moduleImpl = generateStdModuleImpl(modulePath);
       if (!moduleImpl.empty()) {
         out << moduleImpl;
@@ -605,28 +674,21 @@ std::string CodeGen::generate(const Program &prog) {
     }
   }
 
-  // Collect all class names
+  // Collect class names
   for (const auto &cls : prog.classes) {
     knownClassNames.insert(cls.name);
   }
 
-  // Generate C/C++ imports
+  // C/C++ imports
   genCImports(prog.cimports);
 
-  // ============================================================================
-  // STEP 2: Generate stdlib helpers ONCE - using header guards
-  // ============================================================================
-  out << "// "
-         "====================================================================="
-         "=======\n";
+  // Stdlib helpers with guards
+  out << "// =======================================================================\n";
   out << "// Standard Library Helpers (generated once)\n";
-  out << "// "
-         "====================================================================="
-         "=======\n";
+  out << "// =======================================================================\n";
   out << "#ifndef MAGOLOR_STDLIB_HELPERS_H\n";
   out << "#define MAGOLOR_STDLIB_HELPERS_H\n\n";
 
-  // String conversion helpers
   out << "// Template helpers for string conversion\n";
   out << "template<typename T>\n";
   out << "inline std::string mg_to_string(const T& val) { \n";
@@ -645,15 +707,12 @@ std::string CodeGen::generate(const Program &prog) {
   out << "    return val;\n";
   out << "}\n\n";
 
-  // Option helpers
   out << "// Global Option helpers\n";
   out << "template<typename T>\n";
-  out << "inline bool isSome(const std::optional<T>& opt) { return "
-         "opt.has_value(); }\n\n";
+  out << "inline bool isSome(const std::optional<T>& opt) { return opt.has_value(); }\n\n";
 
   out << "template<typename T>\n";
-  out << "inline bool isNone(const std::optional<T>& opt) { return "
-         "!opt.has_value(); }\n\n";
+  out << "inline bool isNone(const std::optional<T>& opt) { return !opt.has_value(); }\n\n";
 
   out << "template<typename T>\n";
   out << "inline T unwrap(const std::optional<T>& opt) {\n";
@@ -664,104 +723,113 @@ std::string CodeGen::generate(const Program &prog) {
   out << "}\n\n";
 
   out << "template<typename T>\n";
-  out << "inline T unwrapOr(const std::optional<T>& opt, const T& "
-         "defaultValue) {\n";
+  out << "inline T unwrapOr(const std::optional<T>& opt, const T& defaultValue) {\n";
   out << "    return opt.value_or(defaultValue);\n";
   out << "}\n\n";
 
   out << "#endif // MAGOLOR_STDLIB_HELPERS_H\n\n";
 
-  // ============================================================================
-  // STEP 3: Generate standard helper wrappers
-  // ============================================================================
-  out << "// Array helper wrappers\n";
-  out << "template<typename T> int length(const ::std::vector<T>& arr) { "
-         "return "
-         "arr.size(); }\n";
-  out << "template<typename T> void push(::std::vector<T>& arr, const T& val) "
-         "{ "
-         "arr.push_back(val); }\n";
-  out << "template<typename T> T pop(::std::vector<T>& arr) { auto v = "
-         "arr.back(); arr.pop_back(); return v; }\n";
-  out << "\n";
+  // Array helpers - only if not already generated
+  if (generatedNamespaces.count("Array") == 0) {
+    out << "// Array helper wrappers\n";
+    out << "template<typename T> int length(const ::std::vector<T>& arr) { return arr.size(); }\n";
+    out << "template<typename T> void push(::std::vector<T>& arr, const T& val) { arr.push_back(val); }\n";
+    out << "template<typename T> T pop(::std::vector<T>& arr) { auto v = arr.back(); arr.pop_back(); return v; }\n";
+    out << "\n";
+  }
 
-  out << "// Map helper wrappers\n";
-  out << "namespace Map {\n";
-  out << "  template<typename K, typename V> ::std::unordered_map<K,V> "
-         "create() "
-         "{ return {}; }\n";
-  out << "  template<typename K, typename V> void "
-         "insert(::std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] "
-         "= "
-         "v; }\n";
-  out << "  template<typename K, typename V> ::std::optional<V> get(const "
-         "::std::unordered_map<K,V>& m, const K& k) {\n";
-  out << "    auto it = m.find(k); return it != m.end() ? "
-         "::std::optional<V>(it->second) : ::std::nullopt;\n";
-  out << "  }\n";
-  out << "  template<typename K, typename V> ::std::vector<V> values(const "
-         "::std::unordered_map<K,V>& m) {\n";
-  out << "    ::std::vector<V> r; for(auto& p : m) r.push_back(p.second); "
-         "return "
-         "r;\n";
-  out << "  }\n";
-  out << "}\n";
-  out << "\n";
+  // Map helpers - only if not already generated
+  if (generatedNamespaces.count("Map") == 0) {
+    out << "// Map helper wrappers\n";
+    out << "namespace Map {\n";
+    out << "  template<typename K, typename V> ::std::unordered_map<K,V> create() { return {}; }\n";
+    out << "  template<typename K, typename V> void insert(::std::unordered_map<K,V>& m, const K& k, const V& v) { m[k] = v; }\n";
+    out << "  template<typename K, typename V> ::std::optional<V> get(const ::std::unordered_map<K,V>& m, const K& k) {\n";
+    out << "    auto it = m.find(k); return it != m.end() ? ::std::optional<V>(it->second) : ::std::nullopt;\n";
+    out << "  }\n";
+    out << "  template<typename K, typename V> ::std::vector<V> values(const ::std::unordered_map<K,V>& m) {\n";
+    out << "    ::std::vector<V> r; for(auto& p : m) r.push_back(p.second); return r;\n";
+    out << "  }\n";
+    out << "}\n\n";
+  }
 
-  out << "// File helper\n";
-  out << "namespace File {\n";
-  out << "  inline bool exists(const ::std::string& path) {\n";
-  out << "    ::std::ifstream f(path); return f.good();\n";
-  out << "  }\n";
-  out << "}\n";
-  out << "\n";
+  // File helper - only if not already generated
+  if (generatedNamespaces.count("File") == 0) {
+    out << "// File helper\n";
+    out << "namespace File {\n";
+    out << "  inline bool exists(const ::std::string& path) {\n";
+    out << "    return std::filesystem::exists(path);\n";
+    out << "  }\n";
+    out << "  inline bool isFile(const ::std::string& path) {\n";
+    out << "    return std::filesystem::is_regular_file(path);\n";
+    out << "  }\n";
+    out << "  inline bool isDirectory(const ::std::string& path) {\n";
+    out << "    return std::filesystem::is_directory(path);\n";
+    out << "  }\n";
+    out << "  inline std::string absolutePath(const ::std::string& path) {\n";
+    out << "    return std::filesystem::absolute(path).string();\n";
+    out << "  }\n";
+    out << "  inline std::string parentDir(const ::std::string& path) {\n";
+    out << "    return std::filesystem::path(path).parent_path().string();\n";
+    out << "  }\n";
+    out << "  inline std::string fileName(const ::std::string& path) {\n";
+    out << "    return std::filesystem::path(path).filename().string();\n";
+    out << "  }\n";
+    out << "  inline std::string extension(const ::std::string& path) {\n";
+    out << "    return std::filesystem::path(path).extension().string();\n";
+    out << "  }\n";
+    out << "  inline std::string tempDir() {\n";
+    out << "    return std::filesystem::temp_directory_path().string();\n";
+    out << "  }\n";
+    out << "  inline std::optional<std::string> createTempFile(const ::std::string& prefix) {\n";
+    out << "    std::string dir = std::filesystem::temp_directory_path().string();\n";
+    out << "    std::string path = dir + \"/\" + prefix + \"_XXXXXX\";\n";
+    out << "    std::vector<char> buf(path.begin(), path.end());\n";
+    out << "    buf.push_back('\\0');\n";
+    out << "    int fd = mkstemp(buf.data());\n";
+    out << "    if (fd == -1) return std::nullopt;\n";
+    out << "    close(fd);\n";
+    out << "    return std::string(buf.data());\n";
+    out << "  }\n";
+    out << "  inline std::string cwd() {\n";
+    out << "    return std::filesystem::current_path().string();\n";
+    out << "  }\n";
+    out << "}\n\n";
+  }
 
-  // ============================================================================
-  // CRITICAL FIX: Global I/O functions (must be at top level for user code)
-  // ============================================================================
+  // Global I/O functions
   out << "// Global I/O functions\n";
   out << "inline void print(const std::string& s) { std::cout << s; }\n";
-  out << "inline void println(const std::string& s) { std::cout << s << "
-         "std::endl; }\n";
+  out << "inline void println(const std::string& s) { std::cout << s << std::endl; }\n";
   out << "inline void println() { std::cout << std::endl; }\n";
   out << "inline void eprint(const std::string& s) { std::cerr << s; }\n";
-  out << "inline void eprintln(const std::string& s) { std::cerr << s << "
-         "std::endl; }\n";
-  out << "inline std::string readLine() { std::string line; "
-         "std::getline(std::cin, line); return line; }\n";
+  out << "inline void eprintln(const std::string& s) { std::cerr << s << std::endl; }\n";
+  out << "inline std::string readLine() { std::string line; std::getline(std::cin, line); return line; }\n";
   out << "\n";
   out << "// Overloads for common types\n";
   out << "template<typename T>\n";
   out << "inline void print(const T& val) { std::cout << val; }\n";
   out << "template<typename T>\n";
-  out << "inline void println(const T& val) { std::cout << val << std::endl; "
-         "}\n";
+  out << "inline void println(const T& val) { std::cout << val << std::endl; }\n";
   out << "\n";
 
-  // ============================================================================
-  // STEP 4: Forward declarations for classes
-  // ============================================================================
+  // Forward declarations for classes
   for (const auto &cls : prog.classes) {
     emitLine("class " + cls.name + ";");
   }
   emitLine("");
 
-  // ============================================================================
-  // STEP 5: Generate classes
-  // ============================================================================
+  // Generate classes
   for (const auto &cls : prog.classes) {
     genClass(cls);
   }
 
-  // ============================================================================
-  // STEP 6: Forward declarations for functions
-  // ============================================================================
+  // Forward declarations for functions
   for (const auto &fn : prog.functions) {
     if (fn.name != "main") {
       emit(typeToString(fn.returnType) + " " + fn.name + "(");
       for (size_t i = 0; i < fn.params.size(); i++) {
-        if (i > 0)
-          emit(", ");
+        if (i > 0) emit(", ");
         emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
       }
       emit(");\n");
@@ -769,9 +837,7 @@ std::string CodeGen::generate(const Program &prog) {
   }
   emitLine("");
 
-  // ============================================================================
-  // STEP 7: Generate function definitions
-  // ============================================================================
+  // Generate function definitions
   for (const auto &fn : prog.functions) {
     genFunction(fn);
     emitLine("");
@@ -779,9 +845,6 @@ std::string CodeGen::generate(const Program &prog) {
 
   return out.str();
 }
-
-// Rest of the implementation remains the same...
-// (Include all the other methods from the original codegen.cpp)
 
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
   currentClassName = className;
@@ -793,21 +856,18 @@ void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
     emitIndent();
     emit("void create(");
     for (size_t i = 0; i < fn.params.size(); i++) {
-      if (i > 0)
-        emit(", ");
+      if (i > 0) emit(", ");
       emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
     }
     emit(") {\n");
   } else {
     emitIndent();
-    // CRITICAL: Add static keyword for static methods
     if (fn.isStatic && !className.empty()) {
       emit("static ");
     }
     emit(retType + " " + fn.name + "(");
     for (size_t i = 0; i < fn.params.size(); i++) {
-      if (i > 0)
-        emit(", ");
+      if (i > 0) emit(", ");
       emit(typeToString(fn.params[i].type) + " " + fn.params[i].name);
     }
     emit(") {\n");
@@ -826,30 +886,22 @@ void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
 void CodeGen::genClass(const ClassDecl &cls) {
   emitLine("class " + cls.name + " {");
 
-  // Separate public and private
   bool hasPublic = false;
   bool hasPrivate = false;
 
-  // Check what we have
   for (const auto &f : cls.fields) {
-    if (f.isPublic)
-      hasPublic = true;
-    else
-      hasPrivate = true;
+    if (f.isPublic) hasPublic = true;
+    else hasPrivate = true;
   }
   for (const auto &m : cls.methods) {
-    if (m.isPublic)
-      hasPublic = true;
-    else
-      hasPrivate = true;
+    if (m.isPublic) hasPublic = true;
+    else hasPrivate = true;
   }
 
-  // Generate public section
   if (hasPublic) {
     emitLine("public:");
     indent++;
 
-    // Public static constants
     for (const auto &f : cls.fields) {
       if (f.isPublic && f.isStatic) {
         emitIndent();
@@ -861,18 +913,14 @@ void CodeGen::genClass(const ClassDecl &cls) {
       }
     }
 
-    // Public instance fields
     for (const auto &f : cls.fields) {
       if (f.isPublic && !f.isStatic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
 
-    // Public methods
     for (const auto &m : cls.methods) {
       if (m.isPublic) {
-        if (m.isStatic) {
-        }
         genFunction(m, cls.name);
       }
     }
@@ -880,19 +928,16 @@ void CodeGen::genClass(const ClassDecl &cls) {
     indent--;
   }
 
-  // Generate private section
   if (hasPrivate) {
     emitLine("private:");
     indent++;
 
-    // Private fields
     for (const auto &f : cls.fields) {
       if (!f.isPublic) {
         emitLine(typeToString(f.type) + " " + f.name + ";");
       }
     }
 
-    // Private methods
     for (const auto &m : cls.methods) {
       if (!m.isPublic) {
         genFunction(m, cls.name);
@@ -902,23 +947,18 @@ void CodeGen::genClass(const ClassDecl &cls) {
     indent--;
   }
 
-  emitLine("};"); // Close the class definition
+  emitLine("};");
   emitLine("");
 
-  // Auto-generate operator<< for printing (OUTSIDE the class)
-  // Only print simple types, skip Map/Array/complex types
+  // Auto-generate operator<< for printing
   emitLine("// Auto-generated print support");
-  emitLine("inline std::ostream& operator<<(std::ostream& os, const " +
-           cls.name + "& obj) {");
+  emitLine("inline std::ostream& operator<<(std::ostream& os, const " + cls.name + "& obj) {");
   indent++;
   emitLine("os << \"" + cls.name + " { \";");
 
-  // Print public fields - only simple types
   bool first = true;
   for (const auto &f : cls.fields) {
     if (f.isPublic && !f.isStatic) {
-      // Skip complex types that don't have operator<< (Map, Array, other
-      // classes)
       bool isSimpleType = false;
       if (f.type) {
         switch (f.type->kind) {
@@ -972,16 +1012,10 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           emit("return");
           if (s.value) {
             emit(" ");
-            // FIX: If returning 'this' in a method that returns by value,
-            // dereference it
             if (std::holds_alternative<ThisExpr>(s.value->data)) {
-              // Check if we're returning from a method (not a free function)
               if (!currentClassName.empty()) {
-                // In a method - return *this
                 emit("*this");
               } else {
-                // In a free function - just emit this (shouldn't happen, but be
-                // safe)
                 genExpr(s.value);
               }
             } else {
@@ -999,15 +1033,13 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           genExpr(s.cond);
           emit(") {\n");
           indent++;
-          for (const auto &st : s.thenBody)
-            genStmt(st);
+          for (const auto &st : s.thenBody) genStmt(st);
           indent--;
           emitLine("}");
           if (!s.elseBody.empty()) {
             emitLine("else {");
             indent++;
-            for (const auto &st : s.elseBody)
-              genStmt(st);
+            for (const auto &st : s.elseBody) genStmt(st);
             indent--;
             emitLine("}");
           }
@@ -1017,8 +1049,7 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           genExpr(s.cond);
           emit(") {\n");
           indent++;
-          for (const auto &st : s.body)
-            genStmt(st);
+          for (const auto &st : s.body) genStmt(st);
           indent--;
           emitLine("}");
         } else if constexpr (std::is_same_v<T, ForStmt>) {
@@ -1027,8 +1058,7 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           genExpr(s.iterable);
           emit(") {\n");
           indent++;
-          for (const auto &st : s.body)
-            genStmt(st);
+          for (const auto &st : s.body) genStmt(st);
           indent--;
           emitLine("}");
         } else if constexpr (std::is_same_v<T, MatchStmt>) {
@@ -1042,8 +1072,7 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           bool first = true;
           for (const auto &arm : s.arms) {
             emitIndent();
-            if (!first)
-              emit("else ");
+            if (!first) emit("else ");
             first = false;
             if (arm.pattern == "Some") {
               emit("if (_match_val.has_value()) {\n");
@@ -1057,8 +1086,7 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
               emit("if (_match_val == " + arm.pattern + ") {\n");
               indent++;
             }
-            for (const auto &st : arm.body)
-              genStmt(st);
+            for (const auto &st : arm.body) genStmt(st);
             indent--;
             emitLine("}");
           }
@@ -1067,12 +1095,10 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
         } else if constexpr (std::is_same_v<T, BlockStmt>) {
           emitLine("{");
           indent++;
-          for (const auto &st : s.stmts)
-            genStmt(st);
+          for (const auto &st : s.stmts) genStmt(st);
           indent--;
           emitLine("}");
         } else if constexpr (std::is_same_v<T, CppStmt>) {
-          // FIX 3: Pass through inline C++ blocks WITHOUT transformation
           emitLine("// Inline C++ code:");
           out << s.code;
           if (!s.code.empty() && s.code.back() != '\n') {
@@ -1101,50 +1127,36 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             while (i < s.size()) {
               if (s[i] == '{') {
                 if (!current.empty()) {
-                  if (!first) {
-                    emit(" + ");
-                  }
+                  if (!first) emit(" + ");
                   first = false;
                   emit("std::string(\"");
                   for (char c : current) {
-                    if (c == '\n')
-                      emit("\\n");
-                    else if (c == '\\')
-                      emit("\\\\");
-                    else if (c == '"')
-                      emit("\\\"");
-                    else
-                      emit(std::string(1, c));
+                    if (c == '\n') emit("\\n");
+                    else if (c == '\\') emit("\\\\");
+                    else if (c == '"') emit("\\\"");
+                    else emit(std::string(1, c));
                   }
                   emit("\")");
                   current.clear();
                 }
                 i++;
                 std::string varName;
-                while (i < s.size() && s[i] != '}')
-                  varName += s[i++];
+                while (i < s.size() && s[i] != '}') varName += s[i++];
                 i++;
-                if (!first) {
-                  emit(" + ");
-                }
+                if (!first) emit(" + ");
                 first = false;
                 emit("mg_to_string(" + varName + ")");
               } else
                 current += s[i++];
             }
             if (!current.empty()) {
-              if (!first)
-                emit(" + ");
+              if (!first) emit(" + ");
               emit("std::string(\"");
               for (char c : current) {
-                if (c == '\n')
-                  emit("\\n");
-                else if (c == '\\')
-                  emit("\\\\");
-                else if (c == '"')
-                  emit("\\\"");
-                else
-                  emit(std::string(1, c));
+                if (c == '\n') emit("\\n");
+                else if (c == '\\') emit("\\\\");
+                else if (c == '"') emit("\\\"");
+                else emit(std::string(1, c));
               }
               emit("\")");
             }
@@ -1152,16 +1164,11 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           } else {
             emit("std::string(\"");
             for (char c : e.value) {
-              if (c == '\n')
-                emit("\\n");
-              else if (c == '\t')
-                emit("\\t");
-              else if (c == '\\')
-                emit("\\\\");
-              else if (c == '"')
-                emit("\\\"");
-              else
-                emit(std::string(1, c));
+              if (c == '\n') emit("\\n");
+              else if (c == '\t') emit("\\t");
+              else if (c == '\\') emit("\\\\");
+              else if (c == '"') emit("\\\"");
+              else emit(std::string(1, c));
             }
             emit("\")");
           }
@@ -1183,18 +1190,15 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           genExpr(e.callee);
           emit("(");
           for (size_t i = 0; i < e.args.size(); i++) {
-            if (i > 0)
-              emit(", ");
+            if (i > 0) emit(", ");
             genExpr(e.args[i]);
           }
           emit(")");
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
-          // First check: Is the object a direct module name?
           if (auto *objIdent = std::get_if<IdentExpr>(&e.object->data)) {
-            // Known stdlib modules - emit as namespace::member
             static const std::unordered_set<std::string> stdModules = {
-                "Crypto", "File",   "String", "Array",  "Map",
-                "Math",   "IO",     "Parse",  "Option", "Time",
+                "Crypto", "File", "String", "Array", "Map",
+                "Math", "IO", "Parse", "Option", "Time",
                 "Random", "System", "Network"};
 
             if (stdModules.count(objIdent->name) > 0) {
@@ -1203,17 +1207,13 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // Second check: Is this a namespace path (Std.Crypto.encrypt)?
           bool isNamespacePath = false;
-
-          // Walk up the chain to see if root is a namespace
           ExprPtr root = e.object;
           while (auto *nested = std::get_if<MemberExpr>(&root->data)) {
             root = nested->object;
           }
 
           if (auto *rootIdent = std::get_if<IdentExpr>(&root->data)) {
-            // Check for "Std" or imported namespaces
             if (rootIdent->name == "Std" || rootIdent->name == "std") {
               isNamespacePath = true;
             } else if (importedNamespaces.count(rootIdent->name) > 0) {
@@ -1222,38 +1222,30 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
 
           if (isNamespacePath) {
-            // For namespace paths like Std.Crypto.encrypt
-            // Collect the path components
             std::vector<std::string> pathParts;
             ExprPtr current = e.object;
 
-            // Walk up collecting member names
             while (auto *member = std::get_if<MemberExpr>(&current->data)) {
               pathParts.push_back(member->member);
               current = member->object;
             }
 
-            // Get root identifier and skip "Std" prefix entirely
             if (auto *rootIdent = std::get_if<IdentExpr>(&current->data)) {
-              // If root is "Std", skip it and start from the module name
               if (rootIdent->name != "Std" && rootIdent->name != "std") {
                 emit(rootIdent->name);
                 emit("::");
               }
             }
 
-            // Emit path parts in reverse order (bottom-up collection)
             for (auto it = pathParts.rbegin(); it != pathParts.rend(); ++it) {
               emit(*it);
               emit("::");
             }
 
-            // Finally emit the final member
             emit(e.member);
             return;
           }
 
-          // Third check: Is it a class name (static access)?
           if (auto *ident = std::get_if<IdentExpr>(&e.object->data)) {
             if (isClassName(ident->name)) {
               emit(ident->name + "::" + e.member);
@@ -1261,13 +1253,11 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // Fourth check: Is it 'this' pointer?
           if (std::holds_alternative<ThisExpr>(e.object->data)) {
             emit("this->" + e.member);
             return;
           }
 
-          // Default: Regular member access
           genExpr(e.object);
           emit("." + e.member);
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
@@ -1282,25 +1272,21 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, LambdaExpr>) {
           emit("[=](");
           for (size_t i = 0; i < e.params.size(); i++) {
-            if (i > 0)
-              emit(", ");
+            if (i > 0) emit(", ");
             emit(paramTypeToString(e.params[i].type) + " " + e.params[i].name);
           }
           emit(")");
-          if (e.returnType)
-            emit(" -> " + typeToString(e.returnType));
+          if (e.returnType) emit(" -> " + typeToString(e.returnType));
           emit(" {\n");
           indent++;
-          for (const auto &st : e.body)
-            genStmt(st);
+          for (const auto &st : e.body) genStmt(st);
           indent--;
           emitIndent();
           emit("}");
         } else if constexpr (std::is_same_v<T, NewExpr>) {
           emit(e.className + "(");
           for (size_t i = 0; i < e.args.size(); i++) {
-            if (i > 0)
-              emit(", ");
+            if (i > 0) emit(", ");
             genExpr(e.args[i]);
           }
           emit(")");
@@ -1311,29 +1297,16 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this"); // Just emit pointer - dereferencing happens in
-                        // ReturnStmt
+          emit("this");
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
-          // Determine element type
           std::string elemType = "int";
           if (!e.elements.empty() && e.elements[0]->type) {
             elemType = typeToString(e.elements[0]->type);
           }
 
-          // Check if this looks like an enum type
-          bool isEnum = false;
-          if (!e.elements.empty()) {
-            // Check if first element is a member access with ::
-            if (auto *member = std::get_if<MemberExpr>(&e.elements[0]->data)) {
-              // This is likely an enum value
-              isEnum = true;
-            }
-          }
-
           emit("std::vector<" + elemType + ">{");
           for (size_t i = 0; i < e.elements.size(); i++) {
-            if (i > 0)
-              emit(", ");
+            if (i > 0) emit(", ");
             genExpr(e.elements[i]);
           }
           emit("}");
@@ -1343,23 +1316,15 @@ void CodeGen::genExpr(const ExprPtr &expr) {
 }
 
 std::string CodeGen::paramTypeToString(const TypePtr &type) {
-  // For untyped lambda parameters (type is VOID from parser), use "auto"
   if (!type || type->kind == Type::VOID) {
     return "auto";
   }
-  // For explicitly typed parameters, use normal type conversion
   return typeToString(type);
 }
 
-void CodeGen::enterScope() {
-  // Placeholder for future scope management
-}
+void CodeGen::enterScope() {}
+void CodeGen::exitScope() {}
 
-void CodeGen::exitScope() {
-  // Placeholder for future scope management
-}
-
-void CodeGen::registerVar(const std::string &name, const std::string &type,
-                          bool isMut) {
+void CodeGen::registerVar(const std::string &name, const std::string &type, bool isMut) {
   scopeVars[name] = {type, isMut};
 }
