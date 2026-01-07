@@ -142,9 +142,23 @@ std::string CodeGen::generate(const Program &prog) {
   knownClassNames.clear();
   
   // ============================================================================
-  // STEP 1: Generate includes FIRST (before any namespaces)
+  // STEP 1: Generate includes FIRST
   // ============================================================================
   out << "// Auto-generated C++ code from Magolor\n";
+  
+  // NEW: Output @cpp_header blocks BEFORE standard includes
+  if (!prog.cppHeaders.empty()) {
+    out << "// User-provided C++ headers\n";
+    for (const auto &header : prog.cppHeaders) {
+      out << header.code;
+      if (!header.code.empty() && header.code.back() != '\n') {
+        out << "\n";
+      }
+    }
+    out << "\n";
+  }
+  
+  // Standard includes
   out << "#include <vector>\n";
   out << "#include <unordered_map>\n"; 
   out << "#include <optional>\n";
@@ -166,9 +180,7 @@ std::string CodeGen::generate(const Program &prog) {
   }
   
   // Generate C/C++ imports
-  genCImports(prog.cimports);
-  
-  // ============================================================================
+  genCImports(prog.cimports);  // ============================================================================
   // STEP 2: Generate stdlib helpers ONCE - using header guards
   // ============================================================================
   out << "// ============================================================================\n";

@@ -34,7 +34,9 @@ struct Param {
     TypePtr type;
     SourceLoc loc;
 };
-
+struct CppHeaderDecl {
+    std::string code;  // Raw C++ code (typically #include statements)
+};
 // Expression nodes
 struct IntLitExpr { int value; };
 struct FloatLitExpr { double value; };
@@ -138,6 +140,7 @@ struct ModuleDecl {
 struct Program {
     std::vector<UsingDecl> usings;
     std::vector<CImportDecl> cimports;  // C/C++ imports
+    std::vector<CppHeaderDecl> cppHeaders;  // NEW: @cpp_header blocks
     std::vector<ClassDecl> classes;
     std::vector<FnDecl> functions;
     std::string moduleName;  // Name of this module (from filename)

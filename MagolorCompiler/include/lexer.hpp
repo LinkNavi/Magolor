@@ -11,7 +11,7 @@ enum class TokenType {
     // Types
     INT, FLOAT, STRING, BOOL, VOID,
     // Literals
-    INT_LIT, FLOAT_LIT, STRING_LIT, IDENT,
+    INT_LIT, FLOAT_LIT, STRING_LIT, IDENT,  CPP_HEADER, 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT, EQ, NE, LT, GT, LE, GE,
     AND, OR, NOT, ASSIGN, ARROW, FAT_ARROW, DOT, DOUBLE_COLON,
@@ -46,7 +46,7 @@ private:
     size_t pos = 0;
     int line = 1, col = 1;
     static std::unordered_map<std::string, TokenType> keywords;
-    
+      Token cppHeaderBlock(); 
     char peek(int offset = 0);
     char advance();
     void skipWhitespace();

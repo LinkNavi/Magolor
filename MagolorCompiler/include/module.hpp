@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include "stdlib_loader.hpp"
 #include <unordered_map>
 #include <filesystem>
 
@@ -105,20 +106,23 @@ private:
 class ModuleResolver {
 public:
     // Check if this is a built-in standard library module
-    static bool isBuiltinModule(const std::string& modulePath) {
-        // List of all built-in Std modules
-        static const std::unordered_set<std::string> builtins = {
-            "Std", "Std.IO", "Std.Parse", "Std.Option", "Std.Math",
-            "Std.String", "Std.Array", "Std.Map", "Std.Set", "Std.File",
-            "Std.Network", "Std.Time", "Std.Random", "Std.System",
-            // Network submodules
-            "Std.Network.HTTP", "Std.Network.WebSocket", "Std.Network.TCP",
-            "Std.Network.UDP", "Std.Network.Security", "Std.Network.JSON",
-            "Std.Network.Routing"
-        };
-        
-        return builtins.count(modulePath) > 0;
+  static bool isBuiltinModule(const std::string& modulePath) {
+    // Check if it starts with "Std."
+    if (modulePath.find("Std.") == 0 || modulePath == "Std") {
+        // It's a stdlib module - check if StdLibLoader has it
+        auto& loader = StdLibLoader::instance();
+        return loader.hasModule(modulePath);
     }
+    
+    // Fallback to hardcoded list for backwards compatibility
+    static const std::unordered_set<std::string> builtins = {
+        "Std", "Std.IO", "Std.Parse", "Std.Option", "Std.Math",
+        "Std.String", "Std.Array", "Std.Map", "Std.Set", "Std.File",
+        "Std.Network", "Std.Time", "Std.Random", "Std.System"
+    };
+    
+    return builtins.count(modulePath) > 0;
+}
     
     // Convert file path to module name
     static std::string filePathToModuleName(const std::string& filepath, 

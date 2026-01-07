@@ -74,13 +74,22 @@ Program Parser::parse() {
   Program prog;
   while (!check(TokenType::EOF_TOK)) {
     try {
-      if (check(TokenType::USING)) {
+      // NEW: Handle @cpp_header blocks
+      if (check(TokenType::CPP_HEADER)) {
+        CppHeaderDecl header;
+        header.code = advance().value;
+        prog.cppHeaders.push_back(header);
+      }
+      else if (check(TokenType::USING)) {
         prog.usings.push_back(parseUsing());
-      } else if (check(TokenType::CIMPORT)) {
+      } 
+      else if (check(TokenType::CIMPORT)) {
         prog.cimports.push_back(parseCImport());
-      } else if (check(TokenType::CLASS)) {
+      } 
+      else if (check(TokenType::CLASS)) {
         prog.classes.push_back(parseClass());
-      } else if (check(TokenType::PUB)) {
+      } 
+      else if (check(TokenType::PUB)) {
         // Look ahead to see what follows 'pub'
         if (peek(1).type == TokenType::CLASS) {
           prog.classes.push_back(parseClass());
@@ -90,9 +99,11 @@ Program Parser::parse() {
           error("Expected 'class' or 'fn' after 'pub'", peek(1));
           synchronize();
         }
-      } else if (check(TokenType::FN)) {
+      } 
+      else if (check(TokenType::FN)) {
         prog.functions.push_back(parseFunction());
-      } else {
+      } 
+      else {
         error("Unexpected token: " + peek().value, peek());
         synchronize();
       }
@@ -101,7 +112,10 @@ Program Parser::parse() {
     }
   }
   return prog;
-}UsingDecl Parser::parseUsing() {
+}
+
+
+UsingDecl Parser::parseUsing() {
   expect(TokenType::USING, "Expected 'using'");
   UsingDecl decl;
   Token ident = expect(TokenType::IDENT, "Expected module name");

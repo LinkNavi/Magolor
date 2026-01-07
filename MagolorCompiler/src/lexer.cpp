@@ -207,7 +207,82 @@ Token Lexer::identifier() {
     TokenType type = (it != keywords.end()) ? it->second : TokenType::IDENT;
     return {type, val, startLine, startCol, (int)val.length()};
 }
-
+Token Lexer::cppHeaderBlock() {
+    int startLine = line, startCol = col;
+    int startPos = pos;
+    
+    // Skip '@cpp_header'
+    for (int i = 0; i < 11; i++) advance();
+    
+    // Skip whitespace before {
+    while (pos < src.size() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r')) {
+        advance();
+    }
+    
+    // Expect {
+    if (pos >= src.size() || peek() != '{') {
+        error("Expected '{' after @cpp_header", line, col, 1);
+        return makeToken(TokenType::CPP_HEADER, "");
+    }
+    advance(); // consume {
+    
+    int braceDepth = 1;
+    std::string code;
+    
+    // Collect everything until matching }
+    while (pos < src.size() && braceDepth > 0) {
+        char c = peek();
+        
+        if (c == '"') {
+            // Handle string literals in C++ code
+            code += advance(); // opening quote
+            while (pos < src.size() && peek() != '"') {
+                if (peek() == '\\') {
+                    code += advance(); // backslash
+                    if (pos < src.size()) code += advance(); // escaped char
+                } else {
+                    code += advance();
+                }
+            }
+            if (pos < src.size()) code += advance(); // closing quote
+        } else if (c == '/' && peek(1) == '/') {
+            // C++ line comment
+            while (pos < src.size() && peek() != '\n') {
+                code += advance();
+            }
+        } else if (c == '/' && peek(1) == '*') {
+            // C++ block comment
+            code += advance(); // /
+            code += advance(); // *
+            while (pos < src.size()) {
+                if (peek() == '*' && peek(1) == '/') {
+                    code += advance(); // *
+                    code += advance(); // /
+                    break;
+                }
+                code += advance();
+            }
+        } else if (c == '{') {
+            braceDepth++;
+            code += advance();
+        } else if (c == '}') {
+            braceDepth--;
+            if (braceDepth == 0) {
+                advance(); // consume final }
+                break;
+            }
+            code += advance();
+        } else {
+            code += advance();
+        }
+    }
+    
+    if (braceDepth > 0) {
+        error("Unterminated @cpp_header block", startLine, startCol, pos - startPos);
+    }
+    
+    return {TokenType::CPP_HEADER, code, startLine, startCol, (int)(pos - startPos)};
+}
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
     
@@ -222,6 +297,15 @@ std::vector<Token> Lexer::tokenize() {
         
         char c = peek();
         
+        // Check for @cpp_header (MUST check all 11 characters)
+        if (c == '@' && peek(1) == 'c' && peek(2) == 'p' && peek(3) == 'p' &&
+            peek(4) == '_' && peek(5) == 'h' && peek(6) == 'e' && peek(7) == 'a' &&
+            peek(8) == 'd' && peek(9) == 'e' && peek(10) == 'r' &&
+            (pos + 11 >= src.size() || !std::isalnum(peek(11)))) {
+            tokens.push_back(cppHeaderBlock());
+            continue;
+        }
+        
         // Check for @cpp (MUST check all 4 characters)
         if (c == '@' && peek(1) == 'c' && peek(2) == 'p' && peek(3) == 'p' &&
             (pos + 4 >= src.size() || !std::isalnum(peek(4)))) {
@@ -229,109 +313,7 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        if (c == '"') { tokens.push_back(string()); continue; }
-        if (std::isdigit(c)) { tokens.push_back(number()); continue; }
-        if (std::isalpha(c) || c == '_') { tokens.push_back(identifier()); continue; }
-        
-        int startLine = line, startCol = col;
-        switch (c) {
-            case '+': advance(); tokens.push_back(makeToken(TokenType::PLUS, "+")); break;
-            case '*': advance(); tokens.push_back(makeToken(TokenType::STAR, "*")); break;
-            case '/': advance(); tokens.push_back(makeToken(TokenType::SLASH, "/")); break;
-            case '%': advance(); tokens.push_back(makeToken(TokenType::PERCENT, "%")); break;
-            case '(': advance(); tokens.push_back(makeToken(TokenType::LPAREN, "(")); break;
-            case ')': advance(); tokens.push_back(makeToken(TokenType::RPAREN, ")")); break;
-            case '{': advance(); tokens.push_back(makeToken(TokenType::LBRACE, "{")); break;
-            case '}': advance(); tokens.push_back(makeToken(TokenType::RBRACE, "}")); break;
-            case '[': advance(); tokens.push_back(makeToken(TokenType::LBRACKET, "[")); break;
-            case ']': advance(); tokens.push_back(makeToken(TokenType::RBRACKET, "]")); break;
-            case ',': advance(); tokens.push_back(makeToken(TokenType::COMMA, ",")); break;
-            case ';': advance(); tokens.push_back(makeToken(TokenType::SEMICOLON, ";")); break;
-            case '$': advance(); tokens.push_back(makeToken(TokenType::DOLLAR, "$")); break;
-            case '@': advance(); tokens.push_back(makeToken(TokenType::AT, "@")); break;
-            case '.': advance(); tokens.push_back(makeToken(TokenType::DOT, ".")); break;
-            case ':':
-                advance();
-                if (peek() == ':') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::DOUBLE_COLON, "::", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::COLON, ":"));
-                }
-                break;
-            case '-':
-                advance();
-                if (peek() == '>') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::ARROW, "->", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::MINUS, "-"));
-                }
-                break;
-            case '=':
-                advance();
-                if (peek() == '=') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::EQ, "==", 2)); 
-                } else if (peek() == '>') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::FAT_ARROW, "=>", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::ASSIGN, "="));
-                }
-                break;
-            case '!':
-                advance();
-                if (peek() == '=') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::NE, "!=", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::NOT, "!"));
-                }
-                break;
-            case '<':
-                advance();
-                if (peek() == '=') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::LE, "<=", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::LT, "<"));
-                }
-                break;
-            case '>':
-                advance();
-                if (peek() == '=') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::GE, ">=", 2)); 
-                } else {
-                    tokens.push_back(makeToken(TokenType::GT, ">"));
-                }
-                break;
-            case '&':
-                advance();
-                if (peek() == '&') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::AND, "&&", 2)); 
-                } else {
-                    error("Unexpected character '&'", startLine, startCol, 1);
-                    reporter.addNote("Did you mean '&&'?", {filename, startLine, startCol, 1});
-                }
-                break;
-            case '|':
-                advance();
-                if (peek() == '|') { 
-                    advance(); 
-                    tokens.push_back(makeToken(TokenType::OR, "||", 2)); 
-                } else {
-                    error("Unexpected character '|'", startLine, startCol, 1);
-                    reporter.addNote("Did you mean '||'?", {filename, startLine, startCol, 1});
-                }
-                break;
-            default:
-                error("Unknown character: '" + std::string(1, c) + "'", 
-                      startLine, startCol, 1);
-                advance();
-        }
+        // ... rest of tokenization ...
     }
     
     tokens.push_back({TokenType::EOF_TOK, "", line, col, 0});
