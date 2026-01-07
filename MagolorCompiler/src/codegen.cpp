@@ -1,8 +1,12 @@
 #include "codegen.hpp"
 #include "stdlib.hpp"
+#include "stdlib_loader.hpp"
 #include <unordered_set>
 #include <variant>
 #include <functional>
+#include <fstream>
+#include <sstream>
+#include <regex>
 
 void CodeGen::emit(const std::string &s) { out << s; }
 void CodeGen::emitLine(const std::string &s) {
@@ -133,7 +137,329 @@ bool CodeGen::isClassName(const std::string &name) const {
   return knownClassNames.count(name) > 0;
 }
 
+// NEW: Extract @cpp blocks from a stdlib .mg file
+std::string CodeGen::extractStdLibCppCode(const std::string& modulePath) {
+  auto& loader = StdLibLoader::instance();
+  
+  // Load the module
+  auto* module = loader.loadModule(modulePath);
+  if (!module || module->filePath.empty()) {
+    return "";
+  }
+  
+  // Read the .mg file
+  std::ifstream file(module->filePath);
+  if (!file) {
+    return "";
+  }
+  
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string source = buffer.str();
+  
+  // Extract all @cpp blocks
+  std::stringstream cppCode;
+  
+  // Find @cpp { ... } blocks
+  std::regex cppBlockRegex(R"(@cpp\s*\{)");
+  std::smatch match;
+  
+  std::string::const_iterator searchStart = source.cbegin();
+  while (std::regex_search(searchStart, source.cend(), match, cppBlockRegex)) {
+    size_t blockStart = match.position(0) + (searchStart - source.cbegin());
+    size_t braceStart = source.find('{', blockStart);
+    
+    if (braceStart == std::string::npos) {
+      searchStart = match.suffix().first;
+      continue;
+    }
+    
+    // Find matching closing brace
+    int depth = 1;
+    size_t pos = braceStart + 1;
+    while (pos < source.size() && depth > 0) {
+      if (source[pos] == '"') {
+        // Skip string literals
+        pos++;
+        while (pos < source.size() && source[pos] != '"') {
+          if (source[pos] == '\\') pos++;
+          pos++;
+        }
+      } else if (source[pos] == '{') {
+        depth++;
+      } else if (source[pos] == '}') {
+        depth--;
+      }
+      pos++;
+    }
+    
+    if (depth == 0) {
+      // Extract the code inside the braces
+      std::string code = source.substr(braceStart + 1, pos - braceStart - 2);
+      
+      // Trim leading/trailing whitespace
+      size_t start = code.find_first_not_of(" \t\n\r");
+      size_t end = code.find_last_not_of(" \t\n\r");
+      if (start != std::string::npos && end != std::string::npos) {
+        code = code.substr(start, end - start + 1);
+      }
+      
+      cppCode << "    " << code << "\n\n";
+    }
+    
+    searchStart = source.cbegin() + pos;
+  }
+  
+  return cppCode.str();
+}
 
+// NEW: Generate complete Std module implementation from .mg file
+std::string CodeGen::generateStdModuleImpl(const std::string& modulePath) {
+  auto& loader = StdLibLoader::instance();
+  
+  // Load the module
+  auto* module = loader.loadModule(modulePath);
+  if (!module || module->filePath.empty()) {
+    return "";
+  }
+  
+  std::stringstream out;
+  
+  // Read the .mg file
+  std::ifstream file(module->filePath);
+  if (!file) {
+    return "";
+  }
+  
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string source = buffer.str();
+  
+  // Get module name (e.g., "Crypto" from "Std.Crypto")
+  std::string moduleName = modulePath;
+  size_t lastDot = moduleName.rfind('.');
+  if (lastDot != std::string::npos) {
+    moduleName = moduleName.substr(lastDot + 1);
+  }
+  
+  out << "// ============================================================================\n";
+  out << "// " << modulePath << " (Auto-generated from stdlib)\n";
+  out << "// ============================================================================\n";
+  out << "namespace " << moduleName << " {\n\n";
+  
+  // Extract classes with @cpp blocks
+  std::regex classRegex(R"(pub\s+class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{)");
+  auto classBegin = std::sregex_iterator(source.begin(), source.end(), classRegex);
+  auto classEnd = std::sregex_iterator();
+  
+  for (auto it = classBegin; it != classEnd; ++it) {
+    std::string className = (*it)[1].str();
+    size_t classStart = (*it).position();
+    size_t braceStart = source.find('{', classStart);
+    
+    // Find class body
+    int depth = 1;
+    size_t pos = braceStart + 1;
+    while (pos < source.size() && depth > 0) {
+      if (source[pos] == '{') depth++;
+      else if (source[pos] == '}') depth--;
+      pos++;
+    }
+    
+    std::string classBody = source.substr(braceStart + 1, pos - braceStart - 2);
+    
+    // Generate class structure
+    out << "    class " << className << " {\n";
+    out << "    public:\n";
+    
+    // Extract public fields
+    std::regex fieldRegex(R"(pub\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^;]+);)");
+    auto fBegin = std::sregex_iterator(classBody.begin(), classBody.end(), fieldRegex);
+    auto fEnd = std::sregex_iterator();
+    
+    for (auto fit = fBegin; fit != fEnd; ++fit) {
+      std::string fieldName = (*fit)[1].str();
+      std::string fieldType = (*fit)[2].str();
+      
+      // Convert Magolor types to C++
+      if (fieldType == "int") fieldType = "int64_t";
+      else if (fieldType == "float") fieldType = "double";
+      else if (fieldType == "string") fieldType = "std::string";
+      else if (fieldType.find("Array<int>") == 0) fieldType = "std::vector<int64_t>";
+      else if (fieldType.find("Array<") == 0) {
+        // Keep as is for now
+      }
+      
+      out << "        " << fieldType << " " << fieldName;
+      
+      // Check for default value
+      size_t assignPos = (*fit).position() + (*fit).length();
+      if (assignPos < classBody.size() && classBody[assignPos] == '=') {
+        // Extract default value
+        size_t valueStart = assignPos + 1;
+        size_t valueEnd = classBody.find(';', valueStart);
+        std::string defaultValue = classBody.substr(valueStart, valueEnd - valueStart);
+        
+        // Trim
+        size_t start = defaultValue.find_first_not_of(" \t\n");
+        if (start != std::string::npos) {
+          defaultValue = defaultValue.substr(start);
+          size_t end = defaultValue.find_last_not_of(" \t\n");
+          defaultValue = defaultValue.substr(0, end + 1);
+        }
+        
+        out << " = " << defaultValue;
+      } else {
+        // Add default initialization
+        if (fieldType == "bool") out << " = false";
+        else if (fieldType.find("int") != std::string::npos) out << " = 0";
+        else if (fieldType.find("double") != std::string::npos) out << " = 0.0";
+        else if (fieldType.find("std::string") != std::string::npos) out << " = \"\"";
+      }
+      
+      out << ";\n";
+    }
+    
+    out << "    };\n\n";
+  }
+  
+  // Extract and generate functions
+  std::regex funcRegex(R"(pub\s+(?:static\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([^\{]+))?\s*\{)");
+  auto funcBegin = std::sregex_iterator(source.begin(), source.end(), funcRegex);
+  auto funcEnd = std::sregex_iterator();
+  
+  for (auto it = funcBegin; it != funcEnd; ++it) {
+    std::string funcName = (*it)[1].str();
+    std::string params = (*it)[2].str();
+    std::string returnType = (*it)[3].matched ? (*it)[3].str() : "void";
+    
+    // Trim return type
+    size_t start = returnType.find_first_not_of(" \t\n");
+    if (start != std::string::npos) {
+      returnType = returnType.substr(start);
+      size_t end = returnType.find_last_not_of(" \t\n");
+      returnType = returnType.substr(0, end + 1);
+    }
+    
+    // Convert types
+    if (returnType == "int") returnType = "int64_t";
+    else if (returnType == "float") returnType = "double";
+    else if (returnType == "string") returnType = "std::string";
+    else if (returnType.find("Array<int>") == 0) returnType = "std::vector<int64_t>";
+    
+    // Find the @cpp block for this function
+    size_t funcStart = (*it).position();
+    size_t funcBodyStart = source.find('{', funcStart) + 1;
+    
+    // Find @cpp block
+    size_t cppPos = source.find("@cpp", funcBodyStart);
+    std::string cppImpl;
+    
+    if (cppPos != std::string::npos) {
+      size_t nextFunc = source.find("pub fn", funcStart + 10);
+      size_t nextStaticFunc = source.find("pub static fn", funcStart + 10);
+      size_t boundary = std::min(
+        nextFunc != std::string::npos ? nextFunc : source.size(),
+        nextStaticFunc != std::string::npos ? nextStaticFunc : source.size()
+      );
+      
+      if (cppPos < boundary) {
+        size_t cppBraceStart = source.find('{', cppPos);
+        if (cppBraceStart != std::string::npos) {
+          int depth = 1;
+          size_t pos = cppBraceStart + 1;
+          while (pos < source.size() && depth > 0) {
+            if (source[pos] == '"') {
+              pos++;
+              while (pos < source.size() && source[pos] != '"') {
+                if (source[pos] == '\\') pos++;
+                pos++;
+              }
+            } else if (source[pos] == '{') {
+              depth++;
+            } else if (source[pos] == '}') {
+              depth--;
+            }
+            pos++;
+          }
+          
+          if (depth == 0) {
+            cppImpl = source.substr(cppBraceStart + 1, pos - cppBraceStart - 2);
+            
+            // Trim
+            size_t s = cppImpl.find_first_not_of(" \t\n\r");
+            size_t e = cppImpl.find_last_not_of(" \t\n\r");
+            if (s != std::string::npos && e != std::string::npos) {
+              cppImpl = cppImpl.substr(s, e - s + 1);
+            }
+          }
+        }
+      }
+    }
+    
+    // Convert parameters
+    std::vector<std::pair<std::string, std::string>> paramList;
+    if (!params.empty()) {
+      std::istringstream paramStream(params);
+      std::string param;
+      while (std::getline(paramStream, param, ',')) {
+        // Trim
+        size_t s = param.find_first_not_of(" \t");
+        if (s != std::string::npos) {
+          param = param.substr(s);
+        }
+        
+        // Parse name: type
+        size_t colon = param.find(':');
+        if (colon != std::string::npos) {
+          std::string pname = param.substr(0, colon);
+          std::string ptype = param.substr(colon + 1);
+          
+          // Trim both
+          s = pname.find_last_not_of(" \t");
+          if (s != std::string::npos) pname = pname.substr(0, s + 1);
+          
+          s = ptype.find_first_not_of(" \t");
+          if (s != std::string::npos) ptype = ptype.substr(s);
+          
+          // Convert type
+          if (ptype == "int") ptype = "int64_t";
+          else if (ptype == "float") ptype = "double";
+          else if (ptype == "string") ptype = "const std::string&";
+          else if (ptype.find("Array<int>") == 0) ptype = "const std::vector<int64_t>&";
+          
+          paramList.push_back({pname, ptype});
+        }
+      }
+    }
+    
+    // Generate function signature
+    out << "    inline " << returnType << " " << funcName << "(";
+    for (size_t i = 0; i < paramList.size(); i++) {
+      if (i > 0) out << ", ";
+      out << paramList[i].second << " " << paramList[i].first;
+    }
+    out << ") {\n";
+    
+    // Output implementation
+    if (!cppImpl.empty()) {
+      // Indent the implementation
+      std::istringstream implStream(cppImpl);
+      std::string line;
+      while (std::getline(implStream, line)) {
+        out << "        " << line << "\n";
+      }
+    } else {
+      out << "        // Implementation not found\n";
+    }
+    
+    out << "    }\n\n";
+  }
+  
+  out << "} // namespace " << moduleName << "\n\n";
+  
+  return out.str();
+}
 
 std::string CodeGen::generate(const Program &prog) {
   out.str("");
@@ -176,13 +502,47 @@ std::string CodeGen::generate(const Program &prog) {
   out << "#include <stdexcept>\n";
   out << "\n";
   
+  // ============================================================================
+  // SOLUTION 2: AUTO-GENERATE STDLIB MODULE CODE
+  // ============================================================================
+  // Track which Std modules are imported
+  std::unordered_set<std::string> importedStdModules;
+  for (const auto &usingDecl : prog.usings) {
+    std::string modulePath;
+    for (size_t i = 0; i < usingDecl.path.size(); i++) {
+      if (i > 0) modulePath += ".";
+      modulePath += usingDecl.path[i];
+    }
+    
+    // Check if this is a Std module
+    if (modulePath.find("Std.") == 0) {
+      importedStdModules.insert(modulePath);
+    }
+  }
+  
+  // Generate code for each imported stdlib module BEFORE user code
+  if (!importedStdModules.empty()) {
+    out << "// ============================================================================\n";
+    out << "// Auto-generated Standard Library Implementations\n";
+    out << "// ============================================================================\n\n";
+    
+    for (const auto& modulePath : importedStdModules) {
+      std::string moduleImpl = generateStdModuleImpl(modulePath);
+      if (!moduleImpl.empty()) {
+        out << moduleImpl;
+      }
+    }
+  }
+  
   // Collect all class names
   for (const auto &cls : prog.classes) {
     knownClassNames.insert(cls.name);
   }
   
   // Generate C/C++ imports
-  genCImports(prog.cimports);  // ============================================================================
+  genCImports(prog.cimports);
+
+  // ============================================================================
   // STEP 2: Generate stdlib helpers ONCE - using header guards
   // ============================================================================
   out << "// ============================================================================\n";
@@ -333,6 +693,8 @@ std::string CodeGen::generate(const Program &prog) {
   return out.str();
 }
 
+// Rest of the implementation remains the same...
+// (Include all the other methods from the original codegen.cpp)
 
 void CodeGen::genFunction(const FnDecl &fn, const std::string &className) {
   currentClassName = className;

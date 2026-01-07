@@ -13,6 +13,8 @@ public:
 private:
     std::stringstream out;
     int indent = 0;
+std::string extractStdLibCppCode(const std::string& modulePath);
+std::string generateStdModuleImpl(const std::string& modulePath); 
 std::string currentClassName;
     std::unordered_set<std::string> usedModules;
     std::unordered_set<std::string> capturedVars;
