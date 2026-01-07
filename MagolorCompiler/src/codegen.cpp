@@ -2,6 +2,7 @@
 #include "stdlib.hpp"
 #include <unordered_set>
 #include <variant>
+#include <functional>
 
 void CodeGen::emit(const std::string &s) { out << s; }
 void CodeGen::emitLine(const std::string &s) {
@@ -154,28 +155,24 @@ std::string CodeGen::generate(const Program &prog) {
   // Generate C/C++ imports
   genCImports(prog.cimports);
   
-  // Generate standard library OUTSIDE any namespace wrapping
-  // Make sure stdlib uses ::std:: prefix
+  // Generate standard library helper functions
+  // These will be in the global namespace, not in "Std"
   std::string stdlibCode = StdLibGenerator::generateAll();
   
-  // Replace all "std::" with "::std::" in stdlib code
-  size_t pos = 0;
-  while ((pos = stdlibCode.find("std::", pos)) != std::string::npos) {
-      if (pos == 0 || stdlibCode[pos-1] != ':') {
-          stdlibCode.insert(pos, "::");
-          pos += 7;
-      } else {
-          pos += 5;
-      }
+  // Remove any "namespace Std {" wrappers if they exist
+  size_t nsPos = stdlibCode.find("namespace Std {");
+  if (nsPos != std::string::npos) {
+    // Remove the namespace declaration
+    stdlibCode.erase(nsPos, 15); // Length of "namespace Std {"
+    
+    // Find and remove the closing brace
+    size_t closePos = stdlibCode.rfind("}");
+    if (closePos != std::string::npos) {
+      stdlibCode.erase(closePos, 1);
+    }
   }
   
   out << stdlibCode;
-  
-  // Add using declarations for common Std functions
-  out << "// Import Std namespace for convenience\n";
-  out << "using Std::println;\n";
-  out << "using Std::print;\n";
-  out << "using Std::readLine;\n";
   out << "\n";
   
   // Array helper wrappers - USE ::std:: prefix
@@ -541,6 +538,7 @@ void CodeGen::genStmt(const StmtPtr &stmt) {
           indent--;
           emitLine("}");
         } else if constexpr (std::is_same_v<T, CppStmt>) {
+          // FIX 3: Pass through inline C++ blocks WITHOUT transformation
           emitLine("// Inline C++ code:");
           out << s.code;
           if (!s.code.empty() && s.code.back() != '\n') {
@@ -657,8 +655,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
           emit(")");
         } else if constexpr (std::is_same_v<T, MemberExpr>) {
-          // Check if target is also a MemberExpr (nested like Std.Math.sqrt or
-          // Network.HTTP)
+          // Check if target is also a MemberExpr (nested like Std.Math.sqrt or Network.HTTP)
           bool isNamespacePath = false;
 
           // Walk up the chain to see if root is a namespace
@@ -668,15 +665,41 @@ void CodeGen::genExpr(const ExprPtr &expr) {
           }
 
           if (auto *rootIdent = std::get_if<IdentExpr>(&root->data)) {
-            if (rootIdent->name == "Std" ||
-                importedNamespaces.count(rootIdent->name) > 0) {
+            // FIX 1: Map "Std" to "std" to prevent Std::std double prefix
+            if (rootIdent->name == "Std") {
+              isNamespacePath = true;
+            } else if (importedNamespaces.count(rootIdent->name) > 0) {
               isNamespacePath = true;
             }
           }
 
           if (isNamespacePath) {
-            // Emit entire path with ::
-            genExpr(e.object);
+            // For namespace paths, emit the entire chain with ::
+            // First, collect the path components
+            std::vector<std::string> pathParts;
+            ExprPtr current = e.object;
+            
+            // Walk up collecting member names
+            while (auto *member = std::get_if<MemberExpr>(&current->data)) {
+              pathParts.push_back(member->member);
+              current = member->object;
+            }
+            
+            // Get root identifier
+            if (auto *rootIdent = std::get_if<IdentExpr>(&current->data)) {
+              if (rootIdent->name == "Std") {
+                emit("std");  // FIX: Force lowercase for standard library
+              } else {
+                emit(rootIdent->name);
+              }
+            }
+            
+            // Emit path parts in reverse order (we collected them bottom-up)
+            for (auto it = pathParts.rbegin(); it != pathParts.rend(); ++it) {
+              emit("::" + *it);
+            }
+            
+            // Finally emit the final member
             emit("::" + e.member);
             return;
           }
@@ -688,10 +711,15 @@ void CodeGen::genExpr(const ExprPtr &expr) {
               return;
             }
 
-            // Check for built-in namespaces OR any capitalized identifier
-            // followed by a member This allows Network.HTTP, Network.Security,
-            // etc. to work
-            if (ident->name == "Std" || ident->name == "std" ||
+            // FIX 1: Map Magolor's "Std" to C++'s "std" (lowercase)
+            // This prevents Std::std double namespace prefix
+            if (ident->name == "Std") {
+              emit("std::" + e.member);
+              return;
+            }
+            
+            // Check for other namespaces OR any capitalized identifier
+            if (ident->name == "std" ||
                 importedNamespaces.count(ident->name) > 0 ||
                 (ident->name.length() > 0 && std::isupper(ident->name[0]))) {
               // Treat as namespace access - use ::
@@ -700,14 +728,15 @@ void CodeGen::genExpr(const ExprPtr &expr) {
             }
           }
 
-          // FIX: Use -> for 'this' pointer, . for regular values
+          // FIX 2: Handle 'this' pointer access - CRITICAL
           if (std::holds_alternative<ThisExpr>(e.object->data)) {
-            emit("this->" + e.member); // ← This line should already be there
-          } else {
-            // Regular member access
-            genExpr(e.object);
-            emit("." + e.member);
+            emit("this->" + e.member);
+            return;  // IMPORTANT: Return early to prevent fall-through
           }
+
+          // Regular member access for value types
+          genExpr(e.object);
+          emit("." + e.member);
         } else if constexpr (std::is_same_v<T, IndexExpr>) {
           genExpr(e.object);
           emit("[");
@@ -749,8 +778,7 @@ void CodeGen::genExpr(const ExprPtr &expr) {
         } else if constexpr (std::is_same_v<T, NoneExpr>)
           emit("std::nullopt");
         else if constexpr (std::is_same_v<T, ThisExpr>)
-          emit("this"); // Just emit pointer - dereferencing happens in
-                        // ReturnStmt
+          emit("this"); // Just emit pointer - dereferencing happens in ReturnStmt
         else if constexpr (std::is_same_v<T, ArrayExpr>) {
           // Determine element type
           std::string elemType = "int";
