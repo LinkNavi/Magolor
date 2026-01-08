@@ -206,9 +206,11 @@ void SemanticAnalyzer::loadProject(const std::string& startUri) {
 }
 
 void SemanticAnalyzer::scanSourceDirectory(const std::string& srcDir) {
+  std::cerr << "[scanSourceDirectory] Scanning: " << srcDir << std::endl;
     try {
         for (const auto& entry : fs::recursive_directory_iterator(srcDir)) {
             if (entry.is_regular_file() && entry.path().extension() == ".mg") {
+ std::cerr << "[scanSourceDirectory] Found: " << entry.path() << std::endl;
                 std::string filePath = entry.path().string();
                 std::string uri = "file://" + filePath;
                 
@@ -588,6 +590,8 @@ std::vector<std::string> SemanticAnalyzer::getImportedModules(const std::string&
 }
 
 std::vector<SymbolPtr> SemanticAnalyzer::getSymbolsFromModule(const std::string& modulePath) {
+    std::cerr << "[getSymbolsFromModule] Looking for: " << modulePath << std::endl;
+    
     if (isStdLibModule(modulePath)) {
         return getStdLibSymbols(modulePath);
     }
@@ -597,6 +601,56 @@ std::vector<SymbolPtr> SemanticAnalyzer::getSymbolsFromModule(const std::string&
         return it->second;
     }
     
+    std::cerr << "[getSymbolsFromModule] Searching " << fileSymbols.size() << " files" << std::endl;
+    
+    for (const auto& [uri, symbols] : fileSymbols) {
+        std::string filename = uri;
+        if (filename.find("file://") == 0) filename = filename.substr(7);
+        
+        size_t srcPos = filename.find("/src/");
+        if (srcPos == std::string::npos) {
+            std::cerr << "[getSymbolsFromModule] No /src/ in: " << filename << std::endl;
+            continue;
+        }
+        
+        std::string relativePath = filename.substr(srcPos + 5);
+        
+        if (relativePath.size() > 3 && relativePath.substr(relativePath.size() - 3) == ".mg") {
+            relativePath = relativePath.substr(0, relativePath.size() - 3);
+        }
+        
+        std::string fileModule;
+        for (char c : relativePath) {
+            fileModule += (c == '/' || c == '\\') ? '.' : c;
+        }
+        
+        std::cerr << "[getSymbolsFromModule] File module: " << fileModule << " from " << uri << std::endl;
+        
+        bool matches = (modulePath == fileModule);
+        if (!matches && modulePath.size() > fileModule.size()) {
+            size_t offset = modulePath.size() - fileModule.size() - 1;
+            if (modulePath[offset] == '.' && 
+                modulePath.substr(offset + 1) == fileModule) {
+                matches = true;
+            }
+        }
+        
+        std::cerr << "[getSymbolsFromModule] Comparing '" << modulePath << "' with '" << fileModule << "': " << (matches ? "MATCH" : "no match") << std::endl;
+        
+        if (matches) {
+            std::vector<SymbolPtr> publicSymbols;
+            for (const auto& sym : symbols) {
+                if (sym->isPublic) {
+                    std::cerr << "[getSymbolsFromModule] Found public symbol: " << sym->name << std::endl;
+                    publicSymbols.push_back(sym);
+                }
+            }
+            moduleSymbolCache[modulePath] = publicSymbols;
+            return publicSymbols;
+        }
+    }
+    
+    std::cerr << "[getSymbolsFromModule] No match found for: " << modulePath << std::endl;
     return {};
 }
 

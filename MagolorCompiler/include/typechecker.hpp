@@ -54,7 +54,7 @@ TypePtr checkIdentExpr(const IdentExpr& e) {
   bool checkModule(ModulePtr module);
   std::vector<FnDecl *> getVisibleFunctions();
   std::vector<FnDecl *> getVisibleCallables();
-
+ModulePtr loadModuleFromImport(const std::string& importPath); 
   std::string typeToString(TypePtr type);
 private:
   ErrorReporter &reporter;

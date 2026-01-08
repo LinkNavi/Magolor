@@ -93,10 +93,6 @@ void StdLibLoader::discoverModules() {
     }
 
     StdModule module;
-    // After registering the capitalized version, also register lowercase
-    modules[moduleName] = module;
-    std::string lowerName = "Std." + segment; // Keep original case
-    modules[lowerName] = module;
     module.name = moduleName.substr(moduleName.rfind('.') + 1);
     module.fullPath = moduleName;
     module.filePath = filePath;
@@ -114,7 +110,6 @@ void StdLibLoader::discoverModules() {
               << relPath << std::endl;
   }
 }
-
 StdModule *StdLibLoader::loadModule(const std::string &modulePath) {
   auto it = modules.find(modulePath);
   if (it == modules.end()) {

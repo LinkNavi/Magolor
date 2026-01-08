@@ -5,7 +5,10 @@
 // 4. Method calls on objects
 
 #include "typechecker.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
 #include <algorithm>
+#include <fstream>
 #include <sstream>
 
 TypeChecker::~TypeChecker() {
@@ -27,7 +30,94 @@ void TypeChecker::exitScope() {
   currentScope = currentScope->parent;
   delete old;
 }
+ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
+  // Skip stdlib
+  if (ModuleResolver::isBuiltinModule(importPath)) {
+    return nullptr;
+  }
 
+  // Already loaded?
+  auto existing = registry.getModule(importPath);
+  if (existing) {
+    return existing;
+  }
+
+  // Convert import path to file path
+  // e.g., "SlateDB.Slate.DB" -> try "src/Slate/DB.mg"
+  std::string filePath;
+
+  // Try stripping first component (project name)
+  size_t firstDot = importPath.find('.');
+  std::string pathWithoutProject = (firstDot != std::string::npos)
+                                       ? importPath.substr(firstDot + 1)
+                                       : importPath;
+
+  // Convert dots to slashes
+  std::string relPath = pathWithoutProject;
+  for (char &c : relPath) {
+    if (c == '.')
+      c = '/';
+  }
+
+  // Try src/ directory
+  filePath = "src/" + relPath + ".mg";
+
+  if (!fs::exists(filePath)) {
+    // Try without src/
+    filePath = relPath + ".mg";
+  }
+
+  if (!fs::exists(filePath)) {
+    std::cerr << "[TypeChecker] Could not find file for import: " << importPath
+              << " (tried src/" << relPath << ".mg)" << std::endl;
+    return nullptr;
+  }
+
+  std::cerr << "[TypeChecker] Loading module from: " << filePath << std::endl;
+
+  // Read and parse the file
+  std::ifstream file(filePath);
+  if (!file) {
+    return nullptr;
+  }
+
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string source = buffer.str();
+
+  ErrorReporter parseReporter(filePath, source);
+
+  Lexer lexer(source, filePath, parseReporter);
+  auto tokens = lexer.tokenize();
+
+  if (parseReporter.hasError()) {
+    return nullptr;
+  }
+
+  Parser parser(std::move(tokens), filePath, parseReporter);
+  Program prog = parser.parse();
+
+  if (parseReporter.hasError()) {
+    return nullptr;
+  }
+
+  // Create and register the module
+  auto module = std::make_shared<Module>();
+  module->name = importPath;
+  module->filepath = filePath;
+  module->ast = prog;
+  module->buildSymbolTable();
+
+  // Register under multiple names for lookup
+  registry.registerModule(importPath, module);
+  registry.registerModule(pathWithoutProject, module);
+
+  std::cerr << "[TypeChecker] Registered module: " << importPath << " with "
+            << prog.classes.size() << " classes, " << prog.functions.size()
+            << " functions" << std::endl;
+
+  return module;
+}
 std::vector<FnDecl *> TypeChecker::getVisibleFunctions() {
   std::vector<FnDecl *> result;
   std::unordered_set<std::string> seen;
@@ -766,7 +856,22 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
           // If not found locally, search imported modules
           if (!cls && currentModule) {
             bool foundInImports = false;
+            for (const auto &usingDecl : currentModule->ast.usings) {
+              std::string modulePath;
+              for (size_t i = 0; i < usingDecl.path.size(); i++) {
+                if (i > 0)
+                  modulePath += ".";
+                modulePath += usingDecl.path[i];
+              }
 
+              // Skip built-in modules
+              if (ModuleResolver::isBuiltinModule(modulePath)) {
+                continue;
+              }
+
+              // Load the module if not already loaded
+              loadModuleFromImport(modulePath);
+            }
             // DEBUG: Log what we're looking for
             std::cerr << "[TypeChecker] Looking for class: " << e.className
                       << std::endl;
