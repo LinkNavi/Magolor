@@ -262,29 +262,21 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
         }
     }
     
- std::unordered_set<std::string> usedModules;
-    for (const auto &usingDecl : prog.usings) {
-        std::string modulePath;
-        for (size_t i = 0; i < usingDecl.path.size(); i++) {
-            if (i > 0) modulePath += ".";
-            modulePath += usingDecl.path[i];
-        }
-        if (modulePath.find("Std.") == 0) {
-            usedModules.insert(modulePath);
-        }
-    }
-    
-    auto linkFlags = StdLibLoader::instance().collectLinkFlags(usedModules);
+    // NEW: Collect link flags from @link blocks
+    auto linkFlags = codegen.collectLinkFlags(prog);
     std::string linkFlagsStr;
     for (const auto& flag : linkFlags) {
         linkFlagsStr += " " + flag;
+    }
+    
+    if (verbose && !linkFlags.empty()) {
+        std::cout << Color::CYAN << "  Link flags:" << Color::RESET << linkFlagsStr << "\n";
     }
     
     // Compile command with link flags
     std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
                             cppFile + " -o " + outputFile + " -lm -lpthread" +
                             linkFlagsStr + " 2>&1";
-                            cppFile + " -o " + outputFile + " -lm -lpthread -lssl -lcrypto 2>&1";
     
     if (verbose) {
         std::cout << Color::CYAN << "    Command:" << Color::RESET << " " << compileCmd << "\n";
@@ -327,7 +319,10 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     }
     
     return true;
-}// ============================================================================
+}
+
+
+// ============================================================================
 // Project management (kept for gear compatibility)
 // ============================================================================
 Program compileFile(const std::string &filepath, const std::string &packageName,

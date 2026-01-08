@@ -695,8 +695,45 @@ std::string CodeGen::generateStdModuleImpl(const std::string &modulePath) {
 
   return out.str();
 }
+
+std::vector<std::string> CodeGen::collectLinkFlags(const Program& prog) {
+  std::unordered_set<std::string> uniqueFlags;
+  std::vector<std::string> result;
+  
+  // Collect from @link blocks
+  for (const auto &linkDecl : prog.linkDecls) {
+    for (const auto &flag : linkDecl.flags) {
+      if (uniqueFlags.insert(flag).second) {
+        result.push_back(flag);
+      }
+    }
+  }
+  
+  // Collect from used modules
+  std::unordered_set<std::string> usedModules;
+  for (const auto &usingDecl : prog.usings) {
+    std::string modulePath;
+    for (size_t i = 0; i < usingDecl.path.size(); i++) {
+      if (i > 0) modulePath += ".";
+      modulePath += usingDecl.path[i];
+    }
+    if (modulePath.find("Std.") == 0) {
+      usedModules.insert(modulePath);
+    }
+  }
+  
+  auto moduleFlags = StdLibLoader::instance().collectLinkFlags(usedModules);
+  for (const auto& flag : moduleFlags) {
+    if (uniqueFlags.insert(flag).second) {
+      result.push_back(flag);
+    }
+  }
+  
+  return result;
+}
+
 std::string CodeGen::generate(const Program &prog) {
-  out.str("");
+   out.str("");
   out.clear();
   importedNamespaces.clear();
   knownClassNames.clear();
@@ -713,6 +750,17 @@ std::string CodeGen::generate(const Program &prog) {
       out << header.code;
       if (!header.code.empty() && header.code.back() != '\n') {
         out << "\n";
+      }
+    }
+    out << "\n";
+  }
+
+  // NEW: @include blocks - output C++ includes
+  if (!prog.includeDecls.empty()) {
+    out << "// User-specified includes (@include blocks)\n";
+    for (const auto &includeDecl : prog.includeDecls) {
+      for (const auto &header : includeDecl.headers) {
+        out << "#include " << header << "\n";
       }
     }
     out << "\n";
@@ -762,9 +810,7 @@ std::string CodeGen::generate(const Program &prog) {
   out << "#include <stdexcept>\n";
   out << "#include <cstring>\n";
   out << "#include <unistd.h>\n";
-  out << "\n";
-
-  // Track imported Std modules
+  out << "\n";  // Track imported Std modules
   std::unordered_set<std::string> importedStdModules;
   for (const auto &usingDecl : prog.usings) {
     std::string modulePath;

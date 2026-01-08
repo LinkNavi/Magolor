@@ -9,7 +9,7 @@
 class CodeGen {
 public:
     std::string generate(const Program& prog);
-    
+    std::vector<std::string> collectLinkFlags(const Program& prog); 
 private:
     std::stringstream out;
     int indent = 0;

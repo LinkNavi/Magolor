@@ -284,12 +284,145 @@ Token Lexer::cppHeaderBlock() {
     
     return {TokenType::CPP_HEADER, code, startLine, startCol, (int)(pos - startPos)};
 }
+Token Lexer::linkBlock() {
+    int startLine = line, startCol = col;
+    int startPos = pos;
+    
+    // Skip '@link'
+    advance(); // @
+    advance(); // l
+    advance(); // i
+    advance(); // n
+    advance(); // k
+    
+    // Skip whitespace before {
+    while (pos < src.size() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r')) {
+        advance();
+    }
+    
+    // Expect {
+    if (pos >= src.size() || peek() != '{') {
+        error("Expected '{' after @link", line, col, 1);
+        return makeToken(TokenType::LINK_BLOCK, "");
+    }
+    advance(); // consume {
+    
+    int braceDepth = 1;
+    std::string flags;
+    
+    // Collect everything until matching }
+    while (pos < src.size() && braceDepth > 0) {
+        char c = peek();
+        
+        if (c == '"') {
+            // Handle string literals
+            flags += advance(); // opening quote
+            while (pos < src.size() && peek() != '"') {
+                if (peek() == '\\') {
+                    flags += advance(); // backslash
+                    if (pos < src.size()) flags += advance(); // escaped char
+                } else {
+                    flags += advance();
+                }
+            }
+            if (pos < src.size()) flags += advance(); // closing quote
+        } else if (c == '{') {
+            braceDepth++;
+            flags += advance();
+        } else if (c == '}') {
+            braceDepth--;
+            if (braceDepth == 0) {
+                advance(); // consume final }
+                break;
+            }
+            flags += advance();
+        } else {
+            flags += advance();
+        }
+    }
+    
+    if (braceDepth > 0) {
+        error("Unterminated @link block", startLine, startCol, pos - startPos);
+    }
+    
+    return {TokenType::LINK_BLOCK, flags, startLine, startCol, (int)(pos - startPos)};
+}
 
+Token Lexer::includeBlock() {
+    int startLine = line, startCol = col;
+    int startPos = pos;
+    
+    // Skip '@include'
+    for (int i = 0; i < 8; i++) advance(); // @include
+    
+    // Skip whitespace before {
+    while (pos < src.size() && (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r')) {
+        advance();
+    }
+    
+    // Expect {
+    if (pos >= src.size() || peek() != '{') {
+        error("Expected '{' after @include", line, col, 1);
+        return makeToken(TokenType::INCLUDE_BLOCK, "");
+    }
+    advance(); // consume {
+    
+    int braceDepth = 1;
+    std::string headers;
+    
+    // Collect everything until matching }
+    while (pos < src.size() && braceDepth > 0) {
+        char c = peek();
+        
+        if (c == '<') {
+            // System header like <sys/socket.h>
+            headers += advance(); // <
+            while (pos < src.size() && peek() != '>') {
+                headers += advance();
+            }
+            if (pos < src.size()) headers += advance(); // >
+            headers += ' '; // Add separator
+        } else if (c == '"') {
+            // Local header like "myheader.h"
+            headers += advance(); // opening quote
+            while (pos < src.size() && peek() != '"') {
+                if (peek() == '\\') {
+                    headers += advance();
+                    if (pos < src.size()) headers += advance();
+                } else {
+                    headers += advance();
+                }
+            }
+            if (pos < src.size()) headers += advance(); // closing quote
+            headers += ' '; // Add separator
+        } else if (c == '{') {
+            braceDepth++;
+            headers += advance();
+        } else if (c == '}') {
+            braceDepth--;
+            if (braceDepth == 0) {
+                advance(); // consume final }
+                break;
+            }
+            headers += advance();
+        } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            advance(); // Skip extra whitespace
+        } else {
+            headers += advance();
+        }
+    }
+    
+    if (braceDepth > 0) {
+        error("Unterminated @include block", startLine, startCol, pos - startPos);
+    }
+    
+    return {TokenType::INCLUDE_BLOCK, headers, startLine, startCol, (int)(pos - startPos)};
+}
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
     
     while (pos < src.size()) {
-        skipWhitespace();
+       skipWhitespace();
         if (pos >= src.size()) break;
         
         if (peek() == '/' && peek(1) == '/') {
@@ -308,13 +441,27 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
+        // Check for @include (MUST check all 8 characters)
+        if (c == '@' && peek(1) == 'i' && peek(2) == 'n' && peek(3) == 'c' &&
+            peek(4) == 'l' && peek(5) == 'u' && peek(6) == 'd' && peek(7) == 'e' &&
+            (pos + 8 >= src.size() || !std::isalnum(peek(8)))) {
+            tokens.push_back(includeBlock());
+            continue;
+        }
+        
+        // Check for @link (MUST check all 5 characters)
+        if (c == '@' && peek(1) == 'l' && peek(2) == 'i' && peek(3) == 'n' && peek(4) == 'k' &&
+            (pos + 5 >= src.size() || !std::isalnum(peek(5)))) {
+            tokens.push_back(linkBlock());
+            continue;
+        }
+        
         // Check for @cpp (MUST check all 4 characters)
         if (c == '@' && peek(1) == 'c' && peek(2) == 'p' && peek(3) == 'p' &&
             (pos + 4 >= src.size() || !std::isalnum(peek(4)))) {
             tokens.push_back(cppBlock());
             continue;
         }
-        
         // Single character tokens
         if (c == '(') { tokens.push_back(makeToken(TokenType::LPAREN, "(")); advance(); continue; }
         if (c == ')') { tokens.push_back(makeToken(TokenType::RPAREN, ")")); advance(); continue; }

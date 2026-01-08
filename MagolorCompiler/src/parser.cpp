@@ -74,18 +74,104 @@ Program Parser::parse() {
   Program prog;
   while (!check(TokenType::EOF_TOK)) {
     try {
-      // NEW: Handle @cpp_header blocks
       std::cerr << "Parser: Token at pos " << pos
                 << ": type=" << (int)peek().type << " value='" << peek().value
                 << "'\n";
 
-      // NEW: Handle @cpp_header blocks
+      // Handle @cpp_header blocks
       if (check(TokenType::CPP_HEADER)) {
         std::cerr << "Parser: Found CPP_HEADER token!\n";
         CppHeaderDecl header;
         header.code = advance().value;
         prog.cppHeaders.push_back(header);
-      } else if (check(TokenType::USING)) {
+      } 
+      // NEW: Handle @link blocks
+      else if (check(TokenType::LINK_BLOCK)) {
+        std::cerr << "Parser: Found LINK_BLOCK token!\n";
+        LinkDecl link;
+        
+        // Parse the flags from the token value
+        std::string flags = advance().value;
+        std::istringstream iss(flags);
+        std::string flag;
+        
+        while (iss >> flag) {
+          // Remove quotes if present
+          if (!flag.empty() && (flag.front() == '"' || flag.front() == '\'')) {
+            flag = flag.substr(1);
+          }
+          if (!flag.empty() && (flag.back() == '"' || flag.back() == '\'')) {
+            flag = flag.substr(0, flag.size() - 1);
+          }
+          
+          // Trim whitespace
+          size_t start = flag.find_first_not_of(" \t\n\r");
+          size_t end = flag.find_last_not_of(" \t\n\r");
+          if (start != std::string::npos && end != std::string::npos) {
+            flag = flag.substr(start, end - start + 1);
+          }
+          
+          if (!flag.empty()) {
+            link.flags.push_back(flag);
+          }
+        }
+        
+        prog.linkDecls.push_back(link);
+      }
+      // NEW: Handle @include blocks
+      else if (check(TokenType::INCLUDE_BLOCK)) {
+        std::cerr << "Parser: Found INCLUDE_BLOCK token!\n";
+        IncludeDecl include;
+        
+        // Parse the headers from the token value
+        std::string headers = advance().value;
+        
+        // Split by whitespace while preserving <> and "" brackets
+        size_t pos = 0;
+        while (pos < headers.size()) {
+          // Skip whitespace
+          while (pos < headers.size() && std::isspace(headers[pos])) {
+            pos++;
+          }
+          
+          if (pos >= headers.size()) break;
+          
+          std::string header;
+          
+          if (headers[pos] == '<') {
+            // System header
+            size_t end = headers.find('>', pos);
+            if (end != std::string::npos) {
+              header = headers.substr(pos, end - pos + 1);
+              pos = end + 1;
+            }
+          } else if (headers[pos] == '"') {
+            // Local header
+            pos++; // skip opening quote
+            size_t end = headers.find('"', pos);
+            if (end != std::string::npos) {
+              header = "\"" + headers.substr(pos, end - pos) + "\"";
+              pos = end + 1;
+            }
+          } else {
+            // Plain header name (add <> around it)
+            size_t end = pos;
+            while (end < headers.size() && !std::isspace(headers[end]) && 
+                   headers[end] != '<' && headers[end] != '"') {
+              end++;
+            }
+            header = "<" + headers.substr(pos, end - pos) + ">";
+            pos = end;
+          }
+          
+          if (!header.empty()) {
+            include.headers.push_back(header);
+          }
+        }
+        
+        prog.includeDecls.push_back(include);
+      }
+      else if (check(TokenType::USING)) {
         prog.usings.push_back(parseUsing());
       } else if (check(TokenType::CIMPORT)) {
         prog.cimports.push_back(parseCImport());
@@ -114,7 +200,6 @@ Program Parser::parse() {
   }
   return prog;
 }
-
 UsingDecl Parser::parseUsing() {
   expect(TokenType::USING, "Expected 'using'");
   UsingDecl decl;
