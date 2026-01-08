@@ -2,7 +2,7 @@ name = "Magolor"
 version = "0.1.0"
 type = "exec"
 language = "cpp"
-
+std = "17"
 [sources]
 dirs = ["src"]
 

@@ -8,69 +8,76 @@
 #include <vector>
 #include <cctype>
 
+#include <variant>
+
 class JsonValue {
 public:
   enum Type { Null, Bool, Int, Float, String, Array, Object };
 
-  JsonValue() : type_(Null) {}
-  JsonValue(bool v) : type_(Bool), boolVal_(v) {}
-  JsonValue(int v) : type_(Int), intVal_(v) {}
-  JsonValue(double v) : type_(Float), floatVal_(v) {}
-  JsonValue(const std::string &v) : type_(String), strVal_(v) {}
-  JsonValue(const char *v) : type_(String), strVal_(v) {}
+  using ObjectMap = std::unordered_map<std::string, JsonValue>;
+  using ArrayVec = std::vector<JsonValue>;
 
-  Type type() const { return type_; }
-  bool isNull() const { return type_ == Null; }
+private:
+  std::variant<std::nullptr_t, bool, int, double, std::string, ArrayVec, ObjectMap> data_;
 
-  bool asBool() const { return boolVal_; }
-  int asInt() const { return intVal_; }
-  double asFloat() const { return floatVal_; }
-  const std::string &asString() const { return strVal_; }
+public:
+  JsonValue() : data_(nullptr) {}
+  JsonValue(bool v) : data_(v) {}
+  JsonValue(int v) : data_(v) {}
+  JsonValue(double v) : data_(v) {}
+  JsonValue(const std::string &v) : data_(v) {}
+  JsonValue(const char *v) : data_(std::string(v)) {}
 
-  std::vector<JsonValue> &asArray() { return arrVal_; }
-  const std::vector<JsonValue> &asArray() const { return arrVal_; }
+  Type type() const { return static_cast<Type>(data_.index()); }
+  bool isNull() const { return std::holds_alternative<std::nullptr_t>(data_); }
 
-  std::unordered_map<std::string, JsonValue> &asObject() { return objVal_; }
-  const std::unordered_map<std::string, JsonValue> &asObject() const {
-    return objVal_;
-  }
+  bool asBool() const { return std::get<bool>(data_); }
+  int asInt() const { return std::get<int>(data_); }
+  double asFloat() const { return std::get<double>(data_); }
+  const std::string &asString() const { return std::get<std::string>(data_); }
+
+  ArrayVec &asArray() { return std::get<ArrayVec>(data_); }
+  const ArrayVec &asArray() const { return std::get<ArrayVec>(data_); }
+
+  ObjectMap &asObject() { return std::get<ObjectMap>(data_); }
+  const ObjectMap &asObject() const { return std::get<ObjectMap>(data_); }
 
   JsonValue &operator[](const std::string &key) {
-    if (type_ != Object) {
-      type_ = Object;
-      objVal_.clear();
+    if (!std::holds_alternative<ObjectMap>(data_)) {
+      data_ = ObjectMap{};
     }
-    return objVal_[key];
+    return std::get<ObjectMap>(data_)[key];
   }
 
   const JsonValue &operator[](const std::string &key) const {
     static JsonValue null;
-    if (type_ != Object)
-      return null;
-    auto it = objVal_.find(key);
-    return it != objVal_.end() ? it->second : null;
+    if (!std::holds_alternative<ObjectMap>(data_)) return null;
+    auto &obj = std::get<ObjectMap>(data_);
+    auto it = obj.find(key);
+    return it != obj.end() ? it->second : null;
   }
 
   bool has(const std::string &key) const {
-    return type_ == Object && objVal_.find(key) != objVal_.end();
+    if (!std::holds_alternative<ObjectMap>(data_)) return false;
+    return std::get<ObjectMap>(data_).find(key) != std::get<ObjectMap>(data_).end();
   }
 
   void push(const JsonValue &v) {
-    if (type_ != Array) {
-      type_ = Array;
-      arrVal_.clear();
+    if (!std::holds_alternative<ArrayVec>(data_)) {
+      data_ = ArrayVec{};
     }
-    arrVal_.push_back(v);
+    std::get<ArrayVec>(data_).push_back(v);
   }
 
   static JsonValue object() {
     JsonValue v;
-    v.type_ = Object;
+    v.data_ = ObjectMap{};
     return v;
   }
+
   static JsonValue array() {
     JsonValue v;
-    v.type_ = Array;
+    v.data_ = ArrayVec{};
     return v;
   }
 
@@ -81,67 +88,46 @@ public:
   }
 
 private:
-  Type type_;
-  bool boolVal_ = false;
-  int intVal_ = 0;
-  double floatVal_ = 0;
-  std::string strVal_;
-  std::vector<JsonValue> arrVal_;
-  std::unordered_map<std::string, JsonValue> objVal_;
-
   void serializeTo(std::ostream &os) const {
-    switch (type_) {
-    case Null:
-      os << "null";
-      break;
-    case Bool:
-      os << (boolVal_ ? "true" : "false");
-      break;
-    case Int:
-      os << intVal_;
-      break;
-    case Float:
-      os << floatVal_;
-      break;
-    case String:
+    switch (data_.index()) {
+    case 0: os << "null"; break;
+    case 1: os << (std::get<bool>(data_) ? "true" : "false"); break;
+    case 2: os << std::get<int>(data_); break;
+    case 3: os << std::get<double>(data_); break;
+    case 4:
       os << '"';
-      for (char c : strVal_) {
-        if (c == '"')
-          os << "\\\"";
-        else if (c == '\\')
-          os << "\\\\";
-        else if (c == '\n')
-          os << "\\n";
-        else if (c == '\r')
-          os << "\\r";
-        else if (c == '\t')
-          os << "\\t";
-        else
-          os << c;
+      for (char c : std::get<std::string>(data_)) {
+        if (c == '"') os << "\\\"";
+        else if (c == '\\') os << "\\\\";
+        else if (c == '\n') os << "\\n";
+        else if (c == '\r') os << "\\r";
+        else if (c == '\t') os << "\\t";
+        else os << c;
       }
       os << '"';
       break;
-    case Array:
+    case 5: {
       os << '[';
-      for (size_t i = 0; i < arrVal_.size(); i++) {
-        if (i > 0)
-          os << ',';
-        arrVal_[i].serializeTo(os);
+      const auto &arr = std::get<ArrayVec>(data_);
+      for (size_t i = 0; i < arr.size(); i++) {
+        if (i > 0) os << ',';
+        arr[i].serializeTo(os);
       }
       os << ']';
       break;
-    case Object:
+    }
+    case 6: {
       os << '{';
       bool first = true;
-      for (auto &[k, v] : objVal_) {
-        if (!first)
-          os << ',';
+      for (const auto &[k, v] : std::get<ObjectMap>(data_)) {
+        if (!first) os << ',';
         first = false;
         os << '"' << k << "\":";
         v.serializeTo(os);
       }
       os << '}';
       break;
+    }
     }
   }
 };

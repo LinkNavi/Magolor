@@ -1,72 +1,8 @@
 #include "lsp_completion.hpp"
+#include "jsonrpc.hpp"
 #include "stdlib_loader.hpp"
 #include <algorithm>
 #include <sstream>
-
-// Simple JSON builder (assumes JsonValue is defined elsewhere, or inline here)
-struct JsonValue {
-    enum Type { Null, Bool, Int, Double, String, Array, Object };
-    Type type = Null;
-    bool boolVal = false;
-    int64_t intVal = 0;
-    double doubleVal = 0;
-    std::string strVal;
-    std::vector<JsonValue> arrayVal;
-    std::vector<std::pair<std::string, JsonValue>> objectVal;
-
-    JsonValue() : type(Null) {}
-    JsonValue(bool b) : type(Bool), boolVal(b) {}
-    JsonValue(int i) : type(Int), intVal(i) {}
-    JsonValue(int64_t i) : type(Int), intVal(i) {}
-    JsonValue(double d) : type(Double), doubleVal(d) {}
-    JsonValue(const char* s) : type(String), strVal(s) {}
-    JsonValue(const std::string& s) : type(String), strVal(s) {}
-
-    static JsonValue array() { JsonValue v; v.type = Array; return v; }
-    static JsonValue object() { JsonValue v; v.type = Object; return v; }
-
-    void push(const JsonValue& v) { if (type == Array) arrayVal.push_back(v); }
-    void set(const std::string& k, const JsonValue& v) { 
-        if (type == Object) objectVal.emplace_back(k, v); 
-    }
-
-    std::string dump() const {
-        switch (type) {
-            case Null: return "null";
-            case Bool: return boolVal ? "true" : "false";
-            case Int: return std::to_string(intVal);
-            case Double: return std::to_string(doubleVal);
-            case String: {
-                std::string out = "\"";
-                for (char c : strVal) {
-                    if (c == '"') out += "\\\"";
-                    else if (c == '\\') out += "\\\\";
-                    else if (c == '\n') out += "\\n";
-                    else if (c == '\t') out += "\\t";
-                    else out += c;
-                }
-                return out + "\"";
-            }
-            case Array: {
-                std::string out = "[";
-                for (size_t i = 0; i < arrayVal.size(); ++i) {
-                    if (i > 0) out += ",";
-                    out += arrayVal[i].dump();
-                }
-                return out + "]";
-            }
-            case Object: {
-                std::string out = "{";
-                for (size_t i = 0; i < objectVal.size(); ++i) {
-                    if (i > 0) out += ",";
-                    out += "\"" + objectVal[i].first + "\":" + objectVal[i].second.dump();
-                }
-                return out + "}";
-            }
-        }
-        return "null";
-    }
-};
 
 static JsonValue makeCompletionItem(
     const std::string& label,
@@ -77,20 +13,20 @@ static JsonValue makeCompletionItem(
     const std::string& sortText = ""
 ) {
     JsonValue item = JsonValue::object();
-    item.set("label", label);
-    item.set("kind", static_cast<int>(kind));
-    if (!detail.empty()) item.set("detail", detail);
+    item["label"] = label;
+    item["kind"] = static_cast<int>(kind);
+    if (!detail.empty()) item["detail"] = detail;
     if (!doc.empty()) {
         JsonValue docObj = JsonValue::object();
-        docObj.set("kind", "markdown");
-        docObj.set("value", doc);
-        item.set("documentation", docObj);
+        docObj["kind"] = "markdown";
+        docObj["value"] = doc;
+        item["documentation"] = docObj;
     }
     if (!insertText.empty()) {
-        item.set("insertText", insertText);
-        item.set("insertTextFormat", 2); // Snippet format
+        item["insertText"] = insertText;
+        item["insertTextFormat"] = 2; // Snippet format
     }
-    if (!sortText.empty()) item.set("sortText", sortText);
+    if (!sortText.empty()) item["sortText"] = sortText;
     return item;
 }
 
@@ -136,7 +72,6 @@ void CompletionProvider::addStdLibCompletions(JsonValue& items, const std::strin
     auto modules = loader.getAvailableModules();
     
     for (const auto& mod : modules) {
-        // Extract short name (e.g., "IO" from "Std.IO")
         std::string shortName = mod;
         auto dot = mod.rfind('.');
         if (dot != std::string::npos) shortName = mod.substr(dot + 1);
@@ -215,7 +150,6 @@ void CompletionProvider::addImportedSymbols(JsonValue& items, const std::string&
 }
 
 void CompletionProvider::addCallableSymbols(JsonValue& items, const std::string& uri, const std::string& filter) {
-    // Add functions from stdlib
     auto& loader = StdLibLoader::instance();
     auto modules = loader.getAvailableModules();
     
@@ -291,7 +225,6 @@ void CompletionProvider::addClassMemberCompletions(JsonValue& items, const std::
         for (const auto& cls : classes) {
             if (cls.name != className) continue;
             
-            // Add methods
             for (const auto& method : cls.methods) {
                 std::string sig = method.name + "(";
                 std::string snippet = method.name + "(";
@@ -310,7 +243,6 @@ void CompletionProvider::addClassMemberCompletions(JsonValue& items, const std::
                 ));
             }
             
-            // Add fields (pair<name, type>)
             for (const auto& field : cls.fields) {
                 items.push(makeCompletionItem(
                     field.first, CompletionItemKind::Field,
@@ -325,27 +257,22 @@ void CompletionProvider::addClassMemberCompletions(JsonValue& items, const std::
 JsonValue CompletionProvider::provideCompletions(const std::string& uri, Position pos, const std::string& lineText) {
     JsonValue items = JsonValue::array();
     
-    // Determine completion context from line
     std::string line = lineText.substr(0, pos.character);
     std::string filter;
     
-    // Extract word being typed
     size_t wordStart = line.size();
     while (wordStart > 0 && (std::isalnum(line[wordStart-1]) || line[wordStart-1] == '_')) {
         --wordStart;
     }
     filter = line.substr(wordStart);
     
-    // Check for specific contexts
     bool afterDot = wordStart > 0 && line[wordStart-1] == '.';
     bool afterDoubleColon = wordStart > 1 && line.substr(wordStart-2, 2) == "::";
     bool inUsing = line.find("using ") != std::string::npos;
     
     if (inUsing) {
-        // Module completions for imports
         addStdLibCompletions(items, filter);
     } else if (afterDoubleColon) {
-        // Enum variant completions
         size_t enumStart = wordStart - 2;
         while (enumStart > 0 && (std::isalnum(line[enumStart-1]) || line[enumStart-1] == '_')) {
             --enumStart;
@@ -353,22 +280,17 @@ JsonValue CompletionProvider::provideCompletions(const std::string& uri, Positio
         std::string enumName = line.substr(enumStart, wordStart - 2 - enumStart);
         addEnumCompletions(items, enumName, uri);
     } else if (afterDot) {
-        // Member access completions
         size_t objStart = wordStart - 1;
         while (objStart > 0 && (std::isalnum(line[objStart-1]) || line[objStart-1] == '_')) {
             --objStart;
         }
         std::string objName = line.substr(objStart, wordStart - 1 - objStart);
         
-        // Try to resolve object type and add members
         auto sym = analyzer.findSymbolInImports(uri, objName);
         if (sym && !sym->type.empty()) {
             addClassMemberCompletions(items, sym->type, uri);
         }
     } else {
-        // General completions
-        
-        // Keywords
         for (const auto& kw : getKeywords()) {
             if (matchesFilter(kw, filter)) {
                 items.push(makeCompletionItem(
@@ -378,7 +300,6 @@ JsonValue CompletionProvider::provideCompletions(const std::string& uri, Positio
             }
         }
         
-        // Snippets
         for (const auto& snip : getBuiltinSnippets()) {
             if (matchesFilter(snip.label, filter)) {
                 items.push(makeCompletionItem(
@@ -388,36 +309,23 @@ JsonValue CompletionProvider::provideCompletions(const std::string& uri, Positio
             }
         }
         
-        // Imported symbols
         addImportedSymbols(items, uri, filter);
-        
-        // Variables in scope
         addVariableSymbols(items, uri, pos, filter);
-        
-        // Callable functions
         addCallableSymbols(items, uri, filter);
-        
-        // CImport symbols
         addCImportCompletions(items, uri, filter);
     }
     
     return items;
 }
 
-// ============================================================================
-// CImport Completions
-// ============================================================================
-
 std::vector<std::string> CompletionProvider::getCImportsFromFile(const std::string& uri) {
     std::vector<std::string> cimports;
     
-    // Get direct cimports from file
     auto directCImports = analyzer.getCImports(uri);
     for (const auto& h : directCImports) {
         cimports.push_back(h);
     }
     
-    // Also check imported modules for their cimports
     auto modules = analyzer.getImportedModules(uri);
     auto& loader = StdLibLoader::instance();
     
@@ -433,7 +341,6 @@ std::vector<std::string> CompletionProvider::getCImportsFromFile(const std::stri
 
 void CompletionProvider::addCImportCompletions(JsonValue& items, const std::string& uri, const std::string& filter) {
     auto cimports = getCImportsFromFile(uri);
-    auto& parser = CHeaderParser::instance();
     
     for (const auto& headerPath : cimports) {
         addCHeaderCompletions(items, headerPath, filter);
@@ -454,7 +361,6 @@ void CompletionProvider::addCFunctionCompletions(JsonValue& items, const std::st
     for (const auto& func : funcs) {
         if (!matchesFilter(func.name, filter)) continue;
         
-        // Build signature
         std::string sig = func.name + "(";
         std::string snippet = func.name + "(";
         int idx = 1;
@@ -508,7 +414,6 @@ void CompletionProvider::addCEnumCompletions(JsonValue& items, const std::string
     auto enums = parser.getEnums(headerPath);
     
     for (const auto& en : enums) {
-        // Add enum type
         if (matchesFilter(en.name, filter)) {
             std::string doc = "C enum from " + en.headerFile + "\n\nValues:\n";
             for (const auto& val : en.enumValues) {
@@ -522,7 +427,6 @@ void CompletionProvider::addCEnumCompletions(JsonValue& items, const std::string
             ));
         }
         
-        // Add enum values
         for (const auto& val : en.enumValues) {
             if (matchesFilter(val, filter)) {
                 items.push(makeCompletionItem(
