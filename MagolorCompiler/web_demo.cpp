@@ -150,7 +150,7 @@ namespace Http {
                                 std::string requestData(buffer, n);
                                 
                                 // Parse request
-                                auto reqOpt = HTTP::parseRequest(requestData);
+                                auto reqOpt = parseRequest(requestData);
                                 if (reqOpt.has_value()) {
                                     Request req = reqOpt.value();
                                     

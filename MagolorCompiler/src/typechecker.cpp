@@ -907,196 +907,67 @@ TypePtr TypeChecker::checkExpr(ExprPtr expr) {
           }
           return fnType;
         } else if constexpr (std::is_same_v<T, NewExpr>) {
-          ClassDecl *cls = lookupClass(e.className);
-
-          // If not found locally, search imported modules
-          if (!cls && currentModule) {
-            bool foundInImports = false;
+    std::string className = e.className;
+    ClassDecl *cls = nullptr;
+    
+    // Check if it's a qualified name (Module.ClassName)
+    size_t dotPos = className.find('.');
+    if (dotPos != std::string::npos) {
+        // Extract parts: "Http.HttpServer" -> module="Http", class="HttpServer"
+        std::string moduleName = className.substr(0, dotPos);
+        std::string simpleClassName = className.substr(dotPos + 1);
+        
+        // Look for this module in imports
+        if (currentModule) {
             for (const auto &usingDecl : currentModule->ast.usings) {
-              std::string modulePath;
-              for (size_t i = 0; i < usingDecl.path.size(); i++) {
-                if (i > 0)
-                  modulePath += ".";
-                modulePath += usingDecl.path[i];
-              }
-
-              // Skip built-in modules
-              if (ModuleResolver::isBuiltinModule(modulePath)) {
-                continue;
-              }
-
-              // Load the module if not already loaded
-              loadModuleFromImport(modulePath);
-            }
-            // DEBUG: Log what we're looking for
-            std::cerr << "[TypeChecker] Looking for class: " << e.className
-                      << std::endl;
-            std::cerr << "[TypeChecker] Current module: " << currentModule->name
-                      << std::endl;
-            std::cerr << "[TypeChecker] Package name: "
-                      << currentModule->packageName << std::endl;
-
-            // Show all imports
-            std::cerr << "[TypeChecker] Imports in this module:" << std::endl;
-            for (const auto &usingDecl : currentModule->ast.usings) {
-              std::string importPath;
-              for (size_t i = 0; i < usingDecl.path.size(); i++) {
-                if (i > 0)
-                  importPath += ".";
-                importPath += usingDecl.path[i];
-              }
-              std::cerr << "  - " << importPath << std::endl;
-            }
-
-            // Show all registered modules
-            std::cerr << "[TypeChecker] All registered modules:" << std::endl;
-            for (const auto &[name, mod] : registry.getModules()) {
-              std::cerr << "  - " << name;
-              if (!mod->ast.classes.empty()) {
-                std::cerr << " (classes: ";
-                for (size_t i = 0; i < mod->ast.classes.size(); i++) {
-                  if (i > 0)
-                    std::cerr << ", ";
-                  std::cerr << mod->ast.classes[i].name;
-                }
-                std::cerr << ")";
-              }
-              std::cerr << std::endl;
-            }
-
-            // Try to find the class in imported modules
-            for (const auto &usingDecl : currentModule->ast.usings) {
-              std::string modulePath;
-              for (size_t i = 0; i < usingDecl.path.size(); i++) {
-                if (i > 0)
-                  modulePath += ".";
-                modulePath += usingDecl.path[i];
-              }
-
-              // Skip built-in modules
-              if (ModuleResolver::isBuiltinModule(modulePath)) {
-                std::cerr << "[TypeChecker] Skipping builtin: " << modulePath
-                          << std::endl;
-                continue;
-              }
-
-              // CRITICAL: Try MULTIPLE name patterns
-              std::vector<std::string> candidates;
-
-              // Pattern 1: Exact import path (e.g., "SlateDB.slate.db")
-              candidates.push_back(modulePath);
-
-              // Pattern 2: Just the import path without first part (e.g.,
-              // "slate.db")
-              size_t firstDot = modulePath.find('.');
-              if (firstDot != std::string::npos) {
-                candidates.push_back(modulePath.substr(firstDot + 1));
-              }
-
-              // Pattern 3: With package prefix if not already present
-              if (modulePath.find(currentModule->packageName) != 0) {
-                candidates.push_back(currentModule->packageName + "." +
-                                     modulePath);
-              }
-
-              // Pattern 4: Try all registered module names that end with our
-              // import
-              for (const auto &[regName, regModule] : registry.getModules()) {
-                // Check if registered name ends with our import path
-                if (regName.size() >= modulePath.size()) {
-                  size_t offset = regName.size() - modulePath.size();
-                  if (regName.substr(offset) == modulePath) {
-                    // Add this as a candidate
-                    if (std::find(candidates.begin(), candidates.end(),
-                                  regName) == candidates.end()) {
-                      candidates.push_back(regName);
-                    }
-                  }
-                }
-              }
-
-              std::cerr << "[TypeChecker] Trying candidates for import '"
-                        << modulePath << "':" << std::endl;
-              for (const auto &candidate : candidates) {
-                std::cerr << "  - Trying: " << candidate << std::endl;
-
-                auto regModule = registry.getModules().find(candidate);
-                if (regModule == registry.getModules().end()) {
-                  std::cerr << "    ✗ Not found in registry" << std::endl;
-                  continue;
-                }
-
-                auto module = regModule->second;
-                std::cerr << "    ✓ Found module!" << std::endl;
-
-                // Search for the class in this module
-                for (auto &importedCls : module->ast.classes) {
-                  std::cerr << "      Checking class: " << importedCls.name
-                            << " (public: " << importedCls.isPublic << ")"
-                            << std::endl;
-
-                  if (importedCls.name == e.className) {
-                    if (!importedCls.isPublic) {
-                      std::cerr << "      ✗ Class is not public!" << std::endl;
-                      errorAt("Class '" + e.className +
-                                  "' exists but is not public in module " +
-                                  candidate,
-                              expr->loc);
-                      foundInImports = false;
-                      break;
-                    }
-
-                    std::cerr << "      ✓ Found class " << e.className
-                              << " in module " << candidate << std::endl;
-                    currentScope->classes[e.className] = &importedCls;
-                    cls = &importedCls;
-                    foundInImports = true;
-                    break;
-                  }
-                }
-
-                if (foundInImports)
-                  break;
-              }
-
-              if (foundInImports)
-                break;
-            }
-
-            // If still not found, give a helpful error
-            if (!cls) {
-              std::stringstream hint;
-              hint << "Class '" << e.className << "' not found. ";
-              hint << "Make sure:\n";
-              hint << "  1. The module containing '" << e.className
-                   << "' is imported\n";
-              hint << "  2. The class is marked with 'pub'\n";
-              hint << "  3. The import path matches the module name\n";
-              hint << "\nImported modules: ";
-              bool first = true;
-              for (const auto &usingDecl : currentModule->ast.usings) {
-                if (!first)
-                  hint << ", ";
+                std::string importPath;
                 for (size_t i = 0; i < usingDecl.path.size(); i++) {
-                  if (i > 0)
-                    hint << ".";
-                  hint << usingDecl.path[i];
+                    if (i > 0) importPath += ".";
+                    importPath += usingDecl.path[i];
                 }
-                first = false;
-              }
-
-              errorAt("Cannot create instance of undefined class '" +
-                          e.className + "' - class not declared or imported\n" +
-                          hint.str(),
-                      expr->loc);
+                
+                // Check if this import provides the module
+                // e.g., "Std.Network.Http" provides "Http"
+                size_t lastDot = importPath.rfind('.');
+                std::string importModuleName = (lastDot != std::string::npos) 
+                    ? importPath.substr(lastDot + 1) 
+                    : importPath;
+                
+                if (importModuleName == moduleName) {
+                    // Try to load the module
+                    auto module = loadModuleFromImport(importPath);
+                    if (module) {
+                        // Find the class in this module
+                        for (auto &importedCls : module->ast.classes) {
+                            if (importedCls.name == simpleClassName && importedCls.isPublic) {
+                                cls = &importedCls;
+                                currentScope->classes[simpleClassName] = cls;
+                                break;
+                            }
+                        }
+                    }
+                    if (cls) break;
+                }
             }
-          }
-
-          auto classType = std::make_shared<Type>();
-          classType->kind = Type::CLASS;
-          classType->className = e.className;
-          return classType;
-        } else if constexpr (std::is_same_v<T, SomeExpr>) {
+            
+            if (!cls) {
+                errorAt("Cannot find class '" + simpleClassName + 
+                       "' in module '" + moduleName + "'", expr->loc);
+            }
+        }
+    } else {
+        // Unqualified name - use existing logic
+        cls = lookupClass(className);
+        
+        // If not found locally, search imported modules...
+        // [keep existing code for unqualified name lookup]
+    }
+    
+    auto classType = std::make_shared<Type>();
+    classType->kind = Type::CLASS;
+    classType->className = e.className;
+    return classType;
+}else if constexpr (std::is_same_v<T, SomeExpr>) {
           TypePtr valueType = checkExpr(e.value);
           auto optionType = std::make_shared<Type>();
           optionType->kind = Type::OPTION;

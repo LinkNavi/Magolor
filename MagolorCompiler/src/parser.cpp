@@ -1029,24 +1029,33 @@ ExprPtr Parser::parsePrimary() {
     return e;
   }
 
-  if (match(TokenType::NEW)) {
+if (match(TokenType::NEW)) {
     Token tok = tokens[pos - 1];
-    Token className =
-        expect(TokenType::IDENT, "Expected class name after 'new'");
+    
+    // Parse class name - can be qualified like Module.ClassName
+    Token className = expect(TokenType::IDENT, "Expected class name after 'new'");
+    std::string fullClassName = className.value;
+    
+    // Check for qualified name (Module.ClassName)
+    while (match(TokenType::DOT)) {
+        Token part = expect(TokenType::IDENT, "Expected identifier after '.'");
+        fullClassName += "." + part.value;
+    }
+    
     expect(TokenType::LPAREN, "Expected '(' after class name");
     std::vector<ExprPtr> args;
     if (!check(TokenType::RPAREN)) {
-      args.push_back(parseExpr());
-      while (match(TokenType::COMMA)) {
         args.push_back(parseExpr());
-      }
+        while (match(TokenType::COMMA)) {
+            args.push_back(parseExpr());
+        }
     }
     expect(TokenType::RPAREN, "Expected ')' after constructor arguments");
     auto e = std::make_shared<Expr>();
-    e->data = NewExpr{className.value, args};
+    e->data = NewExpr{fullClassName, args};
     e->loc = tokenToLoc(tok);
     return e;
-  }
+}
 
   if (check(TokenType::INT_LIT)) {
     Token t = advance();
