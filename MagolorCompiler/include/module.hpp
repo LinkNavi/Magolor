@@ -107,22 +107,22 @@ class ModuleResolver {
 public:
     // Check if this is a built-in standard library module
   static bool isBuiltinModule(const std::string& modulePath) {
-    // Check if it starts with "Std."
-    if (modulePath.find("Std.") == 0 || modulePath == "Std") {
-        // It's a stdlib module - check if StdLibLoader has it
+        // NEW: Check if StdLibLoader has this module as a .mg file
+        // If it does, it's NOT a builtin - it needs to be parsed!
         auto& loader = StdLibLoader::instance();
-        return loader.hasModule(modulePath);
+        if (loader.isInitialized() && loader.hasModule(modulePath)) {
+            return false;  // Has a .mg file - not a builtin
+        }
+        
+        // These are the OLD hardcoded builtins (generated in stdlib.hpp)
+        // Only return true for modules that DON'T have .mg files
+        static const std::unordered_set<std::string> oldBuiltins = {
+            "Std", "Std.IO", "Std.Parse", "Std.Option"
+            // Don't include modules that now have .mg files!
+        };
+        
+        return oldBuiltins.count(modulePath) > 0;
     }
-    
-    // Fallback to hardcoded list for backwards compatibility
-    static const std::unordered_set<std::string> builtins = {
-        "Std", "Std.IO", "Std.Parse", "Std.Option", "Std.Math",
-        "Std.String", "Std.Array", "Std.Map", "Std.Set", "Std.File",
-        "Std.Network", "Std.Time", "Std.Random", "Std.System"
-    };
-    
-    return builtins.count(modulePath) > 0;
-}
     
     // Convert file path to module name
     static std::string filePathToModuleName(const std::string& filepath, 

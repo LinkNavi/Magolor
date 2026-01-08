@@ -31,7 +31,7 @@ void TypeChecker::exitScope() {
   delete old;
 }
 ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
-  // Skip stdlib
+  // Check if it's a builtin module (old hardcoded ones)
   if (ModuleResolver::isBuiltinModule(importPath)) {
     return nullptr;
   }
@@ -42,17 +42,75 @@ ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
     return existing;
   }
 
-  // Convert import path to file path
-  // e.g., "SlateDB.Slate.DB" -> try "src/Slate/DB.mg"
+  // Try StdLibLoader first
+  auto& stdlibLoader = StdLibLoader::instance();
+  if (stdlibLoader.isInitialized() && stdlibLoader.hasModule(importPath)) {
+    std::cerr << "[TypeChecker] Loading stdlib module: " << importPath << std::endl;
+    
+    auto stdModule = stdlibLoader.loadModule(importPath);
+    if (stdModule && !stdModule->filePath.empty()) {
+      // Parse the .mg file
+      std::ifstream file(stdModule->filePath);
+      if (!file) {
+        std::cerr << "[TypeChecker] Failed to open: " << stdModule->filePath << std::endl;
+        return nullptr;
+      }
+
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      std::string source = buffer.str();
+
+      ErrorReporter parseReporter(stdModule->filePath, source);
+
+      Lexer lexer(source, stdModule->filePath, parseReporter);
+      auto tokens = lexer.tokenize();
+
+      if (parseReporter.hasError()) {
+        std::cerr << "[TypeChecker] Lex errors in " << importPath << std::endl;
+        return nullptr;
+      }
+
+      Parser parser(std::move(tokens), stdModule->filePath, parseReporter);
+      Program prog = parser.parse();
+
+      if (parseReporter.hasError()) {
+        std::cerr << "[TypeChecker] Parse errors in " << importPath << std::endl;
+        return nullptr;
+      }
+
+      // Create and register module
+      auto module = std::make_shared<Module>();
+      module->name = importPath;
+      module->filepath = stdModule->filePath;
+      module->ast = prog;
+      module->buildSymbolTable();
+
+      // Register with all possible names
+      registry.registerModule(importPath, module);
+      
+      // Also register short names
+      size_t lastDot = importPath.rfind('.');
+      if (lastDot != std::string::npos) {
+        std::string shortName = importPath.substr(lastDot + 1);
+        registry.registerModule(shortName, module);
+      }
+
+      std::cerr << "[TypeChecker] ✓ Loaded and registered: " << importPath 
+                << " (" << prog.classes.size() << " classes, " 
+                << prog.functions.size() << " functions)" << std::endl;
+
+      return module;
+    }
+  }
+
+  // Try to find it as a user module (existing code continues...)
   std::string filePath;
 
-  // Try stripping first component (project name)
   size_t firstDot = importPath.find('.');
   std::string pathWithoutProject = (firstDot != std::string::npos)
                                        ? importPath.substr(firstDot + 1)
                                        : importPath;
 
-  // Convert dots to slashes
   std::string relPath = pathWithoutProject;
   for (char &c : relPath) {
     if (c == '.')
@@ -63,7 +121,6 @@ ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
   filePath = "src/" + relPath + ".mg";
 
   if (!fs::exists(filePath)) {
-    // Try without src/
     filePath = relPath + ".mg";
   }
 
@@ -73,9 +130,9 @@ ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
     return nullptr;
   }
 
-  std::cerr << "[TypeChecker] Loading module from: " << filePath << std::endl;
+  std::cerr << "[TypeChecker] Loading user module from: " << filePath << std::endl;
 
-  // Read and parse the file
+  // Read and parse the file (existing code)
   std::ifstream file(filePath);
   if (!file) {
     return nullptr;
@@ -117,8 +174,7 @@ ModulePtr TypeChecker::loadModuleFromImport(const std::string &importPath) {
             << " functions" << std::endl;
 
   return module;
-}
-std::vector<FnDecl *> TypeChecker::getVisibleFunctions() {
+}std::vector<FnDecl *> TypeChecker::getVisibleFunctions() {
   std::vector<FnDecl *> result;
   std::unordered_set<std::string> seen;
 
