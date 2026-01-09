@@ -570,6 +570,7 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
             "./stdlib",
             "../stdlib",
             "../../stdlib",
+"/usr/local/share/magolor/stdlib",
             std::string(getenv("MAGOLOR_STDLIB_PATH") ?: "")
         };
         

@@ -88,7 +88,7 @@ if [[ $STDLIB_FILES -eq 0 ]]; then
 fi
 
 # Verify critical modules exist
-REQUIRED_MODULES=("prelude.mg" "io.mg" "string.mg" "array.mg")
+REQUIRED_MODULES=("io.mg" "string.mg" "array.mg")
 for module in "${REQUIRED_MODULES[@]}"; do
     if [[ ! -f "stdlib/$module" ]]; then
         error "Required module missing: stdlib/$module"
