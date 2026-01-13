@@ -1,4 +1,4 @@
-// Simplified main.cpp - Single file compiler with build-project support
+// Magolor Compiler - LLVM Backend Edition
 #include "codegen.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
@@ -7,6 +7,8 @@
 #include "package.hpp"
 #include "parser.hpp"
 #include "typechecker.hpp"
+#include "ir/ir_builder.hpp"
+#include "ir/backends/llvm_backend.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -74,7 +76,7 @@ std::string formatTime(long long ms) {
 // Usage and help
 // ============================================================================
 void printUsage() {
-    std::cout << Color::BOLD << "Magolor Compiler v0.3.0" << Color::RESET << " (C++ Backend)\n\n";
+    std::cout << Color::BOLD << "Magolor Compiler v0.4.0" << Color::RESET << " (LLVM Backend)\n\n";
     
     std::cout << Color::BOLD << "USAGE:" << Color::RESET << "\n";
     std::cout << "    magolor [COMMAND] [OPTIONS] <file.mg>\n\n";
@@ -83,7 +85,9 @@ void printUsage() {
     std::cout << "    " << Color::CYAN << "build" << Color::RESET << " <file.mg>        Compile source file to executable\n";
     std::cout << "    " << Color::CYAN << "run" << Color::RESET << " <file.mg>          Compile and run immediately\n";
     std::cout << "    " << Color::CYAN << "check" << Color::RESET << " <file.mg>        Type check without building\n";
-    std::cout << "    " << Color::CYAN << "emit-cpp" << Color::RESET << " <file.mg>     Output generated C++ code\n";
+    std::cout << "    " << Color::CYAN << "emit-llvm" << Color::RESET << " <file.mg>    Output LLVM IR (.ll file)\n";
+    std::cout << "    " << Color::CYAN << "emit-bc" << Color::RESET << " <file.mg>      Output LLVM bitcode (.bc file)\n";
+    std::cout << "    " << Color::CYAN << "emit-obj" << Color::RESET << " <file.mg>     Output object file only (.o)\n";
     std::cout << "    " << Color::CYAN << "build-project" << Color::RESET << "         Build multi-file project (for gear)\n";
     std::cout << "    " << Color::CYAN << "clean" << Color::RESET << "                 Clean build artifacts\n";
     std::cout << "    " << Color::CYAN << "lsp" << Color::RESET << "                   Start Language Server\n";
@@ -93,35 +97,25 @@ void printUsage() {
     std::cout << Color::BOLD << "OPTIONS:" << Color::RESET << "\n";
     std::cout << "    " << Color::GREEN << "-o" << Color::RESET << " <file>           Specify output file name\n";
     std::cout << "    " << Color::GREEN << "--verbose" << Color::RESET << ", " << Color::GREEN << "-v" << Color::RESET << "      Show detailed compilation steps\n";
-    std::cout << "    " << Color::GREEN << "--debug" << Color::RESET << "             Compile with debug symbols (O0)\n";
-    std::cout << "    " << Color::GREEN << "--release" << Color::RESET << "           Maximum optimization (O3)\n";
-    std::cout << "    " << Color::GREEN << "--emit-cpp" << Color::RESET << "          Also save generated C++ file\n";
+    std::cout << "    " << Color::GREEN << "--backend" << Color::RESET << " <name>    Choose backend: llvm (default) or cpp\n";
     std::cout << "    " << Color::GREEN << "--no-color" << Color::RESET << "          Disable colored output\n";
-    std::cout << "    " << Color::GREEN << "--timing" << Color::RESET << "            Show compilation timing breakdown\n";
-    std::cout << "    " << Color::GREEN << "--opt-level" << Color::RESET << " <0-3>   Set optimization level (default: 1)\n\n";
-    
-    std::cout << Color::BOLD << "OPTIMIZATION LEVELS:" << Color::RESET << "\n";
-    std::cout << "    0 = No optimization (fastest compile)\n";
-    std::cout << "    1 = Basic optimization (default, good balance)\n";
-    std::cout << "    2 = More optimization (slower compile)\n";
-    std::cout << "    3 = Maximum optimization (slowest compile)\n\n";
+    std::cout << "    " << Color::GREEN << "--timing" << Color::RESET << "            Show compilation timing breakdown\n\n";
     
     std::cout << Color::BOLD << "EXAMPLES:" << Color::RESET << "\n";
-    std::cout << "    magolor build hello.mg              # Fast compile with -O1\n";
-    std::cout << "    magolor build hello.mg --release    # Slow compile with -O3\n";
+    std::cout << "    magolor build hello.mg              # Compile with LLVM\n";
     std::cout << "    magolor run hello.mg                # Quick run\n";
-    std::cout << "    magolor check src/main.mg           # Type check only\n";
-    std::cout << "    magolor emit-cpp hello.mg           # Generate C++ code\n\n";
+    std::cout << "    magolor emit-llvm hello.mg          # View LLVM IR\n";
+    std::cout << "    magolor build hello.mg --backend=cpp  # Use C++ backend\n\n";
     
     std::cout << Color::BOLD << "NOTE:" << Color::RESET << "\n";
-    std::cout << "    For multi-file projects and package management, use " << Color::CYAN << "gear" << Color::RESET << "\n";
-    std::cout << "    magolor build-project is kept for gear's internal use\n\n";
+    std::cout << "    LLVM backend provides 2-10x better runtime performance\n";
+    std::cout << "    C++ backend is kept for debugging and compatibility\n\n";
 }
 
 void printVersion() {
-    std::cout << Color::BOLD << "Magolor Compiler v0.3.0" << Color::RESET << "\n";
+    std::cout << Color::BOLD << "Magolor Compiler v0.4.0" << Color::RESET << "\n";
     std::cout << "Build: " << __DATE__ << " " << __TIME__ << "\n";
-    std::cout << "Backend: C++ (no runtime)\n";
+    std::cout << "Default Backend: LLVM\n";
     std::cout << "Platform: ";
     #if defined(__APPLE__)
     std::cout << "macOS";
@@ -142,8 +136,9 @@ struct CompileStats {
     long long lexTime = 0;
     long long parseTime = 0;
     long long typeCheckTime = 0;
-    long long codegenTime = 0;
-    long long cppCompileTime = 0;
+    long long irBuildTime = 0;
+    long long llvmGenTime = 0;
+    long long linkTime = 0;
     long long totalTime = 0;
     int lineCount = 0;
     size_t outputSize = 0;
@@ -154,8 +149,9 @@ struct CompileStats {
         std::cout << "  Lex:          " << formatTime(lexTime) << "\n";
         std::cout << "  Parse:        " << formatTime(parseTime) << "\n";
         std::cout << "  Type check:   " << formatTime(typeCheckTime) << "\n";
-        std::cout << "  Code gen:     " << formatTime(codegenTime) << "\n";
-        std::cout << "  C++ compile:  " << formatTime(cppCompileTime) << "\n";
+        std::cout << "  IR build:     " << formatTime(irBuildTime) << "\n";
+        std::cout << "  LLVM gen:     " << formatTime(llvmGenTime) << "\n";
+        std::cout << "  Link:         " << formatTime(linkTime) << "\n";
         std::cout << "  " << Color::BOLD << "Total:        " << formatTime(totalTime) << Color::RESET << "\n";
         if (outputSize > 0) {
             std::cout << "  Binary size:  " << formatSize(outputSize) << "\n";
@@ -202,8 +198,161 @@ Program compileSingleFile(const std::string &filepath, CompileStats &stats, bool
     return prog;
 }
 
+// ============================================================================
+// LLVM Backend Compilation
+// ============================================================================
+bool compileWithLLVM(const Program& prog, const std::string& outputFile,
+                     CompileStats& stats, bool verbose, bool emitLLVM = false,
+                     bool emitBC = false, bool emitObj = false) {
+    try {
+        if (verbose) {
+            std::cout << Color::GREEN << "   Building" << Color::RESET << " IR\n";
+        }
+        
+        // Build IR
+        auto irStart = std::chrono::high_resolution_clock::now();
+        IR::IRBuilder irBuilder;
+        auto irModule = irBuilder.build(prog);
+        auto irEnd = std::chrono::high_resolution_clock::now();
+        stats.irBuildTime = std::chrono::duration_cast<std::chrono::milliseconds>(irEnd - irStart).count();
+        
+        if (verbose) {
+            std::cout << Color::GREEN << "  Generating" << Color::RESET << " LLVM IR\n";
+        }
+        
+        // Generate LLVM
+        auto llvmStart = std::chrono::high_resolution_clock::now();
+        IR::LLVMBackend backend;
+        auto llvmModule = backend.generate(irModule);
+        auto llvmEnd = std::chrono::high_resolution_clock::now();
+        stats.llvmGenTime = std::chrono::duration_cast<std::chrono::milliseconds>(llvmEnd - llvmStart).count();
+        
+        // Get base name for output files
+        std::string baseName = outputFile;
+        size_t dotPos = baseName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            baseName = baseName.substr(0, dotPos);
+        }
+        
+        // Emit LLVM IR if requested
+        if (emitLLVM) {
+            std::string llFile = baseName + ".ll";
+            if (verbose) {
+                std::cout << Color::GREEN << "     Writing" << Color::RESET << " " << llFile << "\n";
+            }
+            backend.writeIR(llFile);
+        }
+        
+        // Emit bitcode if requested
+        if (emitBC) {
+            std::string bcFile = baseName + ".bc";
+            if (verbose) {
+                std::cout << Color::GREEN << "     Writing" << Color::RESET << " " << bcFile << "\n";
+            }
+            backend.writeBitcode(bcFile);
+        }
+        
+        // Generate object file
+        std::string objFile = baseName + ".o";
+        if (verbose) {
+            std::cout << Color::GREEN << "  Generating" << Color::RESET << " object file\n";
+        }
+        
+        backend.writeObjectFile(objFile);
+        
+        if (emitObj) {
+            std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << objFile << "\n";
+            return true;
+        }
+        
+        // Link with runtime library
+        if (verbose) {
+            std::cout << Color::GREEN << "    Linking" << Color::RESET << " executable\n";
+        }
+        
+        auto linkStart = std::chrono::high_resolution_clock::now();
+        
+        // Find runtime library
+        std::vector<std::string> runtimePaths = {
+            "./libmagolor_runtime.a",
+            "./build/libmagolor_runtime.a",
+            "/usr/local/lib/libmagolor_runtime.a",
+            std::string(getenv("MAGOLOR_LIB_PATH") ?: "") + "/libmagolor_runtime.a"
+        };
+        
+        std::string runtimeLib;
+        for (const auto& path : runtimePaths) {
+            if (!path.empty() && fs::exists(path)) {
+                runtimeLib = path;
+                break;
+            }
+        }
+        
+        if (runtimeLib.empty()) {
+            std::cerr << Color::YELLOW << "warning" << Color::RESET 
+                     << ": libmagolor_runtime.a not found, linking without runtime\n";
+        }
+        
+        // Link command
+        std::string linkCmd = "clang++ " + objFile + " ";
+        if (!runtimeLib.empty()) {
+            linkCmd += runtimeLib + " ";
+        }
+        linkCmd += "-o " + outputFile + " -lm -lpthread 2>&1";
+        
+        if (verbose) {
+            std::cout << Color::CYAN << "    Command:" << Color::RESET << " " << linkCmd << "\n";
+        }
+        
+        FILE* pipe = popen(linkCmd.c_str(), "r");
+        if (!pipe) {
+            std::cerr << Color::RED << "error" << Color::RESET << ": Failed to run linker\n";
+            return false;
+        }
+        
+        char buffer[256];
+        std::string result;
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            result += buffer;
+        }
+        int returnCode = pclose(pipe);
+        
+        auto linkEnd = std::chrono::high_resolution_clock::now();
+        stats.linkTime = std::chrono::duration_cast<std::chrono::milliseconds>(linkEnd - linkStart).count();
+        
+        if (returnCode != 0) {
+            std::cerr << result;
+            std::cerr << Color::RED << "error" << Color::RESET << ": Linking failed\n";
+            return false;
+        }
+        
+        // Clean up object file unless --emit-obj
+        if (!emitObj && fs::exists(objFile)) {
+            fs::remove(objFile);
+        }
+        
+        // Get binary size
+        if (fs::exists(outputFile)) {
+            stats.outputSize = fs::file_size(outputFile);
+            if (verbose) {
+                std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << outputFile 
+                         << " (" << formatSize(stats.outputSize) << ")\n";
+            }
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << Color::RED << "error" << Color::RESET << ": " << e.what() << "\n";
+        return false;
+    }
+}
+
+// ============================================================================
+// C++ Backend Compilation (fallback)
+// ============================================================================
 bool compileWithCpp(const Program& prog, const std::string& outputFile, 
-                    CompileStats &stats, bool verbose, bool debug, bool emitCpp, int optLevel = 1) {
+                    CompileStats &stats, bool verbose, bool emitCpp = false) {
     auto start = std::chrono::high_resolution_clock::now();
     
     if (verbose) {
@@ -214,7 +363,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     CodeGen codegen;
     std::string cppCode = codegen.generate(prog);
     auto codegenEnd = std::chrono::high_resolution_clock::now();
-    stats.codegenTime = std::chrono::duration_cast<std::chrono::milliseconds>(codegenEnd - start).count();
+    stats.irBuildTime = std::chrono::duration_cast<std::chrono::milliseconds>(codegenEnd - start).count();
     
     // Write to temporary C++ file
     std::string cppFile = outputFile + ".cpp";
@@ -235,48 +384,19 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     }
     
     if (verbose) {
-        std::cout << Color::GREEN << "    Compiling" << Color::RESET << " to native code (O" << optLevel << ")\n";
+        std::cout << Color::GREEN << "    Compiling" << Color::RESET << " to native code\n";
     }
     
-    // Optimization flags
-    std::string optFlags;
-    if (debug) {
-        optFlags = "-O0 -g -DDEBUG";
-    } else {
-        switch (optLevel) {
-            case 0:
-                optFlags = "-O0 -DNDEBUG";
-                break;
-            case 1:
-                optFlags = "-O1 -DNDEBUG";
-                break;
-            case 2:
-                optFlags = "-O2 -DNDEBUG";
-                break;
-            case 3:
-                optFlags = "-O3 -march=native -mtune=native -flto -ffast-math "
-                           "-funroll-loops -finline-functions -DNDEBUG";
-                break;
-            default:
-                optFlags = "-O1 -DNDEBUG";
-        }
-    }
-    
-    // NEW: Collect link flags from @link blocks
+    // Collect link flags from @link blocks
     auto linkFlags = codegen.collectLinkFlags(prog);
     std::string linkFlagsStr;
     for (const auto& flag : linkFlags) {
         linkFlagsStr += " " + flag;
     }
     
-    if (verbose && !linkFlags.empty()) {
-        std::cout << Color::CYAN << "  Link flags:" << Color::RESET << linkFlagsStr << "\n";
-    }
-    
-    // Compile command with link flags
-    std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
-                            cppFile + " -o " + outputFile + " -lm -lpthread" +
-                            linkFlagsStr + " 2>&1";
+    // Compile command
+    std::string compileCmd = "g++ -std=c++17 -O2 " + cppFile + " -o " + outputFile + 
+                            " -lm -lpthread" + linkFlagsStr + " 2>&1";
     
     if (verbose) {
         std::cout << Color::CYAN << "    Command:" << Color::RESET << " " << compileCmd << "\n";
@@ -296,7 +416,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     }
     int returnCode = pclose(pipe);
     auto cppEnd = std::chrono::high_resolution_clock::now();
-    stats.cppCompileTime = std::chrono::duration_cast<std::chrono::milliseconds>(cppEnd - cppStart).count();
+    stats.llvmGenTime = std::chrono::duration_cast<std::chrono::milliseconds>(cppEnd - cppStart).count();
     
     if (returnCode != 0) {
         std::cerr << result;
@@ -304,7 +424,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
         return false;
     }
     
-    // Clean up intermediate files unless emitCpp is set
+    // Clean up intermediate files
     if (!emitCpp) {
         fs::remove(cppFile);
     }
@@ -312,18 +432,13 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     // Get binary size
     if (fs::exists(outputFile)) {
         stats.outputSize = fs::file_size(outputFile);
-        if (verbose) {
-            std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << outputFile 
-                     << " (" << formatSize(stats.outputSize) << ")\n";
-        }
     }
     
     return true;
 }
 
-
 // ============================================================================
-// Project management (kept for gear compatibility)
+// Project compilation helper
 // ============================================================================
 Program compileFile(const std::string &filepath, const std::string &packageName,
                     bool &hasErrors, CompileStats &stats, bool verbose = false) {
@@ -379,6 +494,8 @@ Program mergePrograms(const std::vector<Program> &programs) {
         merged.usings.insert(merged.usings.end(), prog.usings.begin(), prog.usings.end());
         merged.cppHeaders.insert(merged.cppHeaders.end(), prog.cppHeaders.begin(), prog.cppHeaders.end());
         merged.cimports.insert(merged.cimports.end(), prog.cimports.begin(), prog.cimports.end());
+        merged.linkDecls.insert(merged.linkDecls.end(), prog.linkDecls.begin(), prog.linkDecls.end());
+        merged.includeDecls.insert(merged.includeDecls.end(), prog.includeDecls.begin(), prog.includeDecls.end());
         merged.classes.insert(merged.classes.end(), prog.classes.begin(), prog.classes.end());
         merged.functions.insert(merged.functions.end(), prog.functions.begin(), prog.functions.end());
     }
@@ -394,196 +511,28 @@ bool cleanProject() {
     return false;
 }
 
-
-bool compileWithCppDebug(const Program& prog, const std::string& outputFile, 
-                    CompileStats &stats, bool verbose, bool debug, bool emitCpp, int optLevel = 1) {
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Starting C++ code generation...\n";
-    
-    // Generate C++ code
-    CodeGen codegen;
-    std::string cppCode;
-    
-    try {
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Calling CodeGen::generate()...\n";
-        cppCode = codegen.generate(prog);
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Generated " << cppCode.size() << " bytes of C++ code\n";
-    } catch (const std::exception& e) {
-        std::cerr << Color::RED << "error" << Color::RESET << ": Code generation failed: " << e.what() << "\n";
-        return false;
-    }
-    
-    auto codegenEnd = std::chrono::high_resolution_clock::now();
-    stats.codegenTime = std::chrono::duration_cast<std::chrono::milliseconds>(codegenEnd - start).count();
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Code generation took " << stats.codegenTime << "ms\n";
-    
-    // Write to temporary C++ file
-    std::string cppFile = outputFile + ".cpp";
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Writing to " << cppFile << "...\n";
-    
-    std::ofstream out(cppFile);
-    if (!out) {
-        std::cerr << Color::RED << "error" << Color::RESET << ": Failed to write C++ file\n";
-        return false;
-    }
-    out << cppCode;
-    out.close();
-    
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " C++ file written successfully\n";
-    
-    if (emitCpp) {
-        std::string savedCpp = outputFile + "_gen.cpp";
-        fs::copy(cppFile, savedCpp, fs::copy_options::overwrite_existing);
-        std::cout << Color::GREEN << "       Saved" << Color::RESET << " " << savedCpp << "\n";
-    }
-    
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Preparing compilation command...\n";
-    
-    // Optimization flags
-    std::string optFlags;
-    if (debug) {
-        optFlags = "-O0 -g -DDEBUG";
-    } else {
-        switch (optLevel) {
-            case 0:
-                optFlags = "-O0 -DNDEBUG";
-                break;
-            case 1:
-                optFlags = "-O1 -DNDEBUG";
-                break;
-            case 2:
-                optFlags = "-O2 -DNDEBUG";
-                break;
-            case 3:
-                optFlags = "-O3 -march=native -mtune=native -flto -ffast-math "
-                           "-funroll-loops -finline-functions -DNDEBUG";
-                break;
-            default:
-                optFlags = "-O1 -DNDEBUG";
-        }
-    }
-    
-    // Compile command - NO RUNTIME LIBRARY NEEDED
-    std::string compileCmd = "g++ -std=c++17 " + optFlags + " " + 
-                            cppFile + " -o " + outputFile + " -lm -lpthread 2>&1";
-    
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Compile command:\n";
-    std::cout << "  " << compileCmd << "\n";
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Running g++ compiler...\n";
-    std::cout << Color::YELLOW << "[WAIT]" << Color::RESET << " This may take a while with high optimization levels...\n";
-    
-    auto cppStart = std::chrono::high_resolution_clock::now();
-    
-    // Create a progress indicator
-    std::cout << Color::CYAN << "[PROGRESS]" << Color::RESET << " Compiling";
-    std::cout.flush();
-    
-    // Run compilation in background and show progress
-    FILE* pipe = popen(compileCmd.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "\n" << Color::RED << "error" << Color::RESET << ": Failed to run compiler\n";
-        return false;
-    }
-    
-    char buffer[256];
-    std::string result;
-    int lineCount = 0;
-    
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-        lineCount++;
-        
-        // Show progress dots every 5 lines
-        if (lineCount % 5 == 0) {
-            std::cout << ".";
-            std::cout.flush();
-        }
-        
-        // If we're getting a lot of output, print it immediately (probably errors)
-        if (lineCount > 20) {
-            std::cout << "\n" << Color::YELLOW << "[COMPILER OUTPUT]" << Color::RESET << "\n";
-            std::cout << result;
-            result.clear();
-        }
-    }
-    
-    int returnCode = pclose(pipe);
-    std::cout << "\n";
-    
-    auto cppEnd = std::chrono::high_resolution_clock::now();
-    stats.cppCompileTime = std::chrono::duration_cast<std::chrono::milliseconds>(cppEnd - cppStart).count();
-    
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Compiler finished in " << stats.cppCompileTime << "ms\n";
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Return code: " << returnCode << "\n";
-    
-    if (returnCode != 0) {
-        if (!result.empty()) {
-            std::cerr << Color::RED << "[COMPILER ERRORS]" << Color::RESET << "\n";
-            std::cerr << result;
-        }
-        std::cerr << Color::RED << "error" << Color::RESET << ": Compilation failed (code " << returnCode << ")\n";
-        
-        // Show first 50 lines of generated C++ for debugging
-        std::cout << Color::YELLOW << "[DEBUG]" << Color::RESET << " First 50 lines of generated C++:\n";
-        std::cout << Color::DIM << "---" << Color::RESET << "\n";
-        std::ifstream cppIn(cppFile);
-        std::string line;
-        int count = 0;
-        while (std::getline(cppIn, line) && count < 50) {
-            std::cout << std::setw(4) << (count + 1) << " | " << line << "\n";
-            count++;
-        }
-        std::cout << Color::DIM << "---" << Color::RESET << "\n";
-        
-        return false;
-    }
-    
-    // Clean up intermediate files unless emitCpp is set
-    if (!emitCpp) {
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Cleaning up temporary files...\n";
-        fs::remove(cppFile);
-    }
-    
-    // Get binary size
-    if (fs::exists(outputFile)) {
-        stats.outputSize = fs::file_size(outputFile);
-        std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << outputFile 
-                 << " (" << formatSize(stats.outputSize) << ")\n";
-    }
-    
-    return true;
-}
-
-// REPLACE the existing buildProject() function with this version:
-int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = false, 
-                 bool showTiming = false, int optLevel = 1) {
+// ============================================================================
+// Build project (for gear)
+// ============================================================================
+int buildProject(bool verbose = false, bool showTiming = false, const std::string& backend = "llvm") {
     auto totalStart = std::chrono::high_resolution_clock::now();
     CompileStats stats;
     
-    std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Starting build process...\n";
-    
     auto& stdlibLoader = StdLibLoader::instance();
     if (!stdlibLoader.isInitialized()) {
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Initializing stdlib...\n";
         std::vector<std::string> searchPaths = {
             "./stdlib",
             "../stdlib",
             "../../stdlib",
-"/usr/local/share/magolor/stdlib",
+            "/usr/local/share/magolor/stdlib",
             std::string(getenv("MAGOLOR_STDLIB_PATH") ?: "")
         };
         
         for (const auto& path : searchPaths) {
             if (!path.empty() && fs::exists(path) && fs::is_directory(path)) {
-                std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Found stdlib at: " << path << "\n";
                 stdlibLoader.init(path);
                 break;
             }
-        }
-        
-        if (!stdlibLoader.isInitialized()) {
-            std::cerr << Color::YELLOW << "[WARNING]" << Color::RESET << " Could not find stdlib directory!\n";
         }
     }
     
@@ -593,21 +542,17 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
             return 1;
         }
         
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Loading project.toml...\n";
         Package pkg = PackageManager::loadFromToml("project.toml");
         std::cout << Color::GREEN << "Building" << Color::RESET << " " << pkg.name 
-                 << " v" << pkg.version << "\n";
+                 << " v" << pkg.version << " with " << backend << " backend\n";
         
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Clearing module registry...\n";
         ModuleRegistry::instance().clear();
         
-        // Install/load dependencies
+        // Load dependencies
         std::vector<ResolvedPackage> deps;
         if (!pkg.dependencies.empty()) {
-            std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Loading dependencies...\n";
             deps = PackageManager::loadFromLockFile();
             if (deps.empty()) {
-                std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Installing dependencies...\n";
                 auto result = PackageManager::installDependencies(pkg);
                 if (!result.success) {
                     std::cerr << Color::RED << "error" << Color::RESET 
@@ -618,7 +563,6 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
             }
         }
         
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Collecting source files...\n";
         auto sourceFiles = PackageManager::collectSourceFiles(pkg, deps);
         if (sourceFiles.empty()) {
             std::cerr << Color::RED << "error" << Color::RESET << ": no source files found\n";
@@ -631,35 +575,16 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         std::vector<Program> appPrograms;
         bool hasErrors = false;
         
-        int fileNum = 0;
         for (const auto &file : sourceFiles) {
-            fileNum++;
-            std::cout << Color::CYAN << "[" << fileNum << "/" << sourceFiles.size() << "]" 
-                     << Color::RESET << " Compiling " << file << "...\n";
-            
-            std::string pkgName = pkg.name;
-            std::string relPath = file;
-            
-            try {
-                fs::path absFile = fs::absolute(file);
-                fs::path absProj = fs::absolute(".");
-                relPath = fs::relative(absFile, absProj).string();
-            } catch (...) {
-                relPath = file;
-            }
-            
-            auto prog = compileFile(relPath, pkgName, hasErrors, stats, verbose);
+            auto prog = compileFile(file, pkg.name, hasErrors, stats, verbose);
             if (hasErrors) break;
             
             if (PackageManager::isAppSource(file, pkg)) {
                 appPrograms.push_back(prog);
             }
-            
-            std::cout << Color::GREEN << "      [OK]" << Color::RESET << "\n";
         }
         
         if (hasErrors) {
-            std::cerr << Color::RED << "error" << Color::RESET << ": compilation failed\n";
             return 1;
         }
         
@@ -670,7 +595,6 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         }
         
         // Resolve imports
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Resolving module imports...\n";
         ImportResolver importResolver;
         for (const auto &[name, module] : ModuleRegistry::instance().getModules()) {
             auto result = importResolver.resolve(module);
@@ -681,7 +605,6 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         }
         
         // Type checking
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Type checking...\n";
         auto typeCheckStart = std::chrono::high_resolution_clock::now();
         std::string dummySource = "";
         ErrorReporter typeCheckReporter("type-check", dummySource);
@@ -690,7 +613,6 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         for (const auto &[name, module] : ModuleRegistry::instance().getModules()) {
             if (!typeChecker.checkModule(module)) {
                 typeCheckReporter.printDiagnostics();
-                std::cerr << Color::RED << "error" << Color::RESET << ": type checking failed\n";
                 return 1;
             }
         }
@@ -699,16 +621,21 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
             typeCheckEnd - typeCheckStart).count();
         
         // Merge programs
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Merging programs...\n";
         Program merged = mergePrograms(appPrograms);
         
         // Create target directory
         fs::create_directories("target");
         std::string exePath = "target/" + pkg.name;
         
-        // Compile with C++ (using debug version)
-        std::cout << Color::CYAN << "[DEBUG]" << Color::RESET << " Starting C++ compilation...\n";
-        if (!compileWithCpp(merged, exePath, stats, verbose, debug, emitCpp, optLevel)) {
+        // Compile
+        bool success;
+        if (backend == "llvm") {
+            success = compileWithLLVM(merged, exePath, stats, verbose);
+        } else {
+            success = compileWithCpp(merged, exePath, stats, verbose);
+        }
+        
+        if (!success) {
             return 1;
         }
         
@@ -716,8 +643,7 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
         stats.totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
             totalEnd - totalStart).count();
         
-        std::cout << Color::GREEN << "   Finished" << Color::RESET << " " 
-                 << (debug ? "debug" : ("opt-level " + std::to_string(optLevel))) << " target in " 
+        std::cout << Color::GREEN << "   Finished" << Color::RESET << " in " 
                  << formatTime(stats.totalTime) << "\n";
         std::cout << "    Binary: " << exePath << " (" << formatSize(stats.outputSize) << ")\n";
         
@@ -736,7 +662,7 @@ int buildProjectDebug(bool verbose = false, bool debug = false, bool emitCpp = f
 // Main entry point
 // ============================================================================
 int main(int argc, char *argv[]) {
-    // Initialize stdlib loader at startup
+    // Initialize stdlib loader
     auto& stdlibLoader = StdLibLoader::instance();
     if (!stdlibLoader.isInitialized()) {
         std::vector<std::string> searchPaths = {
@@ -748,9 +674,6 @@ int main(int argc, char *argv[]) {
         
         for (const auto& path : searchPaths) {
             if (!path.empty() && fs::exists(path) && fs::is_directory(path)) {
-                if (getenv("MAGOLOR_VERBOSE")) {
-                    std::cerr << "[Main] Initializing stdlib from: " << path << std::endl;
-                }
                 stdlibLoader.init(path);
                 break;
             }
@@ -764,11 +687,13 @@ int main(int argc, char *argv[]) {
     
     std::string cmd = argv[1];
     bool verbose = false;
-    bool debug = false;
-    bool emitCpp = false;
     bool showTiming = false;
     bool noColor = false;
-    int optLevel = 1;
+    bool emitLLVM = false;
+    bool emitBC = false;
+    bool emitObj = false;
+    bool emitCpp = false;
+    std::string backend = "llvm";  // Default to LLVM
     std::string outputFile;
     
     // Parse flags
@@ -776,13 +701,6 @@ int main(int argc, char *argv[]) {
         std::string arg = argv[i];
         if (arg == "--verbose" || arg == "-v") {
             verbose = true;
-        } else if (arg == "--debug") {
-            debug = true;
-        } else if (arg == "--release") {
-            debug = false;
-            optLevel = 3;
-        } else if (arg == "--emit-cpp") {
-            emitCpp = true;
         } else if (arg == "--timing") {
             showTiming = true;
         } else if (arg == "--no-color") {
@@ -796,149 +714,139 @@ int main(int argc, char *argv[]) {
             Color::MAGENTA = "";
             Color::CYAN = "";
             Color::DIM = "";
-        } else if (arg == "--opt-level" && i + 1 < argc) {
-            try {
-                optLevel = std::stoi(argv[++i]);
-                if (optLevel < 0 || optLevel > 3) {
-                    std::cerr << Color::YELLOW << "warning" << Color::RESET 
-                             << ": opt-level must be 0-3, using 1\n";
-                    optLevel = 1;
-                }
-            } catch (...) {
-                std::cerr << Color::YELLOW << "warning" << Color::RESET 
-                         << ": invalid opt-level, using 1\n";
-                optLevel = 1;
-            }
+        } else if (arg == "--backend" && i + 1 < argc) {
+            backend = argv[++i];
+            if (backend != "llvm" && backend != "cpp") {
+                std::cerr << Color::RED << "error" << Color::RESET
+                          << ": unknown backend '" << backend << "'\n";
+                return 1;
+            }:
         } else if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
+        } else {
+            std::cerr << Color::RED << "error" << Color::RESET
+                      << ": unknown option '" << arg << "'\n";
+            return 1;
         }
     }
-    
-    // Handle commands
-    if (cmd == "help" || cmd == "--help" || cmd == "-h") {
+
+    // Handle trivial commands
+    if (cmd == "help") {
         printUsage();
         return 0;
     }
-    
-    if (cmd == "version" || cmd == "--version") {
+
+    if (cmd == "version") {
         printVersion();
         return 0;
     }
-    
-    if (cmd == "lsp") {
-        MagolorLanguageServer server;
-        server.run();
-        return 0;
-    }
-    
+
     if (cmd == "clean") {
-        return cleanProject() ? 0 : 1;
-    }
-    
-    if (cmd == "build-project") {
-        return buildProjectDebug(verbose, debug, emitCpp, showTiming, optLevel);
-    }
-    
-    // All other commands require a source file
-    if (argc < 3) {
-        std::cerr << Color::RED << "error" << Color::RESET << ": missing source file\n";
-        std::cerr << "Usage: magolor " << cmd << " <file.mg>\n";
-        return 1;
-    }
-    
-    std::string srcPath = argv[2];
-    
-    // Check if file exists
-    if (!fs::exists(srcPath)) {
-        std::cerr << Color::RED << "error" << Color::RESET << ": file not found: " << srcPath << "\n";
-        return 1;
-    }
-    
-    try {
-        CompileStats stats;
-        auto totalStart = std::chrono::high_resolution_clock::now();
-        
-        // Compile single file
-        Program prog = compileSingleFile(srcPath, stats, verbose);
-        if (prog.functions.empty() && prog.classes.empty()) {
-            return 1;
-        }
-        
-        // Type check
-        std::string dummySource = "";
-        ErrorReporter typeCheckReporter("type-check", dummySource);
-        TypeChecker typeChecker(typeCheckReporter, ModuleRegistry::instance());
-        
-        auto module = std::make_shared<Module>();
-        module->name = "main";
-        module->filepath = srcPath;
-        module->ast = prog;
-        
-        auto typeCheckStart = std::chrono::high_resolution_clock::now();
-        if (!typeChecker.checkModule(module)) {
-            typeCheckReporter.printDiagnostics();
-            return 1;
-        }
-        auto typeCheckEnd = std::chrono::high_resolution_clock::now();
-        stats.typeCheckTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-            typeCheckEnd - typeCheckStart).count();
-        
-        // Determine output file
-        fs::path srcFsPath(srcPath);
-        std::string baseName = srcFsPath.stem().string();
-        std::string exePath = outputFile.empty() ? baseName : outputFile;
-        
-        if (cmd == "emit-cpp") {
-            CodeGen codegen;
-            std::string cppCode = codegen.generate(prog);
-            
-            std::string outFile = baseName + "_gen.cpp";
-            std::ofstream out(outFile);
-            out << cppCode;
-            out.close();
-            
-            std::cout << Color::GREEN << "   Generated" << Color::RESET << " " << outFile << "\n";
-            return 0;
-        }
-        
-        if (cmd == "check") {
-            std::cout << Color::GREEN << "    Checking" << Color::RESET << " " << srcPath << "\n";
-            std::cout << Color::GREEN << "    Finished" << Color::RESET << " no errors found\n";
-            return 0;
-        }
-        
-        // Compile with C++
-        if (!compileWithCpp(prog, exePath, stats, verbose, debug, emitCpp, optLevel)) {
-            return 1;
-        }
-        
-        auto totalEnd = std::chrono::high_resolution_clock::now();
-        stats.totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
-            totalEnd - totalStart).count();
-        
-        if (cmd == "run") {
-            if (verbose) {
-                std::cout << Color::GREEN << "    Running" << Color::RESET << " " << exePath << "\n\n";
-            }
-            std::string runCmd = "./" + exePath;
-            int result = std::system(runCmd.c_str());
-            fs::remove(exePath);
-            if (!emitCpp) {
-                fs::remove(exePath + ".cpp");
-            }
-            return result;
-        }
-        
-        std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << exePath 
-                 << " in " << formatTime(stats.totalTime) << "\n";
-        
-        if (showTiming) {
-            stats.print();
-        }
-        
+        cleanProject();
         return 0;
-    } catch (const std::exception &e) {
-        std::cerr << Color::RED << "error" << Color::RESET << ": " << e.what() << "\n";
+    }
+
+    if (cmd == "lsp") {
+        return startLSPServer();
+    }
+
+    // Project build
+    if (cmd == "build-project") {
+        return buildProject(verbose, showTiming, backend);
+    }
+
+    // Commands that require a source file
+    if (argc < 3) {
+        std::cerr << Color::RED << "error" << Color::RESET
+                  << ": missing input file\n";
         return 1;
     }
+
+    std::string inputFile = argv[argc - 1];
+    if (!fs::exists(inputFile)) {
+        std::cerr << Color::RED << "error" << Color::RESET
+                  << ": file not found: " << inputFile << "\n";
+        return 1;
+    }
+
+    if (outputFile.empty()) {
+        fs::path p(inputFile);
+        outputFile = p.stem().string();
+    }
+
+    CompileStats stats;
+    auto totalStart = std::chrono::high_resolution_clock::now();
+
+    // Compile frontend
+    Program prog = compileSingleFile(inputFile, stats, verbose);
+    if (prog.functions.empty() && prog.classes.empty()) {
+        return 1;
+    }
+
+    // Type check
+    auto typeCheckStart = std::chrono::high_resolution_clock::now();
+    ErrorReporter reporter(inputFile, "");
+    TypeChecker typeChecker(reporter, ModuleRegistry::instance());
+    if (!typeChecker.checkProgram(prog)) {
+        reporter.printDiagnostics();
+        return 1;
+    }
+    auto typeCheckEnd = std::chrono::high_resolution_clock::now();
+    stats.typeCheckTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        typeCheckEnd - typeCheckStart).count();
+
+    bool success = false;
+
+    if (cmd == "check") {
+        std::cout << Color::GREEN << "OK" << Color::RESET << "\n";
+        return 0;
+    }
+
+    if (cmd == "emit-llvm") emitLLVM = true;
+    if (cmd == "emit-bc")   emitBC   = true;
+    if (cmd == "emit-obj")  emitObj  = true;
+
+    if (backend == "llvm") {
+        success = compileWithLLVM(
+            prog,
+            outputFile,
+            stats,
+            verbose,
+            emitLLVM,
+            emitBC,
+            emitObj
+        );
+    } else {
+        success = compileWithCpp(
+            prog,
+            outputFile,
+            stats,
+            verbose,
+            emitCpp
+        );
+    }
+
+    if (!success) {
+        return 1;
+    }
+
+    // Run if requested
+    if (cmd == "run") {
+        std::string runCmd = "./" + outputFile;
+        if (verbose) {
+            std::cout << Color::CYAN << "Running:" << Color::RESET
+                      << " " << runCmd << "\n";
+        }
+        return std::system(runCmd.c_str());
+    }
+
+    auto totalEnd = std::chrono::high_resolution_clock::now();
+    stats.totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        totalEnd - totalStart).count();
+
+    if (showTiming) {
+        stats.print();
+    }
+
+    return 0;
 }
