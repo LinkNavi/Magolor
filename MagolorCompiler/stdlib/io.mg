@@ -1,245 +1,142 @@
-// Std.IO - Input/Output operations
+// Std.IO - Pure Magolor I/O Module
+// Comprehensive input/output functionality
+// Functions are implemented in LLVM runtime with polymorphic dispatch
 
 // ============================================================================
-// Console Output
+// Console Output Functions
 // ============================================================================
 
-pub fn print(s: string) {
-    @cpp {
-        std::cout << s;
-    }
+// Print a value to stdout without newline
+// Polymorphic - handles String, Int, Float, Bool automatically
+pub fn print(value: String) {
+    // Implementation provided by LLVM runtime
 }
 
-pub fn println(s: string) {
-    @cpp {
-        std::cout << s << std::endl;
-    }
+// Print a value to stdout with newline
+// Polymorphic - handles String, Int, Float, Bool automatically
+pub fn println(value: String) {
+    // Implementation provided by LLVM runtime
 }
 
-pub fn printlnEmpty() {
-    @cpp {
-        std::cout << std::endl;
-    }
+// Print an error message to stderr
+pub fn eprint(value: String) {
+    // Implementation provided by LLVM runtime
 }
 
-pub fn eprint(s: string) {
-    @cpp {
-        std::cerr << s;
-    }
-}
-
-pub fn eprintln(s: string) {
-    @cpp {
-        std::cerr << s << std::endl;
-    }
-}
-
-pub fn printInt(n: int) {
-    @cpp {
-        std::cout << n;
-    }
-}
-
-pub fn printlnInt(n: int) {
-    @cpp {
-        std::cout << n << std::endl;
-    }
-}
-
-pub fn printFloat(n: float) {
-    @cpp {
-        std::cout << n;
-    }
-}
-
-pub fn printlnFloat(n: float) {
-    @cpp {
-        std::cout << n << std::endl;
-    }
-}
-
-pub fn printBool(b: bool) {
-    @cpp {
-        std::cout << (b ? "true" : "false");
-    }
-}
-
-pub fn printlnBool(b: bool) {
-    @cpp {
-        std::cout << (b ? "true" : "false") << std::endl;
-    }
+// Print an error message to stderr with newline
+pub fn eprintln(value: String) {
+    // Implementation provided by LLVM runtime
 }
 
 // ============================================================================
-// Console Input
+// Console Input Functions
 // ============================================================================
 
-pub fn readLine() -> string {
-    @cpp {
-        std::string line;
-        std::getline(std::cin, line);
-        return line;
-    }
+// Read a line from stdin (removes trailing newline)
+pub fn readLine() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn prompt(message: string) -> string {
-    @cpp {
-        std::cout << message;
-        std::string line;
-        std::getline(std::cin, line);
-        return line;
-    }
+// Read a single character from stdin
+pub fn readChar() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn readAll() -> string {
-    @cpp {
-        std::string content, line;
-        while (std::getline(std::cin, line)) {
-            content += line + "\n";
-        }
-        return content;
-    }
-}
-
-pub fn readChar() -> string {
-    @cpp {
-        char c;
-        std::cin >> c;
-        return std::string(1, c);
-    }
-}
-
-pub fn hasInput() -> bool {
-    @cpp {
-        return std::cin.peek() != EOF;
-    }
-}
-
-pub fn readInt() -> Option<int> {
-    @cpp {
-        std::string line;
-        std::getline(std::cin, line);
-        try {
-            return std::stoll(line);
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
-}
-
-pub fn readFloat() -> Option<float> {
-    @cpp {
-        std::string line;
-        std::getline(std::cin, line);
-        try {
-            return std::stod(line);
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
+// Read until EOF and return as string
+pub fn readAll() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
 // ============================================================================
-// Formatting helpers
+// Formatted Output Functions
 // ============================================================================
 
-pub fn padLeft(s: string, width: int, padChar: string) -> string {
-    @cpp {
-        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
-        std::string padding;
-        int64_t needed = width - s.length();
-        for (int64_t i = 0; i < needed; i++) {
-            padding += padChar[0];
-        }
-        return padding + s;
-    }
+// Print with format string (similar to printf)
+pub fn printf(format: String, args: Array<String>) {
+    // Implementation provided by LLVM runtime
 }
 
-pub fn padRight(s: string, width: int, padChar: string) -> string {
-    @cpp {
-        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
-        std::string result = s;
-        int64_t needed = width - s.length();
-        for (int64_t i = 0; i < needed; i++) {
-            result += padChar[0];
-        }
-        return result;
-    }
-}
-
-pub fn center(s: string, width: int, padChar: string) -> string {
-    @cpp {
-        if (static_cast<int64_t>(s.length()) >= width || padChar.empty()) return s;
-        int64_t totalPad = width - s.length();
-        int64_t leftPad = totalPad / 2;
-        int64_t rightPad = totalPad - leftPad;
-        std::string left, right;
-        for (int64_t i = 0; i < leftPad; i++) left += padChar[0];
-        for (int64_t i = 0; i < rightPad; i++) right += padChar[0];
-        return left + s + right;
-    }
+// Print formatted string with newline
+pub fn printfln(format: String, args: Array<String>) {
+    // Implementation provided by LLVM runtime
 }
 
 // ============================================================================
-// Output stream abstraction - FIXED: Class methods need proper @cpp blocks
+// Prompt Functions
 // ============================================================================
 
-pub class Writer {
-    pub buffer: string;
-    pub autoFlush: bool;
-    
-    pub fn create() {
-        @cpp {
-            this->buffer = "";
-            this->autoFlush = false;
-        }
-    }
-    
-    pub fn write(s: string) {
-        @cpp {
-            this->buffer = this->buffer + s;
-            if (this->autoFlush) {
-                std::cout << this->buffer;
-                this->buffer = "";
-            }
-        }
-    }
-    
-    pub fn writeLine(s: string) {
-        @cpp {
-            this->buffer = this->buffer + s + "\n";
-            if (this->autoFlush) {
-                std::cout << this->buffer;
-                this->buffer = "";
-            }
-        }
-    }
-    
-    pub fn flush() {
-        @cpp {
-            std::cout << this->buffer;
-            this->buffer = "";
-        }
-    }
-    
-    pub fn toString() -> string {
-        @cpp {
-            return this->buffer;
-        }
-    }
-    
-    pub fn clear() {
-        @cpp {
-            this->buffer = "";
-        }
-    }
+// Display a prompt and read user input
+pub fn prompt(message: String) -> String {
+    print(message);
+    return readLine();
 }
 
-pub fn newWriter() -> Writer {
-    @cpp {
-        Writer w;
-        w.buffer = "";
-        w.autoFlush = false;
-        return w;
+// Display a prompt with options and read input
+pub fn promptChoice(message: String, options: Array<String>) -> Int {
+    println(message);
+    let mut i = 0;
+    while i < length(options) {
+        print("  ");
+        print(toString(i + 1));
+        print(". ");
+        println(options[i]);
+        i = i + 1;
     }
+    print("Choice: ");
+    return toInt(readLine());
+}
+
+// Confirm yes/no prompt
+pub fn confirm(message: String) -> Bool {
+    print(message);
+    print(" (y/n): ");
+    let response = readLine();
+    return response == "y" || response == "Y" || response == "yes" || response == "YES";
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Clear the console screen
+pub fn clear() {
+    // Implementation provided by LLVM runtime
+}
+
+// Flush stdout buffer
+pub fn flush() {
+    // Implementation provided by LLVM runtime
+}
+
+// Check if stdin has data available
+pub fn hasInput() -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// ============================================================================
+// Color/Style Output (ANSI Escape Codes)
+// ============================================================================
+
+// Print with color
+pub fn printColor(value: String, color: String) {
+    // Implementation provided by LLVM runtime
+}
+
+// Print bold text
+pub fn printBold(value: String) {
+    // Implementation provided by LLVM runtime
+}
+
+// Print underlined text
+pub fn printUnderline(value: String) {
+    // Implementation provided by LLVM runtime
+}
+
+// Reset terminal formatting
+pub fn resetFormat() {
+    // Implementation provided by LLVM runtime
 }

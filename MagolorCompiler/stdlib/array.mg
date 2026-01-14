@@ -1,329 +1,562 @@
-// Std.Array - Array/Vector operations
+// Std.Array - Comprehensive Array Manipulation Module
+// Provides generic array operations, transformations, and algorithms
 
-pub fn lengthInt(arr: Array<int>) -> int {
-    @cpp {
-        return static_cast<int64_t>(arr.size());
-    }
+// ============================================================================
+// Basic Array Properties
+// ============================================================================
+
+// Get the length of an array
+pub fn length(arr: Array<Int>) -> Int {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn lengthStr(arr: Array<string>) -> int {
-    @cpp {
-        return static_cast<int64_t>(arr.size());
-    }
+// Check if array is empty
+pub fn isEmpty(arr: Array<Int>) -> Bool {
+    return length(arr) == 0;
 }
 
-pub fn isEmptyInt(arr: Array<int>) -> bool {
-    @cpp {
-        return arr.empty();
-    }
+// Check if array is not empty
+pub fn isNotEmpty(arr: Array<Int>) -> Bool {
+    return length(arr) > 0;
 }
 
-pub fn isEmptyStr(arr: Array<string>) -> bool {
-    @cpp {
-        return arr.empty();
-    }
+// ============================================================================
+// Array Modification
+// ============================================================================
+
+// Add element to end of array
+pub fn push(arr: Array<Int>, value: Int) {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
 }
 
-// FIX: Return new array with value appended
-pub fn pushInt(arr: Array<int>, value: int) -> Array<int> {
-    @cpp {
-        auto result = arr;
-        result.push_back(value);
-        return result;
-    }
+// Remove and return last element
+pub fn pop(arr: Array<Int>) -> Int {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn pushStr(arr: Array<string>, value: string) -> Array<string> {
-    @cpp {
-        auto result = arr;
-        result.push_back(value);
-        return result;
-    }
+// Insert element at beginning
+pub fn unshift(arr: Array<Int>, value: Int) {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
 }
 
-// FIX: Return pair-like struct with popped value and new array
-pub fn popInt(arr: Array<int>) -> int {
-    @cpp {
-        if (arr.empty()) return 0;
-        return arr.back();
-    }
+// Remove and return first element
+pub fn shift(arr: Array<Int>) -> Int {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn popStr(arr: Array<string>) -> string {
-    @cpp {
-        if (arr.empty()) return "";
-        return arr.back();
-    }
+// Insert element at specific index
+ pub fn insert(arr: Array<Int>, index: Int, value: Int) {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
 }
 
-// Helper to get array without last element
-pub fn popArrayInt(arr: Array<int>) -> Array<int> {
-    @cpp {
-        if (arr.empty()) return arr;
-        auto result = arr;
-        result.pop_back();
-        return result;
-    }
+// Remove element at specific index
+pub fn remove(arr: Array<Int>, index: Int) -> Int {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn popArrayStr(arr: Array<string>) -> Array<string> {
-    @cpp {
-        if (arr.empty()) return arr;
-        auto result = arr;
-        result.pop_back();
-        return result;
-    }
+// Clear all elements from array
+pub fn clear(arr: Array<Int>) {
+    // Implementation provided by LLVM runtime
 }
 
-pub fn firstInt(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return arr.front();
-    }
+// ============================================================================
+// Array Access
+// ============================================================================
+
+// Get element at index (with bounds checking)
+pub fn get(arr: Array<Int>, index: Int) -> Int {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn firstStr(arr: Array<string>) -> Option<string> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return arr.front();
-    }
+// Set element at index (with bounds checking)
+pub fn set(arr: Array<Int>, index: Int, value: Int) {
+    // Polymorphic - works with any array type
+    // Implementation provided by LLVM runtime
 }
 
-pub fn lastInt(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return arr.back();
-    }
+// Get first element
+pub fn first(arr: Array<Int>) -> Int {
+    return arr[0];
 }
 
-pub fn lastStr(arr: Array<string>) -> Option<string> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return arr.back();
-    }
+// Get last element
+pub fn last(arr: Array<Int>) -> Int {
+    return arr[length(arr) - 1];
 }
 
-pub fn getInt(arr: Array<int>, index: int) -> Option<int> {
-    @cpp {
-        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return std::nullopt;
-        return arr[static_cast<size_t>(index)];
-    }
+// ============================================================================
+// Array Slicing and Extraction
+// ============================================================================
+
+// Get subarray from start to end index
+pub fn slice(arr: Array<Int>, start: Int, end: Int) -> Array<Int> {
+    // Implementation provided by LLVM runtime
+    return [];
 }
 
-pub fn getStr(arr: Array<string>, index: int) -> Option<string> {
-    @cpp {
-        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return std::nullopt;
-        return arr[static_cast<size_t>(index)];
-    }
+// Get subarray from start index with length
+pub fn subarray(arr: Array<Int>, start: Int, len: Int) -> Array<Int> {
+    return slice(arr, start, start + len);
 }
 
-// FIX: Return new array with value set at index
-pub fn setInt(arr: Array<int>, index: int, value: int) -> Array<int> {
-    @cpp {
-        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return arr;
-        auto result = arr;
-        result[static_cast<size_t>(index)] = value;
-        return result;
-    }
+// Take first n elements
+pub fn take(arr: Array<Int>, n: Int) -> Array<Int> {
+    return slice(arr, 0, n);
 }
 
-pub fn setStr(arr: Array<string>, index: int, value: string) -> Array<string> {
-    @cpp {
-        if (index < 0 || static_cast<size_t>(index) >= arr.size()) return arr;
-        auto result = arr;
-        result[static_cast<size_t>(index)] = value;
-        return result;
-    }
+// Skip first n elements
+pub fn skip(arr: Array<Int>, n: Int) -> Array<Int> {
+    return slice(arr, n, length(arr));
 }
 
-pub fn sliceInt(arr: Array<int>, start: int, end: int) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result;
-        int64_t s = start < 0 ? 0 : start;
-        int64_t e = end > static_cast<int64_t>(arr.size()) ? arr.size() : end;
-        for (int64_t i = s; i < e; i++) {
-            result.push_back(arr[i]);
+// Take last n elements
+pub fn takeLast(arr: Array<Int>, n: Int) -> Array<Int> {
+    let len = length(arr);
+    return slice(arr, len - n, len);
+}
+
+// ============================================================================
+// Array Searching
+// ============================================================================
+
+// Find index of first occurrence (returns -1 if not found)
+pub fn indexOf(arr: Array<Int>, value: Int) -> Int {
+    let mut i = 0;
+    while i < length(arr) {
+        if arr[i] == value {
+            return i;
         }
-        return result;
+        i = i + 1;
     }
+    return -1;
 }
 
-pub fn sliceStr(arr: Array<string>, start: int, end: int) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        int64_t s = start < 0 ? 0 : start;
-        int64_t e = end > static_cast<int64_t>(arr.size()) ? arr.size() : end;
-        for (int64_t i = s; i < e; i++) {
-            result.push_back(arr[i]);
+// Find index of last occurrence (returns -1 if not found)
+pub fn lastIndexOf(arr: Array<Int>, value: Int) -> Int {
+    let mut i = length(arr) - 1;
+    while i >= 0 {
+        if arr[i] == value {
+            return i;
         }
-        return result;
+        i = i - 1;
     }
+    return -1;
 }
 
-pub fn concatInt(a: Array<int>, b: Array<int>) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result = a;
-        result.insert(result.end(), b.begin(), b.end());
-        return result;
-    }
+// Check if array contains value
+pub fn contains(arr: Array<Int>, value: Int) -> Bool {
+    return indexOf(arr, value) != -1;
 }
 
-pub fn concatStr(a: Array<string>, b: Array<string>) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result = a;
-        result.insert(result.end(), b.begin(), b.end());
-        return result;
-    }
-}
-
-pub fn reverseInt(arr: Array<int>) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result = arr;
-        std::reverse(result.begin(), result.end());
-        return result;
-    }
-}
-
-pub fn reverseStr(arr: Array<string>) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result = arr;
-        std::reverse(result.begin(), result.end());
-        return result;
-    }
-}
-
-pub fn containsInt(arr: Array<int>, value: int) -> bool {
-    @cpp {
-        return std::find(arr.begin(), arr.end(), value) != arr.end();
-    }
-}
-
-pub fn containsStr(arr: Array<string>, value: string) -> bool {
-    @cpp {
-        return std::find(arr.begin(), arr.end(), value) != arr.end();
-    }
-}
-
-pub fn indexOfInt(arr: Array<int>, value: int) -> Option<int> {
-    @cpp {
-        auto it = std::find(arr.begin(), arr.end(), value);
-        if (it == arr.end()) return std::nullopt;
-        return static_cast<int64_t>(std::distance(arr.begin(), it));
-    }
-}
-
-pub fn indexOfStr(arr: Array<string>, value: string) -> Option<int> {
-    @cpp {
-        auto it = std::find(arr.begin(), arr.end(), value);
-        if (it == arr.end()) return std::nullopt;
-        return static_cast<int64_t>(std::distance(arr.begin(), it));
-    }
-}
-
-// FIX: Return new empty array
-pub fn clearInt(arr: Array<int>) -> Array<int> {
-    @cpp {
-        return std::vector<int64_t>();
-    }
-}
-
-pub fn clearStr(arr: Array<string>) -> Array<string> {
-    @cpp {
-        return std::vector<std::string>();
-    }
-}
-
-// Creates array filled with value
-pub fn filled(size: int, value: int) -> Array<int> {
-    @cpp {
-        return std::vector<int64_t>(static_cast<size_t>(size), static_cast<int64_t>(value));
-    }
-}
-
-// Creates array of zeros
-pub fn zeros(size: int) -> Array<int> {
-    @cpp {
-        return std::vector<int64_t>(static_cast<size_t>(size), 0);
-    }
-}
-
-// Creates array of ones
-pub fn ones(size: int) -> Array<int> {
-    @cpp {
-        return std::vector<int64_t>(static_cast<size_t>(size), 1);
-    }
-}
-
-pub fn range(start: int, end: int) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result;
-        for (int64_t i = start; i < end; i++) {
-            result.push_back(i);
+// Count occurrences of value
+pub fn count(arr: Array<Int>, value: Int) -> Int {
+    let mut cnt = 0;
+    let mut i = 0;
+    while i < length(arr) {
+        if arr[i] == value {
+            cnt = cnt + 1;
         }
-        return result;
+        i = i + 1;
+    }
+    return cnt;
+}
+
+// ============================================================================
+// Array Transformation
+// ============================================================================
+
+// Create new array by applying function to each element
+pub fn map(arr: Array<Int>, pub fn: (Int) -> Int) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(arr) {
+        push(result, pub fn(arr[i]));
+        i = i + 1;
+    }
+    return result;
+}
+
+// Filter array by predicate function
+pub fn filter(arr: Array<Int>, predicate: (Int) -> Bool) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(arr) {
+        if predicate(arr[i]) {
+            push(result, arr[i]);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Reduce array to single value
+pub fn reduce(arr: Array<Int>, initial: Int, pub fn: (Int, Int) -> Int) -> Int {
+    let mut accumulator = initial;
+    let mut i = 0;
+    while i < length(arr) {
+        accumulator = pub fn(accumulator, arr[i]);
+        i = i + 1;
+    }
+    return accumulator;
+}
+
+// Flatten nested array by one level
+pub fn flatten(arr: Array<Array<Int>>) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(arr) {
+        let mut j = 0;
+        while j < length(arr[i]) {
+            push(result, arr[i][j]);
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Reverse array (creates new array)
+pub fn reverse(arr: Array<Int>) -> Array<Int> {
+    let mut result = [];
+    let mut i = length(arr) - 1;
+    while i >= 0 {
+        push(result, arr[i]);
+        i = i - 1;
+    }
+    return result;
+}
+
+// ============================================================================
+// Array Sorting (In-place)
+// ============================================================================
+
+// Sort array in ascending order (in-place)
+pub fn sort(arr: Array<Int>) {
+    // Bubble sort implementation
+    let n = length(arr);
+    let mut i = 0;
+    while i < n - 1 {
+        let mut j = 0;
+        while j < n - i - 1 {
+            if arr[j] > arr[j + 1] {
+                // Swap
+                let temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
     }
 }
 
-pub fn sum(arr: Array<int>) -> int {
-    @cpp {
-        int64_t total = 0;
-        for (auto v : arr) total += v;
-        return total;
+// Sort array in descending order (in-place)
+pub fn sortDescending(arr: Array<Int>) {
+    let n = length(arr);
+    let mut i = 0;
+    while i < n - 1 {
+        let mut j = 0;
+        while j < n - i - 1 {
+            if arr[j] < arr[j + 1] {
+                // Swap
+                let temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
     }
 }
 
-pub fn min(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return *std::min_element(arr.begin(), arr.end());
+// Check if array is sorted
+pub fn isSorted(arr: Array<Int>) -> Bool {
+    let mut i = 0;
+    while i < length(arr) - 1 {
+        if arr[i] > arr[i + 1] {
+            return false;
+        }
+        i = i + 1;
     }
+    return true;
 }
 
-pub fn max(arr: Array<int>) -> Option<int> {
-    @cpp {
-        if (arr.empty()) return std::nullopt;
-        return *std::max_element(arr.begin(), arr.end());
+// ============================================================================
+// Array Aggregation
+// ============================================================================
+
+// Sum all elements (for numeric arrays)
+pub fn sum(arr: Array<Int>) -> Int {
+    let mut total = 0;
+    let mut i = 0;
+    while i < length(arr) {
+        total = total + arr[i];
+        i = i + 1;
     }
+    return total;
 }
 
-pub fn sort(arr: Array<int>) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result = arr;
-        std::sort(result.begin(), result.end());
-        return result;
+// Calculate average (for numeric arrays)
+pub fn average(arr: Array<Int>) -> Float {
+    if isEmpty(arr) {
+        return 0.0;
     }
+    return toFloat(sum(arr)) / toFloat(length(arr));
 }
 
-pub fn sortDesc(arr: Array<int>) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result = arr;
-        std::sort(result.begin(), result.end(), std::greater<int64_t>());
-        return result;
+// Find minimum value
+pub fn min(arr: Array<Int>) -> Int {
+    if isEmpty(arr) {
+        return 0;
     }
+    let mut minVal = arr[0];
+    let mut i = 1;
+    while i < length(arr) {
+        if arr[i] < minVal {
+            minVal = arr[i];
+        }
+        i = i + 1;
+    }
+    return minVal;
 }
 
-pub fn unique(arr: Array<int>) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result = arr;
-        std::sort(result.begin(), result.end());
-        result.erase(std::unique(result.begin(), result.end()), result.end());
-        return result;
+// Find maximum value
+pub fn max(arr: Array<Int>) -> Int {
+    if isEmpty(arr) {
+        return 0;
     }
+    let mut maxVal = arr[0];
+    let mut i = 1;
+    while i < length(arr) {
+        if arr[i] > maxVal {
+            maxVal = arr[i];
+        }
+        i = i + 1;
+    }
+    return maxVal;
 }
 
-pub fn sortStr(arr: Array<string>) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result = arr;
-        std::sort(result.begin(), result.end());
-        return result;
+// Product of all elements
+pub fn product(arr: Array<Int>) -> Int {
+    let mut result = 1;
+    let mut i = 0;
+    while i < length(arr) {
+        result = result * arr[i];
+        i = i + 1;
     }
+    return result;
 }
 
-pub fn uniqueStr(arr: Array<string>) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result = arr;
-        std::sort(result.begin(), result.end());
-        result.erase(std::unique(result.begin(), result.end()), result.end());
-        return result;
+// ============================================================================
+// Array Predicates
+// ============================================================================
+
+// Check if all elements satisfy predicate
+pub fn all(arr: Array<Int>, predicate: (Int) -> Bool) -> Bool {
+    let mut i = 0;
+    while i < length(arr) {
+        if !predicate(arr[i]) {
+            return false;
+        }
+        i = i + 1;
     }
+    return true;
+}
+
+// Check if any element satisfies predicate
+pub fn any(arr: Array<Int>, predicate: (Int) -> Bool) -> Bool {
+    let mut i = 0;
+    while i < length(arr) {
+        if predicate(arr[i]) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Check if no elements satisfy predicate
+pub fn none(arr: Array<Int>, predicate: (Int) -> Bool) -> Bool {
+    return !any(arr, predicate);
+}
+
+// ============================================================================
+// Array Combination
+// ============================================================================
+
+// Concatenate two arrays
+pub fn concat(a: Array<Int>, b: Array<Int>) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(a) {
+        push(result, a[i]);
+        i = i + 1;
+    }
+    i = 0;
+    while i < length(b) {
+        push(result, b[i]);
+        i = i + 1;
+    }
+    return result;
+}
+
+// Zip two arrays into array of pairs
+pub fn zip(a: Array<Int>, b: Array<Int>) -> Array<Array<Int>> {
+    let mut result = [];
+    let minLen = min(length(a), length(b));
+    let mut i = 0;
+    while i < minLen {
+        let pair = [a[i], b[i]];
+        push(result, pair);
+        i = i + 1;
+    }
+    return result;
+}
+
+// ============================================================================
+// Array Utilities
+// ============================================================================
+
+// Create array filled with value
+pub fn fill(value: Int, count: Int) -> Array<Int> {
+    let mut arr = [];
+    let mut i = 0;
+    while i < count {
+        push(arr, value);
+        i = i + 1;
+    }
+    return arr;
+}
+
+// Create array with range of values [start, end)
+pub fn range(start: Int, end: Int) -> Array<Int> {
+    let mut arr = [];
+    let mut i = start;
+    while i < end {
+        push(arr, i);
+        i = i + 1;
+    }
+    return arr;
+}
+
+// Create array with range and step
+pub fn rangeStep(start: Int, end: Int, step: Int) -> Array<Int> {
+    let mut arr = [];
+    let mut i = start;
+    if step > 0 {
+        while i < end {
+            push(arr, i);
+            i = i + step;
+        }
+    } else if step < 0 {
+        while i > end {
+            push(arr, i);
+            i = i + step;
+        }
+    }
+    return arr;
+}
+
+// Remove duplicates from array
+pub fn unique(arr: Array<Int>) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(arr) {
+        if !contains(result, arr[i]) {
+            push(result, arr[i]);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Rotate array left by n positions
+pub fn rotateLeft(arr: Array<Int>, n: Int) -> Array<Int> {
+    let len = length(arr);
+    if len == 0 {
+        return arr;
+    }
+    let positions = n % len;
+    return concat(slice(arr, positions, len), slice(arr, 0, positions));
+}
+
+// Rotate array right by n positions
+pub fn rotateRight(arr: Array<Int>, n: Int) -> Array<Int> {
+    let len = length(arr);
+    if len == 0 {
+        return arr;
+    }
+    return rotateLeft(arr, len - (n % len));
+}
+
+// Shuffle array randomly
+pub fn shuffle(arr: Array<Int>) {
+    // Implementation provided by LLVM runtime (requires random)
+}
+
+// Create a copy of array
+pub fn clone(arr: Array<Int>) -> Array<Int> {
+    let mut copy = [];
+    let mut i = 0;
+    while i < length(arr) {
+        push(copy, arr[i]);
+        i = i + 1;
+    }
+    return copy;
+}
+
+// Partition array into chunks of size n
+pub fn chunk(arr: Array<Int>, size: Int) -> Array<Array<Int>> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(arr) {
+        let end = min(i + size, length(arr));
+        push(result, slice(arr, i, end));
+        i = i + size;
+    }
+    return result;
+}
+
+// Find differences between two arrays (elements in a but not in b)
+pub fn difference(a: Array<Int>, b: Array<Int>) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(a) {
+        if !contains(b, a[i]) {
+            push(result, a[i]);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Find intersection of two arrays
+pub fn intersection(a: Array<Int>, b: Array<Int>) -> Array<Int> {
+    let mut result = [];
+    let mut i = 0;
+    while i < length(a) {
+        if contains(b, a[i]) && !contains(result, a[i]) {
+            push(result, a[i]);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Find union of two arrays (no duplicates)
+pub fn union(a: Array<Int>, b: Array<Int>) -> Array<Int> {
+    return unique(concat(a, b));
 }

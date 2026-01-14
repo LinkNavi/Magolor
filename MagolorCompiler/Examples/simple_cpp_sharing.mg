@@ -1,4 +1,4 @@
- feusing Std.IO;
+using Std.IO;
 
 cimport <stdio.h> (printf);
 

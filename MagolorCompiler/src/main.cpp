@@ -1,5 +1,6 @@
 // Magolor Compiler - LLVM Backend Edition
 #include "codegen.hpp"
+#include "codegen_llvm.hpp"
 #include "error.hpp"
 #include "lexer.hpp"
 #include "lsp_server.hpp"
@@ -7,8 +8,6 @@
 #include "package.hpp"
 #include "parser.hpp"
 #include "typechecker.hpp"
-#include "ir/ir_builder.hpp"
-#include "ir/backends/llvm_backend.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -136,7 +135,6 @@ struct CompileStats {
     long long lexTime = 0;
     long long parseTime = 0;
     long long typeCheckTime = 0;
-    long long irBuildTime = 0;
     long long llvmGenTime = 0;
     long long linkTime = 0;
     long long totalTime = 0;
@@ -149,7 +147,6 @@ struct CompileStats {
         std::cout << "  Lex:          " << formatTime(lexTime) << "\n";
         std::cout << "  Parse:        " << formatTime(parseTime) << "\n";
         std::cout << "  Type check:   " << formatTime(typeCheckTime) << "\n";
-        std::cout << "  IR build:     " << formatTime(irBuildTime) << "\n";
         std::cout << "  LLVM gen:     " << formatTime(llvmGenTime) << "\n";
         std::cout << "  Link:         " << formatTime(linkTime) << "\n";
         std::cout << "  " << Color::BOLD << "Total:        " << formatTime(totalTime) << Color::RESET << "\n";
@@ -206,24 +203,25 @@ bool compileWithLLVM(const Program& prog, const std::string& outputFile,
                      bool emitBC = false, bool emitObj = false) {
     try {
         if (verbose) {
-            std::cout << Color::GREEN << "   Building" << Color::RESET << " IR\n";
-        }
-        
-        // Build IR
-        auto irStart = std::chrono::high_resolution_clock::now();
-        IR::IRBuilder irBuilder;
-        auto irModule = irBuilder.build(prog);
-        auto irEnd = std::chrono::high_resolution_clock::now();
-        stats.irBuildTime = std::chrono::duration_cast<std::chrono::milliseconds>(irEnd - irStart).count();
-        
-        if (verbose) {
             std::cout << Color::GREEN << "  Generating" << Color::RESET << " LLVM IR\n";
         }
         
         // Generate LLVM
         auto llvmStart = std::chrono::high_resolution_clock::now();
-        IR::LLVMBackend backend;
-        auto llvmModule = backend.generate(irModule);
+        LLVMCodeGen codegen;
+        
+        // Get base name for module
+        fs::path inputPath(outputFile);
+        std::string moduleName = inputPath.stem().string();
+        
+        // Generate the module (but codegen keeps ownership)
+auto* llvmModule = codegen.generate(prog, moduleName);
+
+if (!llvmModule) {
+    std::cerr << Color::RED << "error" << Color::RESET << ": Failed to generate LLVM IR\n";
+    return false;
+}
+        
         auto llvmEnd = std::chrono::high_resolution_clock::now();
         stats.llvmGenTime = std::chrono::duration_cast<std::chrono::milliseconds>(llvmEnd - llvmStart).count();
         
@@ -240,16 +238,10 @@ bool compileWithLLVM(const Program& prog, const std::string& outputFile,
             if (verbose) {
                 std::cout << Color::GREEN << "     Writing" << Color::RESET << " " << llFile << "\n";
             }
-            backend.writeIR(llFile);
-        }
-        
-        // Emit bitcode if requested
-        if (emitBC) {
-            std::string bcFile = baseName + ".bc";
-            if (verbose) {
-                std::cout << Color::GREEN << "     Writing" << Color::RESET << " " << bcFile << "\n";
+            if (!codegen.writeIRToFile(llFile)) {
+                std::cerr << Color::RED << "error" << Color::RESET << ": Failed to write LLVM IR\n";
+                return false;
             }
-            backend.writeBitcode(bcFile);
         }
         
         // Generate object file
@@ -258,48 +250,33 @@ bool compileWithLLVM(const Program& prog, const std::string& outputFile,
             std::cout << Color::GREEN << "  Generating" << Color::RESET << " object file\n";
         }
         
-        backend.writeObjectFile(objFile);
+        if (!codegen.writeObjectFile(objFile)) {
+            std::cerr << Color::RED << "error" << Color::RESET << ": Failed to write object file\n";
+            return false;
+        }
         
         if (emitObj) {
             std::cout << Color::GREEN << "   Finished" << Color::RESET << " " << objFile << "\n";
             return true;
         }
         
-        // Link with runtime library
+        // Link
         if (verbose) {
             std::cout << Color::GREEN << "    Linking" << Color::RESET << " executable\n";
         }
         
         auto linkStart = std::chrono::high_resolution_clock::now();
         
-        // Find runtime library
-        std::vector<std::string> runtimePaths = {
-            "./libmagolor_runtime.a",
-            "./build/libmagolor_runtime.a",
-            "/usr/local/lib/libmagolor_runtime.a",
-            std::string(getenv("MAGOLOR_LIB_PATH") ?: "") + "/libmagolor_runtime.a"
-        };
-        
-        std::string runtimeLib;
-        for (const auto& path : runtimePaths) {
-            if (!path.empty() && fs::exists(path)) {
-                runtimeLib = path;
-                break;
-            }
-        }
-        
-        if (runtimeLib.empty()) {
-            std::cerr << Color::YELLOW << "warning" << Color::RESET 
-                     << ": libmagolor_runtime.a not found, linking without runtime\n";
+        // Collect link flags from the program
+        auto linkFlags = codegen.collectLinkFlags(prog);
+        std::string linkFlagsStr;
+        for (const auto& flag : linkFlags) {
+            linkFlagsStr += " " + flag;
         }
         
         // Link command
-        std::string linkCmd = "clang++ " + objFile + " ";
-        if (!runtimeLib.empty()) {
-            linkCmd += runtimeLib + " ";
-        }
-        linkCmd += "-o " + outputFile + " -lm -lpthread 2>&1";
-        
+     std::string linkCmd = "clang++ -no-pie " + objFile + " -o " + outputFile + 
+                            " -lm -lpthread" + linkFlagsStr + " 2>&1";
         if (verbose) {
             std::cout << Color::CYAN << "    Command:" << Color::RESET << " " << linkCmd << "\n";
         }
@@ -363,7 +340,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     CodeGen codegen;
     std::string cppCode = codegen.generate(prog);
     auto codegenEnd = std::chrono::high_resolution_clock::now();
-    stats.irBuildTime = std::chrono::duration_cast<std::chrono::milliseconds>(codegenEnd - start).count();
+    stats.llvmGenTime = std::chrono::duration_cast<std::chrono::milliseconds>(codegenEnd - start).count();
     
     // Write to temporary C++ file
     std::string cppFile = outputFile + ".cpp";
@@ -416,7 +393,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
     }
     int returnCode = pclose(pipe);
     auto cppEnd = std::chrono::high_resolution_clock::now();
-    stats.llvmGenTime = std::chrono::duration_cast<std::chrono::milliseconds>(cppEnd - cppStart).count();
+    stats.linkTime = std::chrono::duration_cast<std::chrono::milliseconds>(cppEnd - cppStart).count();
     
     if (returnCode != 0) {
         std::cerr << result;
@@ -438,7 +415,7 @@ bool compileWithCpp(const Program& prog, const std::string& outputFile,
 }
 
 // ============================================================================
-// Project compilation helper
+// Project compilation helpers (continued from original)
 // ============================================================================
 Program compileFile(const std::string &filepath, const std::string &packageName,
                     bool &hasErrors, CompileStats &stats, bool verbose = false) {
@@ -511,9 +488,6 @@ bool cleanProject() {
     return false;
 }
 
-// ============================================================================
-// Build project (for gear)
-// ============================================================================
 int buildProject(bool verbose = false, bool showTiming = false, const std::string& backend = "llvm") {
     auto totalStart = std::chrono::high_resolution_clock::now();
     CompileStats stats;
@@ -660,7 +634,8 @@ int buildProject(bool verbose = false, bool showTiming = false, const std::strin
 
 // ============================================================================
 // Main entry point
-// ============================================================================
+// ===========================================================================
+
 int main(int argc, char *argv[]) {
     // Initialize stdlib loader
     auto& stdlibLoader = StdLibLoader::instance();
@@ -720,9 +695,12 @@ int main(int argc, char *argv[]) {
                 std::cerr << Color::RED << "error" << Color::RESET
                           << ": unknown backend '" << backend << "'\n";
                 return 1;
-            }:
+            }
         } else if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
+        } else if (arg[0] != '-') {
+            // This is likely the input file, skip
+            continue;
         } else {
             std::cerr << Color::RED << "error" << Color::RESET
                       << ": unknown option '" << arg << "'\n";
@@ -747,7 +725,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (cmd == "lsp") {
-        return startLSPServer();
+	MagolorLanguageServer server;
+        server.run();
     }
 
     // Project build

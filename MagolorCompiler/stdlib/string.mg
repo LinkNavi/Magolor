@@ -1,400 +1,467 @@
-// Std.String - String operations
+// Std.String - Comprehensive String Manipulation Module
+// Provides string operations, searching, formatting, and conversions
 
-pub fn length(s: string) -> int {
-    @cpp {
-        return static_cast<int64_t>(s.length());
-    }
+// ============================================================================
+// Basic String Properties
+// ============================================================================
+
+// Get the length of a string
+pub fn length(s: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn isEmpty(s: string) -> bool {
-    @cpp {
-        return s.empty();
-    }
+// Check if string is empty
+pub fn isEmpty(s: String) -> Bool {
+    return length(s) == 0;
 }
 
-pub fn charAt(s: string, index: int) -> Option<string> {
-    @cpp {
-        if (index < 0 || static_cast<size_t>(index) >= s.length()) return std::nullopt;
-        return std::string(1, s[static_cast<size_t>(index)]);
-    }
+// Check if string is not empty
+pub fn isNotEmpty(s: String) -> Bool {
+    return length(s) > 0;
 }
 
-pub fn substring(s: string, start: int, end: int) -> string {
-    @cpp {
-        int64_t st = start;
-        int64_t en = end;
-        if (st < 0) st = 0;
-        if (en > static_cast<int64_t>(s.length())) en = s.length();
-        if (st >= en) return "";
-        return s.substr(static_cast<size_t>(st), static_cast<size_t>(en - st));
-    }
+// ============================================================================
+// String Concatenation and Building
+// ============================================================================
+
+// Concatenate two strings
+pub fn concat(a: String, b: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn slice(s: string, start: int, end: int) -> string {
-    @cpp {
-        int64_t st = start;
-        int64_t en = end;
-        if (st < 0) st = 0;
-        if (en > static_cast<int64_t>(s.length())) en = s.length();
-        if (st >= en) return "";
-        return s.substr(static_cast<size_t>(st), static_cast<size_t>(en - st));
+// Join array of strings with separator
+pub fn join(arr: Array<String>, separator: String) -> String {
+    if length(arr) == 0 {
+        return "";
     }
+    let mut result = arr[0];
+    let mut i = 1;
+    while i < length(arr) {
+        result = concat(result, separator);
+        result = concat(result, arr[i]);
+        i = i + 1;
+    }
+    return result;
 }
 
-pub fn toUpper(s: string) -> string {
-    @cpp {
-        std::string result = s;
-        std::transform(result.begin(), result.end(), result.begin(), ::toupper);
-        return result;
+// Repeat string n times
+pub fn repeat(s: String, count: Int) -> String {
+    let mut result = "";
+    let mut i = 0;
+    while i < count {
+        result = concat(result, s);
+        i = i + 1;
     }
+    return result;
 }
 
-pub fn toLower(s: string) -> string {
-    @cpp {
-        std::string result = s;
-        std::transform(result.begin(), result.end(), result.begin(), ::tolower);
-        return result;
-    }
+// ============================================================================
+// String Extraction
+// ============================================================================
+
+// Get substring from start index to end index
+pub fn substring(s: String, start: Int, end: Int) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn trim(s: string) -> string {
-    @cpp {
-        size_t start = s.find_first_not_of(" \t\n\r");
-        if (start == std::string::npos) return "";
-        size_t end = s.find_last_not_of(" \t\n\r");
-        return s.substr(start, end - start + 1);
-    }
+// Get substring from start index with specified length
+pub fn substr(s: String, start: Int, length: Int) -> String {
+    return substring(s, start, start + length);
 }
 
-pub fn trimStart(s: string) -> string {
-    @cpp {
-        size_t start = s.find_first_not_of(" \t\n\r");
-        if (start == std::string::npos) return "";
-        return s.substr(start);
-    }
+// Get character at index
+pub fn charAt(s: String, index: Int) -> String {
+    return substring(s, index, index + 1);
 }
 
-pub fn trimEnd(s: string) -> string {
-    @cpp {
-        size_t end = s.find_last_not_of(" \t\n\r");
-        if (end == std::string::npos) return "";
-        return s.substr(0, end + 1);
-    }
+// Get first n characters
+pub fn left(s: String, n: Int) -> String {
+    return substring(s, 0, n);
 }
 
-pub fn startsWith(s: string, prefix: string) -> bool {
-    @cpp {
-        if (prefix.length() > s.length()) return false;
-        return s.compare(0, prefix.length(), prefix) == 0;
-    }
+// Get last n characters
+pub fn right(s: String, n: Int) -> String {
+    let len = length(s);
+    return substring(s, len - n, len);
 }
 
-pub fn endsWith(s: string, suffix: string) -> bool {
-    @cpp {
-        if (suffix.length() > s.length()) return false;
-        return s.compare(s.length() - suffix.length(), suffix.length(), suffix) == 0;
-    }
+// Get middle portion of string
+pub fn mid(s: String, start: Int, len: Int) -> String {
+    return substr(s, start, len);
 }
 
-pub fn contains(s: string, substr: string) -> bool {
-    @cpp {
-        return s.find(substr) != std::string::npos;
-    }
+// ============================================================================
+// String Searching
+// ============================================================================
+
+// Find first occurrence of substring (returns index or -1)
+pub fn indexOf(s: String, search: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return -1;
 }
 
-pub fn indexOf(s: string, substr: string) -> Option<int> {
-    @cpp {
-        size_t pos = s.find(substr);
-        if (pos == std::string::npos) return std::nullopt;
-        return static_cast<int64_t>(pos);
-    }
+// Find last occurrence of substring (returns index or -1)
+pub fn lastIndexOf(s: String, search: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return -1;
 }
 
-pub fn lastIndexOf(s: string, substr: string) -> Option<int> {
-    @cpp {
-        size_t pos = s.rfind(substr);
-        if (pos == std::string::npos) return std::nullopt;
-        return static_cast<int64_t>(pos);
-    }
+// Check if string contains substring
+pub fn contains(s: String, search: String) -> Bool {
+    return indexOf(s, search) != -1;
 }
 
-pub fn replace(s: string, from: string, to: string) -> string {
-    @cpp {
-        std::string result = s;
-        size_t pos = 0;
-        while ((pos = result.find(from, pos)) != std::string::npos) {
-            result.replace(pos, from.length(), to);
-            pos += to.length();
+// Check if string starts with prefix
+pub fn startsWith(s: String, prefix: String) -> Bool {
+    let prefixLen = length(prefix);
+    if prefixLen > length(s) {
+        return false;
+    }
+    return substring(s, 0, prefixLen) == prefix;
+}
+
+// Check if string ends with suffix
+pub fn endsWith(s: String, suffix: String) -> Bool {
+    let suffixLen = length(suffix);
+    let sLen = length(s);
+    if suffixLen > sLen {
+        return false;
+    }
+    return substring(s, sLen - suffixLen, sLen) == suffix;
+}
+
+// Count occurrences of substring
+pub fn countOccurrences(s: String, search: String) -> Int {
+    let mut count = 0;
+    let mut pos = 0;
+    let searchLen = length(search);
+    while pos < length(s) {
+        let index = indexOf(substring(s, pos, length(s)), search);
+        if index == -1 {
+            return count;
         }
-        return result;
+        count = count + 1;
+        pos = pos + index + searchLen;
     }
+    return count;
 }
 
-pub fn replaceFirst(s: string, from: string, to: string) -> string {
-    @cpp {
-        std::string result = s;
-        size_t pos = result.find(from);
-        if (pos != std::string::npos) {
-            result.replace(pos, from.length(), to);
-        }
-        return result;
-    }
+// ============================================================================
+// String Modification
+// ============================================================================
+
+// Convert string to uppercase
+pub fn toUpperCase(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn remove(s: string, substr: string) -> string {
-    @cpp {
-        std::string result = s;
-        size_t pos = 0;
-        while ((pos = result.find(substr, pos)) != std::string::npos) {
-            result.erase(pos, substr.length());
-        }
-        return result;
-    }
+// Convert string to lowercase
+pub fn toLowerCase(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn split(s: string, delim: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        if (delim.empty()) {
-            result.push_back(s);
-            return result;
-        }
-        size_t start = 0;
-        size_t end;
-        while ((end = s.find(delim, start)) != std::string::npos) {
-            result.push_back(s.substr(start, end - start));
-            start = end + delim.length();
-        }
-        result.push_back(s.substr(start));
-        return result;
+// Capitalize first letter
+pub fn capitalize(s: String) -> String {
+    if isEmpty(s) {
+        return s;
     }
+    return concat(toUpperCase(left(s, 1)), substring(s, 1, length(s)));
 }
 
-pub fn splitChar(s: string, delim: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        if (delim.empty()) {
-            result.push_back(s);
-            return result;
-        }
-        char d = delim[0];
-        size_t start = 0;
-        for (size_t i = 0; i < s.length(); i++) {
-            if (s[i] == d) {
-                result.push_back(s.substr(start, i - start));
-                start = i + 1;
-            }
-        }
-        result.push_back(s.substr(start));
-        return result;
-    }
+// Convert to title case (capitalize each word)
+pub fn toTitleCase(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn splitLines(s: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        std::istringstream stream(s);
-        std::string line;
-        while (std::getline(stream, line)) {
-            result.push_back(line);
-        }
-        return result;
-    }
+// Reverse a string
+pub fn reverse(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn splitWhitespace(s: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        std::istringstream stream(s);
-        std::string word;
-        while (stream >> word) {
-            result.push_back(word);
-        }
-        return result;
-    }
+// Replace all occurrences of old with new
+pub fn replace(s: String, old: String, new: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn join(parts: Array<string>, sep: string) -> string {
-    @cpp {
-        std::string result;
-        for (size_t i = 0; i < parts.size(); i++) {
-            if (i > 0) result += sep;
-            result += parts[i];
-        }
-        return result;
+// Replace first occurrence of old with new
+pub fn replaceFirst(s: String, old: String, new: String) -> String {
+    let index = indexOf(s, old);
+    if index == -1 {
+        return s;
     }
+    let before = substring(s, 0, index);
+    let after = substring(s, index + length(old), length(s));
+    return concat(concat(before, new), after);
 }
 
-pub fn repeat(s: string, count: int) -> string {
-    @cpp {
-        std::string result;
-        result.reserve(s.length() * count);
-        for (int64_t i = 0; i < count; i++) {
-            result += s;
-        }
-        return result;
-    }
+// ============================================================================
+// String Trimming
+// ============================================================================
+
+// Remove whitespace from both ends
+pub fn trim(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn reverse(s: string) -> string {
-    @cpp {
-        std::string result = s;
-        std::reverse(result.begin(), result.end());
-        return result;
-    }
+// Remove whitespace from start
+pub fn trimStart(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn padStart(s: string, length: int, pad: string) -> string {
-    @cpp {
-        if (static_cast<int64_t>(s.length()) >= length || pad.empty()) return s;
-        std::string result;
-        int64_t needed = length - s.length();
-        while (static_cast<int64_t>(result.length()) < needed) {
-            result += pad;
-        }
-        return result.substr(0, needed) + s;
-    }
+// Remove whitespace from end
+pub fn trimEnd(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn padEnd(s: string, length: int, pad: string) -> string {
-    @cpp {
-        if (static_cast<int64_t>(s.length()) >= length || pad.empty()) return s;
-        std::string result = s;
-        while (static_cast<int64_t>(result.length()) < length) {
-            result += pad;
-        }
-        return result.substr(0, length);
-    }
+// Remove specific characters from both ends
+pub fn trimChars(s: String, chars: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn capitalize(s: string) -> string {
-    @cpp {
-        if (s.empty()) return s;
-        std::string result = s;
-        result[0] = std::toupper(result[0]);
-        return result;
-    }
+// ============================================================================
+// String Splitting
+// ============================================================================
+
+// Split string by delimiter
+pub fn split(s: String, delimiter: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
 }
 
-pub fn titleCase(s: string) -> string {
-    @cpp {
-        std::string result = s;
-        bool newWord = true;
-        for (size_t i = 0; i < result.length(); i++) {
-            if (std::isspace(result[i])) {
-                newWord = true;
-            } else if (newWord) {
-                result[i] = std::toupper(result[i]);
-                newWord = false;
-            }
-        }
-        return result;
-    }
+// Split into lines
+pub fn splitLines(s: String) -> Array<String> {
+    return split(s, "\n");
 }
 
-pub fn parseInt(s: string) -> Option<int> {
-    @cpp {
-        try {
-            size_t pos;
-            int64_t val = std::stoll(s, &pos);
-            if (pos != s.length()) return std::nullopt;
-            return val;
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
+// Split into words (by whitespace)
+pub fn splitWords(s: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
 }
 
-pub fn parseFloat(s: string) -> Option<float> {
-    @cpp {
-        try {
-            size_t pos;
-            double val = std::stod(s, &pos);
-            if (pos != s.length()) return std::nullopt;
-            return val;
-        } catch (...) {
-            return std::nullopt;
-        }
+// Split into characters
+pub fn toChars(s: String) -> Array<String> {
+    let mut chars = [];
+    let mut i = 0;
+    while i < length(s) {
+        push(chars, charAt(s, i));
+        i = i + 1;
     }
+    return chars;
 }
 
-pub fn parseBool(s: string) -> Option<bool> {
-    @cpp {
-        std::string lower = s;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        if (lower == "true" || lower == "1" || lower == "yes") return true;
-        if (lower == "false" || lower == "0" || lower == "no") return false;
-        return std::nullopt;
-    }
+// ============================================================================
+// String Padding and Alignment
+// ============================================================================
+
+// Pad string to length with spaces on the right
+pub fn padEnd(s: String, targetLength: Int) -> String {
+    return padEndWith(s, targetLength, " ");
 }
 
-pub fn formatTemplate(tmpl: string, args: Map<string, string>) -> string {
-    @cpp {
-        std::string result = tmpl;
-        for (const auto& pair : args) {
-            std::string placeholder = "{" + pair.first + "}";
-            size_t pos = 0;
-            while ((pos = result.find(placeholder, pos)) != std::string::npos) {
-                result.replace(pos, placeholder.length(), pair.second);
-                pos += pair.second.length();
-            }
-        }
-        return result;
-    }
+// Pad string to length with spaces on the left
+pub fn padStart(s: String, targetLength: Int) -> String {
+    return padStartWith(s, targetLength, " ");
 }
 
-pub fn escapeHtml(s: string) -> string {
-    @cpp {
-        std::string result;
-        result.reserve(s.length() * 2);
-        for (char c : s) {
-            switch (c) {
-                case '&': result += "&amp;"; break;
-                case '<': result += "&lt;"; break;
-                case '>': result += "&gt;"; break;
-                case '"': result += "&quot;"; break;
-                case '\'': result += "&#39;"; break;
-                default: result += c; break;
-            }
-        }
-        return result;
+// Pad string on right with custom character
+pub fn padEndWith(s: String, targetLength: Int, padChar: String) -> String {
+    let currentLen = length(s);
+    if currentLen >= targetLength {
+        return s;
     }
+    let padding = repeat(padChar, targetLength - currentLen);
+    return concat(s, padding);
 }
 
-pub fn escapeJson(s: string) -> string {
-    @cpp {
-        std::string result;
-        result.reserve(s.length() * 2);
-        for (char c : s) {
-            switch (c) {
-                case '\\': result += "\\\\"; break;
-                case '"': result += "\\\""; break;
-                case '\n': result += "\\n"; break;
-                case '\r': result += "\\r"; break;
-                case '\t': result += "\\t"; break;
-                default: result += c; break;
-            }
-        }
-        return result;
+// Pad string on left with custom character
+pub fn padStartWith(s: String, targetLength: Int, padChar: String) -> String {
+    let currentLen = length(s);
+    if currentLen >= targetLength {
+        return s;
     }
+    let padding = repeat(padChar, targetLength - currentLen);
+    return concat(padding, s);
 }
 
-pub fn toCharArray(s: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> result;
-        for (char c : s) {
-            result.push_back(std::string(1, c));
-        }
-        return result;
+// Center string with padding
+pub fn center(s: String, targetLength: Int) -> String {
+    let currentLen = length(s);
+    if currentLen >= targetLength {
+        return s;
     }
+    let totalPadding = targetLength - currentLen;
+    let leftPadding = totalPadding / 2;
+    let rightPadding = totalPadding - leftPadding;
+    return concat(concat(repeat(" ", leftPadding), s), repeat(" ", rightPadding));
 }
 
-pub fn fromCharCodes(codes: Array<int>) -> string {
-    @cpp {
-        std::string result;
-        for (auto code : codes) {
-            result += static_cast<char>(code);
-        }
-        return result;
+// ============================================================================
+// String Comparison
+// ============================================================================
+
+// Compare two strings (returns -1, 0, or 1)
+pub fn compare(a: String, b: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// Case-insensitive comparison
+pub fn compareIgnoreCase(a: String, b: String) -> Bool {
+    return toLowerCase(a) == toLowerCase(b);
+}
+
+// Check if strings are equal
+pub fn equals(a: String, b: String) -> Bool {
+    return a == b;
+}
+
+// Check if strings are equal (case-insensitive)
+pub fn equalsIgnoreCase(a: String, b: String) -> Bool {
+    return compareIgnoreCase(a, b);
+}
+
+// ============================================================================
+// String Validation
+// ============================================================================
+
+// Check if string contains only digits
+pub fn isDigit(s: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Check if string contains only letters
+pub fn isAlpha(s: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Check if string contains only letters and digits
+pub fn isAlphanumeric(s: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Check if string contains only whitespace
+pub fn isWhitespace(s: String) -> Bool {
+    return trim(s) == "";
+}
+
+// Check if string contains only lowercase letters
+pub fn isLowerCase(s: String) -> Bool {
+    return s == toLowerCase(s);
+}
+
+// Check if string contains only uppercase letters
+pub fn isUpperCase(s: String) -> Bool {
+    return s == toUpperCase(s);
+}
+
+// ============================================================================
+// Type Conversion
+// ============================================================================
+
+// Convert integer to string
+pub fn toString(value: Int) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Convert float to string
+pub fn floatToString(value: Float) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Convert boolean to string
+pub fn boolToString(value: Bool) -> String {
+    if value {
+        return "true";
     }
+    return "false";
+}
+
+// Convert string to integer (returns 0 if invalid)
+pub fn toInt(s: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// Convert string to float (returns 0.0 if invalid)
+pub fn toFloat(s: String) -> Float {
+    // Implementation provided by LLVM runtime
+    return 0.0;
+}
+
+// Convert string to boolean
+pub fn toBool(s: String) -> Bool {
+    let lower = toLowerCase(trim(s));
+    return lower == "true" || lower == "1" || lower == "yes";
+}
+
+// ============================================================================
+// String Formatting
+// ============================================================================
+
+// Format string with placeholders {0}, {1}, etc.
+pub fn format(template: String, args: Array<String>) -> String {
+    let mut result = template;
+    let mut i = 0;
+    while i < length(args) {
+        let placeholder = concat(concat("{", toString(i)), "}");
+        result = replace(result, placeholder, args[i]);
+        i = i + 1;
+    }
+    return result;
+}
+
+// ============================================================================
+// Encoding/Decoding Utilities
+// ============================================================================
+
+// URL encode string
+pub fn urlEncode(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// URL decode string
+pub fn urlDecode(s: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Escape HTML special characters
+pub fn escapeHtml(s: String) -> String {
+    let mut result = s;
+    result = replace(result, "&", "&amp;");
+    result = replace(result, "<", "&lt;");
+    result = replace(result, ">", "&gt;");
+    result = replace(result, "\"", "&quot;");
+    result = replace(result, "'", "&#39;");
+    return result;
+}
+
+// Unescape HTML entities
+pub fn unescapeHtml(s: String) -> String {
+    let mut result = s;
+    result = replace(result, "&lt;", "<");
+    result = replace(result, "&gt;", ">");
+    result = replace(result, "&quot;", "\"");
+    result = replace(result, "&#39;", "'");
+    result = replace(result, "&amp;", "&");
+    return result;
 }

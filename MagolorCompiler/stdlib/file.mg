@@ -1,183 +1,406 @@
-// Std.File - File system operations
+// Std.File - File I/O and Filesystem Operations Module
+// Provides file reading, writing, and filesystem manipulation
 
-pub fn exists(path: string) -> bool {
-    @cpp {
-        return std::filesystem::exists(path);
-    }
+// ============================================================================
+// File Reading
+// ============================================================================
+
+// Read entire file as string
+pub fn readToString(path: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
 }
 
-pub fn isFile(path: string) -> bool {
-    @cpp {
-        return std::filesystem::is_regular_file(path);
-    }
+// Read file as array of lines
+pub fn readLines(path: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
 }
 
-pub fn isDirectory(path: string) -> bool {
-    @cpp {
-        return std::filesystem::is_directory(path);
-    }
+// Read file as bytes
+pub fn readBytes(path: String) -> Array<Int> {
+    // Implementation provided by LLVM runtime
+    return [];
 }
 
-pub fn size(path: string) -> int {
-    @cpp {
-        if (!std::filesystem::exists(path)) return -1;
-        return static_cast<int64_t>(std::filesystem::file_size(path));
-    }
+// Read file character by character
+pub fn readChars(path: String) -> Array<String> {
+    let content = readToString(path);
+    return toChars(content);
 }
 
-pub fn read(path: string) -> Option<string> {
-    @cpp {
-        std::ifstream file(path);
-        if (!file) return std::nullopt;
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }
+// ============================================================================
+// File Writing
+// ============================================================================
+
+// Write string to file (overwrites existing file)
+pub fn write(path: String, content: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn write(path: string, content: string) -> bool {
-    @cpp {
-        std::ofstream file(path);
-        if (!file) return false;
-        file << content;
-        return true;
-    }
+// Append string to file
+pub fn append(path: String, content: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn append(path: string, content: string) -> bool {
-    @cpp {
-        std::ofstream file(path, std::ios::app);
-        if (!file) return false;
-        file << content;
-        return true;
-    }
+// Write lines to file
+pub fn writeLines(path: String, lines: Array<String>) -> Bool {
+    return write(path, join(lines, "\n"));
 }
 
-pub fn remove(path: string) -> bool {
-    @cpp {
-        return std::filesystem::remove(path);
-    }
+// Write bytes to file
+pub fn writeBytes(path: String, bytes: Array<Int>) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn createDir(path: string) -> bool {
-    @cpp {
-        return std::filesystem::create_directories(path);
-    }
+// ============================================================================
+// File Properties
+// ============================================================================
+
+// Check if file exists
+pub fn exists(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn copy(src: string, dst: string) -> bool {
-    @cpp {
-        try {
-            std::filesystem::copy(src, dst, std::filesystem::copy_options::overwrite_existing);
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
+// Check if path is a file
+pub fn isFile(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn move(src: string, dst: string) -> bool {
-    @cpp {
-        try {
-            std::filesystem::rename(src, dst);
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
+// Check if path is a directory
+pub fn isDirectory(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn absolutePath(path: string) -> string {
-    @cpp {
-        return std::filesystem::absolute(path).string();
-    }
+// Get file size in bytes
+pub fn size(path: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
 }
 
-pub fn parentDir(path: string) -> string {
-    @cpp {
-        return std::filesystem::path(path).parent_path().string();
+// Get file extension
+pub fn extension(path: String) -> String {
+    let index = lastIndexOf(path, ".");
+    if index == -1 {
+        return "";
     }
+    return substring(path, index + 1, length(path));
 }
 
-pub fn fileName(path: string) -> string {
-    @cpp {
-        return std::filesystem::path(path).filename().string();
+// Get file name without extension
+pub fn basename(path: String) -> String {
+    let index = lastIndexOf(path, ".");
+    if index == -1 {
+        return path;
     }
+    return substring(path, 0, index);
 }
 
-pub fn extension(path: string) -> string {
-    @cpp {
-        return std::filesystem::path(path).extension().string();
+// Get directory name from path
+pub fn dirname(path: String) -> String {
+    let index = lastIndexOf(path, "/");
+    if index == -1 {
+        return ".";
     }
+    return substring(path, 0, index);
 }
 
-pub fn tempDir() -> string {
-    @cpp {
-        return std::filesystem::temp_directory_path().string();
+// Get filename from path
+pub fn filename(path: String) -> String {
+    let index = lastIndexOf(path, "/");
+    if index == -1 {
+        return path;
     }
+    return substring(path, index + 1, length(path));
 }
 
-pub fn createTempFile(prefix: string) -> Option<string> {
-    @cpp {
-        std::string dir = std::filesystem::temp_directory_path().string();
-        std::string path = dir + "/" + prefix + "_XXXXXX";
-        std::vector<char> buf(path.begin(), path.end());
-        buf.push_back('\0');
-        int fd = mkstemp(buf.data());
-        if (fd == -1) return std::nullopt;
-        close(fd);
-        return std::string(buf.data());
-    }
+// ============================================================================
+// File Operations
+// ============================================================================
+
+// Copy file from source to destination
+pub fn copy(source: String, dest: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn cwd() -> string {
-    @cpp {
-        return std::filesystem::current_path().string();
-    }
+// Move/rename file
+pub fn move(source: String, dest: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn setCwd(path: string) -> bool {
-    @cpp {
-        try {
-            std::filesystem::current_path(path);
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
+// Delete file
+pub fn delete(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn listDir(path: string) -> Array<string> {
-    @cpp {
-        std::vector<std::string> entries;
-        if (!std::filesystem::is_directory(path)) return entries;
-        for (const auto& entry : std::filesystem::directory_iterator(path)) {
-            entries.push_back(entry.path().filename().string());
-        }
-        return entries;
-    }
+// Create empty file
+pub fn create(path: String) -> Bool {
+    return write(path, "");
 }
 
-pub fn readBytes(path: string) -> Array<int> {
-    @cpp {
-        std::vector<int64_t> result;
-        std::ifstream file(path, std::ios::binary);
-        if (!file) return result;
-        char byte;
-        while (file.get(byte)) {
-            result.push_back(static_cast<unsigned char>(byte));
-        }
-        return result;
-    }
+// Truncate file to specific size
+pub fn truncate(path: String, size: Int) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
 }
 
-pub fn writeBytes(path: string, data: Array<int>) -> bool {
-    @cpp {
-        std::ofstream file(path, std::ios::binary);
-        if (!file) return false;
-        for (auto b : data) {
-            file.put(static_cast<char>(b));
-        }
-        return true;
+// ============================================================================
+// Directory Operations
+// ============================================================================
+
+// Create directory
+pub fn createDir(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Create directory and all parent directories
+pub fn createDirAll(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Remove empty directory
+pub fn removeDir(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Remove directory and all contents
+pub fn removeDirAll(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// List files and directories in directory
+pub fn listDir(path: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
+}
+
+// List only files in directory
+pub fn listFiles(path: String) -> Array<String> {
+    let entries = listDir(path);
+    return filter(entries, pub fn(entry) {
+        return isFile(concat(concat(path, "/"), entry));
+    });
+}
+
+// List only directories in directory
+pub fn listDirs(path: String) -> Array<String> {
+    let entries = listDir(path);
+    return filter(entries, pub fn(entry) {
+        return isDirectory(concat(concat(path, "/"), entry));
+    });
+}
+
+// Walk directory tree recursively
+pub fn walkDir(path: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
+}
+
+// ============================================================================
+// Path Operations
+// ============================================================================
+
+// Join path components
+pub fn joinPath(parts: Array<String>) -> String {
+    return join(parts, "/");
+}
+
+// Normalize path (resolve . and ..)
+pub fn normalizePath(path: String) -> String {
+    // Implementation provided by LLVM runtime
+    return path;
+}
+
+// Get absolute path
+pub fn absolutePath(path: String) -> String {
+    // Implementation provided by LLVM runtime
+    return path;
+}
+
+// Get relative path from base to target
+pub fn relativePath(base: String, target: String) -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Check if path is absolute
+pub fn isAbsolute(path: String) -> Bool {
+    return startsWith(path, "/");
+}
+
+// Check if path is relative
+pub fn isRelative(path: String) -> Bool {
+    return !isAbsolute(path);
+}
+
+// ============================================================================
+// File Permissions and Metadata
+// ============================================================================
+
+// Check if file is readable
+pub fn isReadable(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Check if file is writable
+pub fn isWritable(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Check if file is executable
+pub fn isExecutable(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// Get file modification time (Unix timestamp)
+pub fn modifiedTime(path: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// Get file creation time (Unix timestamp)
+pub fn createdTime(path: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// Get file access time (Unix timestamp)
+pub fn accessedTime(path: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// Set file permissions (Unix-style octal)
+pub fn setPermissions(path: String, mode: Int) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// ============================================================================
+// Temporary Files
+// ============================================================================
+
+// Create temporary file and return path
+pub fn createTempFile() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Create temporary directory and return path
+pub fn createTempDir() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Get system temporary directory path
+pub fn tempDir() -> String {
+    // Implementation provided by LLVM runtime
+    return "/tmp";
+}
+
+// ============================================================================
+// Working Directory
+// ============================================================================
+
+// Get current working directory
+pub fn currentDir() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Change current working directory
+pub fn changeDir(path: String) -> Bool {
+    // Implementation provided by LLVM runtime
+    return false;
+}
+
+// ============================================================================
+// File Search and Filtering
+// ============================================================================
+
+// Find files matching pattern in directory
+pub fn findFiles(dir: String, pattern: String) -> Array<String> {
+    // Implementation provided by LLVM runtime
+    return [];
+}
+
+// Find files with specific extension
+pub fn findByExtension(dir: String, extension: String) -> Array<String> {
+    let files = listFiles(dir);
+    return filter(files, pub fn(file) {
+        return extension(file) == extension;
+    });
+}
+
+// ============================================================================
+// File Comparison
+// ============================================================================
+
+// Check if two files have identical content
+pub fn filesEqual(path1: String, path2: String) -> Bool {
+    if !exists(path1) || !exists(path2) {
+        return false;
     }
+    return readToString(path1) == readToString(path2);
+}
+
+// Get checksum/hash of file (simple implementation)
+pub fn checksum(path: String) -> Int {
+    // Implementation provided by LLVM runtime
+    return 0;
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Get home directory path
+pub fn homeDir() -> String {
+    // Implementation provided by LLVM runtime
+    return "";
+}
+
+// Expand ~ to home directory in path
+pub fn expandHome(path: String) -> String {
+    if startsWith(path, "~") {
+        return concat(homeDir(), substring(path, 1, length(path)));
+    }
+    return path;
+}
+
+// Get file separator for current platform
+pub fn separator() -> String {
+    // Implementation provided by LLVM runtime
+    return "/";
+}
+
+// Sanitize filename (remove invalid characters)
+pub fn sanitizeFilename(name: String) -> String {
+    let mut result = name;
+    result = replace(result, "/", "_");
+    result = replace(result, "\\", "_");
+    result = replace(result, ":", "_");
+    result = replace(result, "*", "_");
+    result = replace(result, "?", "_");
+    result = replace(result, "\"", "_");
+    result = replace(result, "<", "_");
+    result = replace(result, ">", "_");
+    result = replace(result, "|", "_");
+    return result;
 }

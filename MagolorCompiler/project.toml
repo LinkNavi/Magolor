@@ -13,6 +13,7 @@ dirs = ["include"]
 flags = ["-Wall", "-Wextra", "-Wpedantic"]
 optimization = "2"
 
+libs = ["LLVM", "ssl", "crypto"]
 [deps]
 
 [scripts]
